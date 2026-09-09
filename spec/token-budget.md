@@ -354,6 +354,23 @@ mechanism made addressable — and neither did `defpop` taking lists.
 reserved are those four plus the seven Effects/IO slots that are not
 `stdout` / `stdin`.
 
+### M19 activated the IO family, all but the network
+
+| Byte | Name | Type |
+|---|---|---|
+| 0x30 | `external-boundary` | `LiteralInt, Value -> Value` (result follows the body) |
+| 0x33 | `fs-read` | `List -> List` |
+| 0x34 | `fs-write` | `List, Value -> Int` |
+| 0x37 | `clock` | `-> Int` |
+
+Activations as named; no free slot consumed. The boundary's literal is
+a capability mask — one byte, `fs-read` 1, `fs-write` 2, `clock` 4,
+`net` 8 reserved — and `(boundary "fs-read clock" ...)` is surface
+sugar over it, so the capability *names* cost nothing. **57 of 64
+implemented.** The four free slots are unchanged: 0x12 `delta-check`,
+0x13 `respawn`, 0x14 `budget-remaining`, 0x16 `preserve`. Reserved
+beyond those: 0x31 `net-send`, 0x32 `net-recv`.
+
 ### Still unspent, still needing a decision
 
 | Candidate | Slots | Status |

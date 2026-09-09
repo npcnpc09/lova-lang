@@ -170,6 +170,7 @@ annotations).
 0x28-0x2F   Composition           seq / parallel / if-surprise / loop-until
                                   lambda / apply / let / ref
 0x30-0x37   Effects / IO          external-boundary / net-send / net-recv
+                                  fs-read / fs-write / stdout / stdin / clock
 0x38-0x3F   Meta / lineage        lineage-query / why / trace / explain
 ```
 
@@ -375,7 +376,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M18)
+## Current state (2026-09-09 — post-M19)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -467,6 +468,17 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M19** put the world under a declared boundary: `external-boundary`
+(0x30) declares, as a literal capability mask, which effects its body
+may use — `(boundary "fs-read clock" body)` in the surface — and
+`fs-read` / `fs-write` / `clock` (0x33 / 0x34 / 0x37) are the effects.
+The compiler's capability pass refuses a use outside a boundary that
+declares it; the runtime refuses a boundary the host did not grant
+(`--allow`, nothing by default); the boundary is lexical, captured by
+closures; the generator offers the world only where it is declared.
+Axiom 4, concrete for effects that touch the world. Q68–Q70.
+**57 / 64 operators; the two network slots and four free ones remain.**
+
 **M18** added `read` (0x1E), the inverse of `explain`, so a program
 can construct a program from text and `eval` it; `(use "name")`, a
 module system that is textual inclusion — once, transitive, free after
@@ -549,13 +561,13 @@ proved the token table could not beat) and on LOVABench 2.00× →
 **5.38×** vs sympy-Python. Exp 11's Stage-2 *projection* understated
 density by 70%; node count is a poor proxy in both directions.
 
-**53 / 64 operators runtime-implemented**; 11 reserved, of which only 4
-are genuinely free (see the slot-budget note above). See
+**57 / 64 operators runtime-implemented**; the two network slots are
+reserved and 4 are genuinely free (see the slot-budget note above). See
 `spec/tokens.md` for the complete table (generated) and
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-497 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+543 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

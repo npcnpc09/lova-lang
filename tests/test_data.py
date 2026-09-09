@@ -350,8 +350,9 @@ class TestSlotBudget(unittest.TestCase):
     def test_slots_spent_so_far(self):
         # 25 after M9, +6 data (M10), +2 IO (M11), +1 when-anomaly (M13),
         # +12 for M14: quote/eval, the whole Meta family, clone/mutate;
-        # +6 for M15: the rest of Evolution; +1 for M18: read.
-        self.assertEqual(len(TYPED_TOKENS), 53)
+        # +6 for M15: the rest of Evolution; +1 for M18: read; +4 for
+        # M19: external-boundary, fs-read, fs-write, clock.
+        self.assertEqual(len(TYPED_TOKENS), 57)
 
     def test_the_core_is_still_64_operators(self):
         self.assertEqual(len(SIGNATURES), 64)

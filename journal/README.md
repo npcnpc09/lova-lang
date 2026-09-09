@@ -241,6 +241,48 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 19 (2026-09-09) — The world, under a declared boundary
+Four activations of the IO family's own slots, no free slot spent, and
+the first time Axiom 4's "effect bounds in the signature" is concrete
+for effects that touch the world.
+
+**`external-boundary` (0x30)** is the declaration. `(boundary "fs-read
+clock" body)` — surface sugar for `(external-boundary 5 body)`, the
+mask a literal byte — says which of the world's effects `body` may
+use, the way `budget` says what it may cost. **`fs-read` (0x33)**,
+**`fs-write` (0x34)** and **`clock` (0x37)** are the effects: a file as
+a codepoint list, a value written to a path, milliseconds since the
+epoch.
+
+The contract is checked twice, which is what the axiom asks for. The
+compiler's new **capability pass** refuses any use outside a boundary
+that declares it (`capability-denied`, code 9), before drop-unused, so
+a lie about effects is refused even where it would be dropped. The
+runtime checks the other half: a boundary the host did not **grant**
+traps *before its body runs* — nothing is granted unless asked, the
+CLI grants with `--allow fs-read,clock` or `--allow all`, and a test or
+an experiment cannot touch the world by accident. Quoted code and
+`read` text are invisible to the static pass and are checked when they
+run, under the same rule.
+
+The boundary is **lexical**: a closure keeps the capabilities of the
+place it was written, wherever it is applied, and a lambda written
+outside a boundary may not use the world even when applied inside.
+That is the only rule a static pass can enforce, so the runtime keeps
+the same one by capturing the mask in the closure — static and dynamic
+never disagree. An inner boundary replaces the outer rather than
+adding to it (Q70).
+
+The generator learned the rule too: a slot carries the innermost
+boundary's mask and an effect operator is offered only where its bit
+is set, so **a generated program cannot use the world without
+declaring it** — Axiom 3 at the effect level. `validates` agrees with
+the compiler on all three cases. `stdout` / `stdin` stay ambient, as
+M11 shipped them (Q68). The two network slots are the last of the
+family and stay reserved (Q69).
+
+**57 / 64 operators**; free slots unchanged at four. Tests 497 → 543.
+
 ### Milestone 18 (2026-09-09) — `read`, `use`, and a library of rules
 Three things, one slot.
 
@@ -855,6 +897,25 @@ the corpus grows again.
   That is Lisp's `eval` and it is what made `trace` and `explain` easy;
   it is also dynamic scope by the back door. Should a program value
   close over its environment at `quote` time instead?
+- **Q70**: An inner `boundary` *replaces* the outer's mask. That keeps
+  the static rule one line — the innermost declaration is the whole
+  truth — but it means a library function can escalate: a `boundary`
+  inside a lambda declares more than the caller's boundary did, and
+  the host's grant is the only thing stopping it. Intersection (inner
+  ⊆ outer, or it is a compile error) is the capability-safe rule. Is
+  the one-line rule worth the hole?
+- **Q69**: `net-send` / `net-recv` are the last reserved slots of the
+  IO family. A network effect is not a file with a longer name — it
+  needs an address, a boundary that names *where*, not only *what* —
+  and the capability mask as it stands has one bit for all of it.
+  What does the declaration look like when the world has more than
+  one place in it?
+- **Q68**: `stdout` / `stdin` are ambient — M11 shipped them without a
+  boundary and M19 left them so, because every experiment and the REPL
+  would otherwise need a grant to print. But the terminal *is* the
+  world, and Axiom 4 does not have an exception for it. Should the
+  terminal move under the boundary, with the CLI granting it by
+  default?
 - **Q67**: A `Population` carries its scorer but does not expose it, so
   a custom rule that rebuilds a pool (`evolve-with`) has to be handed
   the scorer again. A `scorer-of : Population -> Fn` would close that

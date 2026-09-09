@@ -84,6 +84,13 @@ semantics.
   and `(read text)` is `explain`'s inverse, so a program can build a
   program from text and `eval` it. Axiom 5 is now true inside the
   language, and Stage 3's `explain` exists
+- **The world, declared** — `(boundary "fs-read clock" body)` says
+  which effects `body` may use; `fs-read` / `fs-write` / `clock` are
+  the effects. The compiler refuses a use outside a boundary that
+  declares it, the runtime refuses a boundary the host did not grant
+  (`lova run --allow fs-read,clock`), nothing is granted by default,
+  and a generated program cannot use the world without declaring it.
+  Axiom 4, for effects that touch the world
 - **Libraries** — `(use "evolution")` includes `lib/evolution.lova`,
   where a custom evolution rule is nine lines over the six Evolution
   operators; `(use "prelude")` is the standard library, loaded by the
@@ -135,7 +142,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (497 tests, stdlib unittest only)
+# run the test suite (543 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -266,15 +273,17 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         497 unit tests, stdlib only
+tests/         543 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
 
 Stated plainly, because the list is short and the omissions are large:
 
-- **No IO beyond a terminal.** `stdout` and `stdin` exist; the
-  filesystem, the network and the clock (0x30-0x34, 0x37) are reserved.
+- **No network.** `net-send` / `net-recv` (0x31 / 0x32) are the last
+  reserved slots of the IO family; a network effect needs an address,
+  which the capability mask does not yet name (Q69). The terminal is
+  ambient rather than declared (Q68).
 - **Modules are textual.** `(use "name")` includes `lib/name.lova`
   once and transitively, and `drop-unused` makes it free — but two
   libraries defining the same name shadow in inclusion order; there

@@ -33,7 +33,7 @@ from core.runtime import (
     is_program_value, list_to_python,
 )
 from core.surface import parse, parse_with_prelude, pretty
-from core.tokens import encode
+from core.tokens import ALL_CAPABILITIES, CAPABILITY_BITS, encode
 
 
 EXIT_OK = 0
@@ -126,6 +126,28 @@ def format_value(value: Any) -> str:
     return repr(value) if not isinstance(value, int) else str(value)
 
 
+def parse_allow(values: Optional[List[str]]) -> int:
+    """``--allow fs-read,clock`` (repeatable; ``all``) to a capability mask.
+
+    What the host grants this run.  A program still has to declare what
+    it uses in a `boundary`; the grant is the other half of the
+    contract, and nothing is granted unless asked (M19).
+    """
+    mask = 0
+    for value in values or ():
+        for name in value.replace(",", " ").split():
+            if name == "all":
+                mask |= ALL_CAPABILITIES
+            elif name in CAPABILITY_BITS:
+                mask |= CAPABILITY_BITS[name]
+            else:
+                raise ValueError(
+                    f"--allow: unknown capability {name!r}; known: "
+                    + ", ".join(CAPABILITY_BITS) + ", all"
+                )
+    return mask
+
+
 def report_error(exc: Exception) -> int:
     """Print a structured anomaly, or a plain message, and pick an exit code."""
     anomaly = getattr(exc, "anomaly", None)
@@ -161,10 +183,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     except (CompileError, ValueError) as exc:
         return report_error(exc)
 
+    try:
+        granted = parse_allow(args.allow)
+    except ValueError as exc:
+        return report_error(exc)
     runtime = Runtime(out_stream=sys.stdout,
                       input_source=sys.stdin.readline,
                       max_steps=args.max_steps,
-                      max_call_depth=args.max_depth)
+                      max_call_depth=args.max_depth,
+                      granted=granted)
     try:
         value = evaluate(tree, runtime)
     except (BudgetTrap, DeltaTrap) as trap:
@@ -283,7 +310,8 @@ def cmd_repl(args: argparse.Namespace) -> int:
             continue
         runtime = Runtime(out_stream=sys.stdout,
                           max_steps=args.max_steps,
-                          max_call_depth=args.max_depth)
+                          max_call_depth=args.max_depth,
+                          granted=parse_allow(args.allow))
         try:
             value = evaluate(tree, runtime)
         except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError) as exc:
@@ -313,6 +341,9 @@ def build_parser() -> argparse.ArgumentParser:
                          help="read the source as the Stage-2 surface")
         sub.add_argument("--max-steps", type=int, default=1_000_000)
         sub.add_argument("--max-depth", type=int, default=200)
+        sub.add_argument("--allow", action="append", metavar="CAPS",
+                         help="grant capabilities: fs-read, fs-write, clock, "
+                              "or all (comma-separated, repeatable)")
         return sub
 
     run = common(subparsers.add_parser("run", help="evaluate a program"))

@@ -45,6 +45,7 @@ from core.tokens import (
     MOD, MUL, NIL, P, PARTITION, REF, RESULT_FOLLOWS_OPERANDS, SIGMA,
     SIGNATURES, SURPRISE, SEQ, TAIL, TAU, THRESHOLD, TRACE_SURPRISE,
     VIOLATE, WHEN_ANOMALY, QUOTE, Lit, Node,
+    CAPABILITY_OF, EXTERNAL_BOUNDARY, capability_names,
 )
 from core.types import FN, INT, LIST, LITERAL_INT, VALUE, Type, is_subtype
 
@@ -336,6 +337,13 @@ def _check_transparent(
         # boundary every call has -- journal Q51).
         _type_check(node.args[0], expected, path + (node.op, 0), type_env)
         _type_check(node.args[1], FN, path + (node.op, 1), type_env)
+        return
+
+    if node.op == EXTERNAL_BOUNDARY and len(node.args) == 2:
+        # A declaration around an expression: the literal is checked as
+        # a literal, the body is whatever the context wants (M19).
+        _type_check(node.args[0], LITERAL_INT, path + (node.op, 0), type_env)
+        _type_check(node.args[1], expected, path + (node.op, 1), type_env)
         return
 
     if node.op == APPLY:
@@ -654,6 +662,50 @@ def _count_nodes(node: Node) -> int:
     )
 
 
+# --- pass: capability check (M19) -------------------------------------------
+#
+# Axiom 4 says effect bounds are declared in the signature and checked
+# at the declaration site.  `external-boundary` is that declaration for
+# the effects that touch the world, and this pass is the static half of
+# the check: an `fs-read`, `fs-write` or `clock` must sit inside a
+# boundary whose mask has its bit.  The boundary is lexical -- a lambda
+# written inside one may use what it declared wherever it is applied,
+# and a lambda written outside may not, even if applied inside -- which
+# is the only rule a static pass can enforce, and the runtime keeps the
+# same one by capturing the mask in the closure.  Quoted code is data
+# and is not checked here; if it is ever evaluated, the runtime checks
+# it then.
+
+
+def _capability_check(node: Node, caps: int, path: Tuple[int, ...]) -> None:
+    if node.op == LIT_INT or node.op == QUOTE:
+        return
+    if node.op in CAPABILITY_OF:
+        bit = CAPABILITY_OF[node.op]
+        if not caps & bit:
+            name = SIGNATURES[node.op]["name"]
+            needed = capability_names(bit)[0]
+            raise CompileError(
+                kind="capability-denied",
+                detail={"at_operator": name, "needs": needed,
+                        "declared": capability_names(caps)},
+                position_path=path + (node.op,),
+                offending_op=node.op,
+                repair_hint=(
+                    f'wrap the use in (boundary "{needed}" ...); the host '
+                    f"must then grant it (`--allow {needed}`)"
+                ),
+            )
+    if (node.op == EXTERNAL_BOUNDARY and len(node.args) == 2
+            and isinstance(node.args[0], Node) and node.args[0].op == LIT_INT):
+        inner = int(node.args[0].args[0])
+        _capability_check(node.args[1], inner, path + (node.op, 1))
+        return
+    for index, child in enumerate(node.args):
+        if isinstance(child, Node):
+            _capability_check(child, caps, path + (node.op, index))
+
+
 def compile(
     node: Node,
     *,
@@ -661,6 +713,7 @@ def compile(
     type_check: bool = True,
     scope_check: bool = True,
     drop_unused: bool = True,
+    capability_check: bool = True,
     top_type: Type = VALUE,
 ) -> Tuple[Node, CompileReport]:
     """Run the static pipeline on ``node``.
@@ -683,6 +736,12 @@ def compile(
         # program.  Pass `top_type=INT` to require an integer result.
         _type_check(node, expected=top_type, path=())
         passes.append("type-check")
+
+    if capability_check:
+        # Before drop-unused: an undeclared effect in a binding nothing
+        # uses is still a program that lied about its effects.
+        _capability_check(node, caps=0, path=())
+        passes.append("capability-check")
 
     compiled = node
     dropped = 0

@@ -10,7 +10,9 @@ Operators implemented:
 - LIT_INT, MERGE, PARTITION (heat-free, simple 2-split)
 - NIL, CONS, HEAD, TAIL, IS_NIL          (lists -- and therefore pairs,
   and therefore strings as codepoint lists)
-- STDOUT, STDIN                          (the effects boundary)
+- STDOUT, STDIN                          (the terminal, ambient)
+- EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CLOCK
+                                         (M19: the world, under a declared boundary)
 - WHEN_ANOMALY                           (in-language error handling)
 - QUOTE, EVAL, READ                      (programs as values; text -> program)
 - EXPLAIN, HASH, UID, GENERATION, ANCESTOR_OF, LINEAGE_QUERY, WHY, TRACE
@@ -75,7 +77,9 @@ Those arrive in Milestone 2+.
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 from dataclasses import dataclass, field
 from math import gcd as _gcd
 from typing import Any, Dict, List, Optional, Tuple
@@ -93,6 +97,8 @@ from core.tokens import (
     ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
     MUTATE, QUOTE, TRACE, UID, WHY, encode,
     DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
+    CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CAPABILITY_OF,
+    capability_names,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -255,6 +261,11 @@ class Closure:
     body: Node
     env: Dict[int, Any]
     name: Optional[int] = None   # binding name, when known (debug only)
+    # M19 -- the capabilities in force where the lambda was written.  A
+    # boundary is lexical: the body may use what the boundary around
+    # its *definition* declared, wherever it is eventually applied.
+    # That is what the compiler checks, so it is what the runtime does.
+    caps: int = 0
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         tag = f" name={self.name}" if self.name is not None else ""
@@ -618,6 +629,14 @@ class Runtime:
     out_stream: Any = None
     input_lines: List[str] = field(default_factory=list)
     input_source: Any = None
+    # M19 -- capabilities.  ``granted`` is what the host allows this run
+    # (the CLI's ``--allow``; nothing by default, so a test or an
+    # experiment cannot touch the world by accident).  ``caps`` is what
+    # the innermost `external-boundary` declared, and is what an effect
+    # operator checks.  ``clock`` may be replaced for a reproducible run.
+    granted: int = 0
+    caps: int = 0
+    clock: Any = None
 
     def write(self, text: str) -> None:
         """Emit ``text``, recording it and forwarding it if asked."""
@@ -904,6 +923,26 @@ def _scan_body_offender(
     return None
 
 
+def _require_capability(rt: Runtime, op: int, name: str) -> None:
+    """Trap unless the innermost boundary declared ``op``'s capability.
+
+    The compiler refuses a program that gets here with a visible use;
+    what reaches the runtime is code the static pass could not see --
+    a quoted program, text `read` at run time -- and the rule is the
+    same for it.
+    """
+    bit = CAPABILITY_OF[op]
+    if not rt.caps & bit:
+        needed = capability_names(bit)[0]
+        raise DomainTrap(
+            "capability-denied",
+            f"{name}: used outside a boundary that declares {needed}",
+            {"operator": name, "needs": needed,
+             "declared": capability_names(rt.caps)},
+            f'wrap the use in (boundary "{needed}" ...)',
+        )
+
+
 def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
     """Apply a LOVA function value to one argument.
 
@@ -942,13 +981,16 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
     scope[fn.param] = argument
     saved_env = rt.env
     saved_chain = rt.let_chain
+    saved_caps = rt.caps
     rt.let_chain = False
     rt.env = scope
+    rt.caps = fn.caps
     try:
         return _eval(fn.body, rt)
     finally:
         rt.env = saved_env
         rt.let_chain = saved_chain
+        rt.caps = saved_caps
         rt.call_depth -= 1
 
 
@@ -1373,6 +1415,78 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
             return NIL_VALUE          # end of input, not an error
         return list_from([ord(ch) for ch in line])
 
+    # --- the world, under a boundary (M19) ------------------------------
+    if op == EXTERNAL_BOUNDARY:
+        # Declares what the body may do.  Checked twice: statically,
+        # that every effect inside is declared here (the compiler's
+        # capability pass), and now, that the host granted what is
+        # declared.  A boundary the host refuses traps *before* the body
+        # runs -- the declaration is the contract, and the trap is
+        # where the contract meets the world.
+        if node.args[0].op != LIT_INT:
+            raise DomainTrap(
+                "malformed", "external-boundary: capability slot must be a literal",
+                {"operator": "external-boundary", "slot": 0},
+                "put a literal capability mask in the first slot",
+            )
+        declared = int(node.args[0].args[0])
+        missing = declared & ~rt.granted
+        if missing:
+            raise DomainTrap(
+                "capability-denied",
+                f"external-boundary: declares {capability_names(declared)} "
+                f"but the host granted {capability_names(rt.granted) or 'nothing'}",
+                {"operator": "external-boundary",
+                 "declared": capability_names(declared),
+                 "granted": capability_names(rt.granted),
+                 "missing": capability_names(missing)},
+                "run with `--allow " + ",".join(capability_names(missing))
+                + "`, or declare less",
+            )
+        saved_caps = rt.caps
+        rt.caps = declared
+        try:
+            return _eval(node.args[1], rt)
+        finally:
+            rt.caps = saved_caps
+
+    if op == FS_READ:
+        _require_capability(rt, FS_READ, "fs-read")
+        path = _as_text(_eval(node.args[0], rt), "fs-read")
+        try:
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise DomainTrap(
+                "domain-error", f"fs-read: {path}: {exc}",
+                {"operator": "fs-read", "path": path,
+                 "reason": type(exc).__name__},
+                "give `fs-read` the path of a readable UTF-8 file",
+            ) from None
+        return list_from([ord(ch) for ch in text])
+
+    if op == FS_WRITE:
+        _require_capability(rt, FS_WRITE, "fs-write")
+        path = _as_text(_eval(node.args[0], rt), "fs-write")
+        text = _as_text(_eval(node.args[1], rt), "fs-write")
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(text)
+        except OSError as exc:
+            raise DomainTrap(
+                "domain-error", f"fs-write: {path}: {exc}",
+                {"operator": "fs-write", "path": path,
+                 "reason": type(exc).__name__},
+                "give `fs-write` a path in a directory that exists",
+            ) from None
+        return len(text)
+
+    if op == CLOCK:
+        _require_capability(rt, CLOCK, "clock")
+        if rt.clock is not None:
+            return _as_int(rt.clock(), "clock")
+        return time.time_ns() // 1_000_000
+
     # --- conservation ---------------------------------------------------
     if op == BUDGET:
         limit = _as_int(_eval(node.args[0], rt), "budget")
@@ -1562,6 +1676,7 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
             param=int(node.args[0].args[0]),
             body=node.args[1],
             env=rt.env,
+            caps=rt.caps,
         )
 
     if op == APPLY:

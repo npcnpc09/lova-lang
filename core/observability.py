@@ -39,6 +39,7 @@ from core.tokens import (
     ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
     MUTATE, QUOTE, TRACE, UID, WHY,
     DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
+    CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE,
 )
 from core.types import INT, LITERAL_INT, Type, is_subtype
 
@@ -89,6 +90,13 @@ _EFFECTS: dict = {
     # effects / IO (M11) -- the first operators that touch the world
     STDOUT: frozenset({"write-stdout"}),
     STDIN: frozenset({"read-stdin"}),
+    # M19 -- the world.  Declaring is pure; the operators under the
+    # boundary carry the effects, and two of them read state no static
+    # view can fix.
+    EXTERNAL_BOUNDARY: frozenset(),
+    FS_READ: frozenset({"read-fs"}),
+    FS_WRITE: frozenset({"write-fs"}),
+    CLOCK: frozenset({"read-clock"}),
     # M13 -- handling an anomaly is an effect on the run's trace, and it
     # also means the enclosed cost is not the program's declared cost.
     WHEN_ANOMALY: frozenset({"handle-anomaly"}),
@@ -416,7 +424,8 @@ def static_analyze(node: Node) -> StaticAnalysis:
     # LOVA M5 runtime is deterministic by construction (no random,
     # no IO, no clock).  This will change when we add effect tokens.
     is_deterministic = True
-    for bad_effect in ("read-clock", "net-recv", "random", "read-stdin"):
+    for bad_effect in ("read-clock", "net-recv", "random", "read-stdin",
+                       "read-fs"):
         if bad_effect in effects_accum:
             is_deterministic = False
             break

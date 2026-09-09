@@ -79,7 +79,7 @@ APPLY           = 0x2D
 LET             = 0x2E   # (let name value body)
 REF             = 0x2F   # (ref name) — dereference bound name
 
-# Family 0x30-0x37  Effects / IO (all placeholders in MVP)
+# Family 0x30-0x37  Effects / IO (stdout/stdin M11; boundary, fs, clock M19)
 EXTERNAL_BOUNDARY = 0x30
 NET_SEND        = 0x31
 NET_RECV        = 0x32
@@ -333,6 +333,23 @@ _TYPE_INFO = {
     # reproducibility elsewhere is conditioned on its absence.
     STDOUT:         {"in_types": [VALUE], "out_type": INT},
     STDIN:          {"in_types": [], "out_type": LIST},
+    # M19 -- the world beyond the terminal, under a declared boundary.
+    # `(external-boundary caps body)` declares, as a literal bitmask
+    # (CAPABILITY_BITS), which effects `body` may use; it is Axiom 4's
+    # "effect bounds in the signature" made concrete, the way `budget`
+    # declares cost.  The compiler rejects a use outside a boundary that
+    # declares it, and the runtime traps a boundary the host did not
+    # grant.  Its result is the body's, so it fits any slot.
+    #
+    # `fs-read` takes a path and yields the file as a codepoint list;
+    # `fs-write` takes a path and a value -- text, or an integer written
+    # as its digits, the same two shapes `stdout` writes -- and yields
+    # the codepoints written; `clock` is milliseconds since the epoch.
+    # All three are activations of slots the original table named.
+    EXTERNAL_BOUNDARY: {"in_types": [LITERAL_INT, VALUE], "out_type": VALUE},
+    FS_READ:        {"in_types": [LIST], "out_type": LIST},
+    FS_WRITE:       {"in_types": [LIST, VALUE], "out_type": INT},
+    CLOCK:          {"in_types": [], "out_type": INT},
     # END is a structural sentinel — no out_type; the generator
     # handles it specially as a variadic terminator.
 }
@@ -356,7 +373,8 @@ TYPED_TOKENS = frozenset(_TYPE_INFO.keys())
 # variadic may be empty, and `(seq)` evaluates to 0, so its result type
 # is not determined by the slot it sits in.  The compiler checks that
 # case separately.
-RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL, HEAD})
+RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL, HEAD,
+                                     EXTERNAL_BOUNDARY})
 
 # ``REF`` is the other operator whose result type is not its declared
 # one: it is whatever the binding holds.  The compiler resolves that
@@ -369,6 +387,30 @@ RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL
 # The two sets are kept apart because the reasons differ: one is a
 # typing rule, the other is a limit on what the state machine can see.
 RESULT_NOT_STATIC = RESULT_FOLLOWS_OPERANDS | {REF}
+
+# Capabilities (M19).  A boundary's literal is a bitmask over these; an
+# effect operator is usable only where the enclosing boundary's mask
+# has its bit, and a boundary is enterable only if the host granted
+# every bit it declares.  `net` is reserved with the two network slots.
+CAPABILITY_BITS: Dict[str, int] = {
+    "fs-read": 1,
+    "fs-write": 2,
+    "clock": 4,
+    "net": 8,
+}
+CAPABILITY_OF: Dict[int, int] = {
+    FS_READ: CAPABILITY_BITS["fs-read"],
+    FS_WRITE: CAPABILITY_BITS["fs-write"],
+    CLOCK: CAPABILITY_BITS["clock"],
+    NET_SEND: CAPABILITY_BITS["net"],
+    NET_RECV: CAPABILITY_BITS["net"],
+}
+ALL_CAPABILITIES = sum(CAPABILITY_OF[t] for t in (FS_READ, FS_WRITE, CLOCK))
+
+
+def capability_names(mask: int) -> List[str]:
+    """The capability names a bitmask carries, in bit order."""
+    return [name for name, bit in CAPABILITY_BITS.items() if mask & bit]
 
 # Symbol (interned name) → token byte.  Used by the surface parser.
 NAME_TO_TOKEN = {sig["name"]: tok for tok, sig in SIGNATURES.items()}

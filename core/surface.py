@@ -44,6 +44,7 @@ from core.tokens import (
     ALIASES, APPLY, CONS, DEVIATION, IF_SURPRISE, LAMBDA, LET, LIT_INT,
     MERGE, MUL, NIL, Node, REF, SIGNATURES, SURFACE_ALIASES, SURPRISE,
     THRESHOLD, WHEN_ANOMALY, NAME_TO_TOKEN, Lit,
+    CAPABILITY_BITS, EXTERNAL_BOUNDARY,
 )
 
 
@@ -450,6 +451,44 @@ def _macro_cond(args, syms):
 # exist because Exp 13 measured what a token slot is worth against what a
 # surface expansion is worth, and expansions won: identical token count,
 # zero slots.
+def _text_of_chain(node: Node) -> Optional[str]:
+    """The text a cons chain of codepoint literals spells, else None."""
+    out = []
+    while node.op == CONS and len(node.args) == 2:
+        head, node = node.args
+        if head.op != LIT_INT:
+            return None
+        out.append(chr(int(head.args[0])))
+    return "".join(out) if node.op == NIL else None
+
+
+def _macro_boundary(args, syms):
+    """``(boundary "fs-read clock" body)`` -> ``(external-boundary 5 body)``.
+
+    The capability mask is a literal in the core -- one byte, no names
+    -- and the names are surface only.  A literal integer is accepted
+    as well, which is how `explain` prints it and `read` reads it back.
+    """
+    spec, body = args
+    if spec.op == LIT_INT:
+        return Node(op=EXTERNAL_BOUNDARY, args=[Lit(int(spec.args[0])), body])
+    text = _text_of_chain(spec)
+    if text is None:
+        raise ValueError(
+            'boundary: expects a string naming capabilities, e.g. '
+            '"fs-read clock", or a literal mask'
+        )
+    mask = 0
+    for name in text.replace(",", " ").split():
+        if name not in CAPABILITY_BITS:
+            raise ValueError(
+                f"boundary: unknown capability {name!r}; known: "
+                + ", ".join(CAPABILITY_BITS)
+            )
+        mask |= CAPABILITY_BITS[name]
+    return Node(op=EXTERNAL_BOUNDARY, args=[Lit(mask), body])
+
+
 MACROS = {
     "sub": (2, _macro_sub),
     "lt": (2, _macro_lt),
@@ -468,6 +507,7 @@ MACROS = {
     "cond": (None, _macro_cond),
     "try": (2, _macro_try),
     "list": (None, _macro_list),
+    "boundary": (2, _macro_boundary),
 }
 
 

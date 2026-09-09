@@ -206,6 +206,7 @@ ANOMALY_CODES: Dict[str, int] = {
     "unbound-ref": 6,
     "malformed": 7,
     "step-limit-exceeded": 8,   # not catchable; see the WHEN_ANOMALY handler
+    "capability-denied": 9,     # M19: an effect outside a boundary that declares it
 }
 
 ANOMALY_KINDS: Dict[int, str] = {v: k for k, v in ANOMALY_CODES.items()}

@@ -23,13 +23,13 @@ sequence (not by explicit annotations in text).
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 from core.tokens import (
     APPLY, END, IF_SURPRISE, LAMBDA, LET, LIT_INT, REF,
     RESULT_FOLLOWS_OPERANDS, RESULT_NOT_STATIC, SIGNATURES, TYPED_TOKENS,
-    WHEN_ANOMALY,
+    WHEN_ANOMALY, CAPABILITY_OF, EXTERNAL_BOUNDARY,
 )
 from core.types import INT, LITERAL_INT, Type
 
@@ -58,6 +58,13 @@ class Slot:
     role: Optional[str] = None
     frame: Optional[int] = None
     ref_type: Optional[Type] = None
+    # M19 -- the capabilities the innermost `external-boundary` declared
+    # for this position.  An effect operator is offered only where its
+    # bit is set, so a generated program cannot use the world without
+    # declaring it: Axiom 3 at the effect level, and the same rule the
+    # compiler's capability pass enforces on hand-written trees.  The
+    # role "caps" marks the boundary's own literal slot.
+    caps: int = 0
 
 
 @dataclass
@@ -153,6 +160,8 @@ class GenState:
                 names = self.valid_names()
                 if names:
                     return rng.choice(names)
+            if role == "caps":
+                return rng.randint(0, 7)          # any mix of fs-read/fs-write/clock
         return rng.randint(0, small_lit_range - 1)
 
     # ---- valid next ------------------------------------------------------
@@ -177,6 +186,8 @@ class GenState:
             out_type = sig.get("out_type")
             if out_type is None:
                 continue
+            if tok in CAPABILITY_OF and not slot.caps & CAPABILITY_OF[tok]:
+                continue          # the world is not declared here (M19)
             if tok in RESULT_NOT_STATIC:
                 # Either the result type follows the slot (if / let /
                 # apply / eval) or it follows a binding.  A binding the
@@ -258,6 +269,11 @@ class GenState:
         if not top.variadic_continuation:
             new_stack.pop()
 
+        if token == LIT_INT and top.role == "caps" and new_stack:
+            # The boundary's literal names what its body may do; the
+            # body slot is the next one down.
+            new_stack[-1] = replace(new_stack[-1], caps=int(payload or 0))
+
         base = len(new_stack)
 
         # Push the operator's children.  Variadic operators push a
@@ -275,13 +291,16 @@ class GenState:
                     expected_type=sig["variadic_type"],
                     variadic_continuation=True,
                     parent_op=token,
+                    caps=top.caps,
                 )
             )
             for t in reversed(sig.get("head_types", ())):
-                new_stack.append(Slot(expected_type=t, parent_op=token))
+                new_stack.append(Slot(expected_type=t, parent_op=token, caps=top.caps))
         else:
-            children = [Slot(expected_type=t, parent_op=token)
+            children = [Slot(expected_type=t, parent_op=token, caps=top.caps)
                         for t in _child_types(token, top.expected_type)]
+            if token == EXTERNAL_BOUNDARY:
+                children[0].role = "caps"
             if self.track_scope and token in (LET, LAMBDA):
                 scopes.append(Frame(name=None, type=None, base=base))
                 index = len(scopes) - 1
@@ -345,6 +364,8 @@ def _child_types(token: int, slot_type: Type) -> List[Type]:
         return [declared[0], declared[1], slot_type]
     if token == WHEN_ANOMALY:
         return [slot_type, declared[1]]
+    if token == EXTERNAL_BOUNDARY:
+        return [declared[0], slot_type]
     return declared
 
 
