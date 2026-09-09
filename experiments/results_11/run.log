@@ -1,0 +1,122 @@
+LOVA Experiment 11 -- LLM-token density (LOVA vs Python)
+  tokenizer: tiktoken cl100k_base (vocab=100277)
+  tasks:     60 from LOVABench v2
+
+============================================================================================
+  Per-task token counts
+============================================================================================
+  task    LOVA-text  stage2-est   stage3-B   Python-pure   Python-sympy
+  ---------------------------------------------------------------------
+  pb01            4           3          4           173             14
+  pb02            5           3          4            28             18
+  pb03            4           3          4            27             18
+  pb04            7           5          7            17             17
+  pb05            6           3          4           118             18
+  pb06            6           4          5           216             26
+  pb07            7           4          5           207             26
+  pb08            6           4          5            52             24
+  pb09           12           7          9           206             28
+  pb10           12           7          9            66             31
+  pb11            6           4          5           179             16
+  pb12            9           6          8            43             29
+  pb13           16          10         13            73             37
+  pb14            8           4          5           297             26
+  pb15           13           7          9           153             26
+  pb16           21          14         18            63             26
+  pb17            8           6          8           189             25
+  pb18           12           8         11            23             23
+  pb19           16          10         14           192             22
+  pb20           10           6          8           185             19
+  pb21            8           5          6           198             32
+  pb22           13           8         10           183             37
+  pb23            9           5          6            36             24
+  pb24           15           8         10           168             40
+  pb25            8           5          6           175             28
+  pb26           18          11         14           210             43
+  pb27           16           9         11           210             45
+  pb28           14           8         10            60             30
+  pb29           10           7          9           181             35
+  pb30           17           9         11           303             39
+  pb31            9           6          8           157             24
+  pb32            9           6          8            42             29
+  pb33           11           8         11            25             25
+  pb34           16          10         13           184             38
+  pb35           13           9         12            50             38
+  pb36           10           6          8           119             28
+  pb37           11           7          9           183             36
+  pb38           27          17         22            71             40
+  pb39           20          14         19            28             28
+  pb40           22          13         17           205             59
+  pb41           10           6          8           151             18
+  pb42           10           6          8            36             22
+  pb43           13           7          9           153             20
+  pb44           15           9         12            35             23
+  pb45           18          11         15           156             22
+  pb46           20          13         18            22             22
+  pb47           18          11         15            39             26
+  pb48           17           9         11            63             34
+  pb49           19          11         15           116             25
+  pb50           29          19         25           161             27
+  pb51           21          14         18           179             32
+  pb52           26          17         22           188             41
+  pb53           21          14         18            68             37
+  pb54           22          14         18           179             33
+  pb55           28          19         25            40             27
+  pb56           28          19         25            72             41
+  pb57           20          13         17            36             24
+  pb58           29          19         25            49             39
+  pb59           21          14         18           178             32
+  pb60           17          12         16           154             20
+  ---------------------------------------------------------------------
+  TOTAL         866         546        713          7370           1732
+
+============================================================================================
+  Per-category density ratios (Stage-1 LOVA text vs Python)
+============================================================================================
+
+  category          n    LOVA    Pure   Sympy    vs Pure   vs Sympy
+  --------------  ---  ------  ------  ------  ---------  ---------
+  v1-core          20     188    2507     469     13.3x      2.5x
+  deep-compose     10     128    1724     353     13.5x      2.8x
+  conserve         10     148    1064     345      7.2x      2.3x
+  surprise         10     169     932     239      5.5x      1.4x
+  let-heavy        10     233    1143     326      4.9x      1.4x
+
+============================================================================================
+  Density ratios (higher = LOVA uses fewer LLM tokens)
+============================================================================================
+
+  scenario                                      LOVA    Python     ratio
+  ----------------------------------------  --------  --------  --------
+  Stage 1 (text surface) vs pure-Python          866      7370     8.5x  (+88%)
+  Stage 1 (text surface) vs sympy-Python         866      1732     2.0x  (+50%)
+  Stage 2 estimate vs pure-Python                546      7370    13.5x  (+93%)
+  Stage 2 estimate vs sympy-Python               546      1732     3.2x  (+68%)
+  Stage 3 (integer bytes) vs pure-Python         713      7370    10.3x  (+90%)
+  Stage 3 (integer bytes) vs sympy-Python        713      1732     2.4x  (+59%)
+
+============================================================================================
+  Launch-copy headline numbers
+============================================================================================
+
+  Today (Stage 1, off-the-shelf tokenizer):
+    vs pure-Python:   8.5x fewer LLM tokens (88% savings)
+    vs sympy-Python:  2.0x fewer LLM tokens (+50% savings)
+
+  Stage 2 (fine-tuned vocabulary, 1 op = 1 LLM token):
+    vs sympy-Python:  3.2x fewer LLM tokens (68% savings)
+
+  Stage 3 (integer-sequence LOVA, bytes == LLM tokens):
+    vs sympy-Python:  2.4x fewer LLM tokens (59% savings)
+
+  Caveats:
+    - Python imports counted once per solution (per-file overhead).
+    - Stage 2 assumes a fine-tuned tokenizer; no model trained yet.
+    - Stage 3 assumes canonical integer form (no text surface).
+    - LOVABench v2 is number-theory-heavy; other domains would vary.
+    - Per-category breakdown above shows LOVA's edge is 2-3x larger
+      on deep-compose / conserve than on surprise / let-heavy.
+
+============================================================================================
+  Experiment 11 -- complete
+============================================================================================

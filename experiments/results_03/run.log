@@ -1,0 +1,100 @@
+LOVABench v1 -- 20 parametrised number-theory tasks
+Runtime: LOVA M1 / generator: LOVA M2
+
+============================================================================
+  Baseline R -- reference solutions (task's own template field)
+============================================================================
+  OK   pb01  partition_number              3/3
+  OK   pb02  divisor_count                 3/3
+  OK   pb03  divisor_sum                   3/3
+  OK   pb04  gcd_two                       3/3
+  OK   pb05  mobius                        3/3
+  OK   pb06  p_of_tau                      3/3
+  OK   pb07  tau_of_p                      3/3
+  OK   pb08  sigma_of_tau                  3/3
+  OK   pb09  sum_p_tau                     3/3
+  OK   pb10  gcd_of_sigmas                 3/3
+  OK   pb11  p_p                           3/3
+  OK   pb12  tau_of_gcd                    3/3
+  OK   pb13  sigma_gcd_plus_tau            3/3
+  OK   pb14  mobius_of_p                   3/3
+  OK   pb15  sigma_plus_mobius             3/3
+  OK   pb16  let_bound_tau_plus_sigma      3/3
+  OK   pb17  p_of_gcd                      3/3
+  OK   pb18  triple_gcd                    3/3
+  OK   pb19  seq_last_is_p                 3/3
+  OK   pb20  surprise_deviation            3/3
+
+  total: 60/60 test cases passed
+  tasks fully solved: 20/20
+
+============================================================================
+  Baseline U -- unguided constrained-random (100 samples / task)
+============================================================================
+  pb01  partition_number                0/100  (  0.0%)
+  pb02  divisor_count                   0/100  (  0.0%)
+  pb03  divisor_sum                     0/100  (  0.0%)
+  pb04  gcd_two                         0/100  (  0.0%)
+  pb05  mobius                          0/100  (  0.0%)
+  pb06  p_of_tau                        0/100  (  0.0%)
+  pb07  tau_of_p                        0/100  (  0.0%)
+  pb08  sigma_of_tau                    0/100  (  0.0%)
+  pb09  sum_p_tau                       0/100  (  0.0%)
+  pb10  gcd_of_sigmas                   0/100  (  0.0%)
+  pb11  p_p                             0/100  (  0.0%)
+  pb12  tau_of_gcd                      0/100  (  0.0%)
+  pb13  sigma_gcd_plus_tau              0/100  (  0.0%)
+  pb14  mobius_of_p                     1/100  (  1.0%)
+  pb15  sigma_plus_mobius               0/100  (  0.0%)
+  pb16  let_bound_tau_plus_sigma        0/100  (  0.0%)
+  pb17  p_of_gcd                        0/100  (  0.0%)
+  pb18  triple_gcd                      0/100  (  0.0%)
+  pb19  seq_last_is_p                   0/100  (  0.0%)
+  pb20  surprise_deviation              0/100  (  0.0%)
+
+  total: 1/2000 (0.05%)   wall: 1.4s
+
+============================================================================
+  Baseline C -- Claude-as-oracle (solutions written from prompts)
+============================================================================
+  OK   pb01  partition_number              3/3  (=ref)
+  OK   pb02  divisor_count                 3/3  (=ref)
+  OK   pb03  divisor_sum                   3/3  (=ref)
+  OK   pb04  gcd_two                       3/3  (=ref)
+  OK   pb05  mobius                        3/3  (=ref)
+  OK   pb06  p_of_tau                      3/3  (=ref)
+  OK   pb07  tau_of_p                      3/3  (=ref)
+  OK   pb08  sigma_of_tau                  3/3  (=ref)
+  OK   pb09  sum_p_tau                     3/3  (=ref)
+  OK   pb10  gcd_of_sigmas                 3/3  (=ref)
+  OK   pb11  p_p                           3/3  (=ref)
+  OK   pb12  tau_of_gcd                    3/3  (=ref)
+  OK   pb13  sigma_gcd_plus_tau            3/3  (!=ref)
+  OK   pb14  mobius_of_p                   3/3  (=ref)
+  OK   pb15  sigma_plus_mobius             3/3  (=ref)
+  OK   pb16  let_bound_tau_plus_sigma      3/3  (=ref)
+  OK   pb17  p_of_gcd                      3/3  (=ref)
+  OK   pb18  triple_gcd                    3/3  (!=ref)
+  OK   pb19  seq_last_is_p                 3/3  (=ref)
+  OK   pb20  surprise_deviation            3/3  (=ref)
+
+  total: 60/60 test cases passed
+  tasks fully solved: 20/20
+
+============================================================================
+  SUMMARY -- three baselines, 20 tasks
+============================================================================
+
+  fully-solved tasks (all tests pass):
+    Reference    : 20 / 20
+    Unguided rnd : ~  1 / 2000 sample-tasks (across 100 seeds each)
+    Claude       : 20 / 20
+
+  per-test-case pass rate:
+    Reference    : 60/60 (100.0%)
+    Claude       : 60/60 (100.0%)
+
+  verdict: STRONG WIN on capability-gap quantification
+    -> Claude can write LOVA from prompts at ~100% pass rate
+    -> Unguided random is essentially useless (~0% task coverage)
+    -> The gap is 100¡Á -- motivates fine-tuning smaller models

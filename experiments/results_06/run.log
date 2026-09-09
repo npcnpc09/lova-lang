@@ -1,0 +1,247 @@
+LOVA M5 -- Observability layer (L1 + L2 + L3)
+Making the substrate's internal state readable to AI.
+
+==============================================================================
+  L1 -- valid_next_with_stats (per-token metadata for AI sampling)
+==============================================================================
+
+  empty (fresh state)  (stack depth 1)
+    |valid| = 18
+      0x03 merge            arity=  2  d-depth=+1  term=False  effects={}
+      0x0E gcd              arity=  2  d-depth=+1  term=False  effects={}
+      0x10 budget           arity=  2  d-depth=+1  term=False  effects={budget-scope}
+      0x11 conserve         arity=  2  d-depth=+1  term=False  effects={conservation-check}
+      0x18 surprise         arity=  2  d-depth=+1  term=False  effects={write-surprise-trace}
+      0x2A if-surprise      arity=  3  d-depth=+2  term=False  effects={read-surprise}
+      0x2E let              arity=  3  d-depth=+2  term=False  effects={}
+      0x01 lit              arity=  0  d-depth=-1  term=True   effects={}
+      0x02 partition        arity=  1  d-depth=+0  term=True   effects={}
+      0x07 identity         arity=  1  d-depth=+0  term=True   effects={}
+      0x08 p                arity=  1  d-depth=+0  term=True   effects={}
+      0x09 tau              arity=  1  d-depth=+0  term=True   effects={}
+      0x0A sigma            arity=  1  d-depth=+0  term=True   effects={}
+      0x0F mobius           arity=  1  d-depth=+0  term=True   effects={}
+      0x17 violate          arity=  1  d-depth=+0  term=True   effects={synthetic-violation}
+      0x1D trace-surprise   arity=  1  d-depth=+0  term=True   effects={write-surprise-trace}
+      0x28 seq              arity=variadic  d-depth=+0  term=True   effects={}
+      0x2F ref              arity=  1  d-depth=+0  term=True   effects={}
+
+  after LET -> name slot  (stack depth 3)
+    |valid| =  1
+      0x01 lit              arity=  0  d-depth=-1  term=True   effects={}
+
+  after SEQ -> variadic  (stack depth 1)
+    |valid| = 19
+      0x03 merge            arity=  2  d-depth=+1  term=False  effects={}
+      0x0E gcd              arity=  2  d-depth=+1  term=False  effects={}
+      0x10 budget           arity=  2  d-depth=+1  term=False  effects={budget-scope}
+      0x11 conserve         arity=  2  d-depth=+1  term=False  effects={conservation-check}
+      0x18 surprise         arity=  2  d-depth=+1  term=False  effects={write-surprise-trace}
+      0x2A if-surprise      arity=  3  d-depth=+2  term=False  effects={read-surprise}
+      0x2E let              arity=  3  d-depth=+2  term=False  effects={}
+      0x00 end              arity=  0  d-depth=-1  term=True   effects={}
+      0x01 lit              arity=  0  d-depth=-1  term=True   effects={}
+      0x02 partition        arity=  1  d-depth=+0  term=True   effects={}
+      0x07 identity         arity=  1  d-depth=+0  term=True   effects={}
+      0x08 p                arity=  1  d-depth=+0  term=True   effects={}
+      0x09 tau              arity=  1  d-depth=+0  term=True   effects={}
+      0x0A sigma            arity=  1  d-depth=+0  term=True   effects={}
+      0x0F mobius           arity=  1  d-depth=+0  term=True   effects={}
+      0x17 violate          arity=  1  d-depth=+0  term=True   effects={synthetic-violation}
+      0x1D trace-surprise   arity=  1  d-depth=+0  term=True   effects={write-surprise-trace}
+      0x28 seq              arity=variadic  d-depth=+0  term=True   effects={}
+      0x2F ref              arity=  1  d-depth=+0  term=True   effects={}
+
+  after MERGE, LIT -> 2nd arg slot  (stack depth 1)
+    |valid| = 18
+      0x03 merge            arity=  2  d-depth=+1  term=False  effects={}
+      0x0E gcd              arity=  2  d-depth=+1  term=False  effects={}
+      0x10 budget           arity=  2  d-depth=+1  term=False  effects={budget-scope}
+      0x11 conserve         arity=  2  d-depth=+1  term=False  effects={conservation-check}
+      0x18 surprise         arity=  2  d-depth=+1  term=False  effects={write-surprise-trace}
+      0x2A if-surprise      arity=  3  d-depth=+2  term=False  effects={read-surprise}
+      0x2E let              arity=  3  d-depth=+2  term=False  effects={}
+      0x01 lit              arity=  0  d-depth=-1  term=True   effects={}
+      0x02 partition        arity=  1  d-depth=+0  term=True   effects={}
+      0x07 identity         arity=  1  d-depth=+0  term=True   effects={}
+      0x08 p                arity=  1  d-depth=+0  term=True   effects={}
+      0x09 tau              arity=  1  d-depth=+0  term=True   effects={}
+      0x0A sigma            arity=  1  d-depth=+0  term=True   effects={}
+      0x0F mobius           arity=  1  d-depth=+0  term=True   effects={}
+      0x17 violate          arity=  1  d-depth=+0  term=True   effects={synthetic-violation}
+      0x1D trace-surprise   arity=  1  d-depth=+0  term=True   effects={write-surprise-trace}
+      0x28 seq              arity=variadic  d-depth=+0  term=True   effects={}
+      0x2F ref              arity=  1  d-depth=+0  term=True   effects={}
+
+  interpretation:
+    * fresh/open slot:  18 choices, mix of expanding (depth+1)
+      and one terminating (lit).  AI heuristic: near depth-
+      budget, prefer terminating.
+    * LET name slot:    1 choice only (lit).  Sharp constraint.
+    * SEQ variadic:    19 choices incl. END (the terminator).
+      Effects visible per-token: surprise / conserve / budget
+      are flagged for AI's static reasoning.
+
+==============================================================================
+  L2 -- enriched anomaly reports (machine-actionable)
+==============================================================================
+
+  Scenario A: budget exceeded on a 5-node body under budget=3
+    program: (budget Lit(3) (merge (p Lit(3)) (tau Lit(12))))
+    trap raised: BUDGET trap: spent 4 > limit 3 (overrun 1)
+    anomaly:
+    kind:             'budget-exceeded'
+    detail:           {'limit': 3, 'spent': 4, 'overrun': 1}
+    position_path:    (16, 3, 9)  (opcode chain)
+    offending_op:     0x09 (tau)
+    valid_alts:       (8, 10, 15)  (['p', 'sigma', 'mobius'])
+    repair_hint:      reduce body size (fewer operators) or raise budget to >= 4
+
+  Scenario B: conservation violated (violate bumps value by +1)
+    program: (conserve Lit(77) (violate Lit(77)))
+    trap raised: Delta trap: conserve/equality violated -- entry 77 vs exit 78
+    anomaly:
+    kind:             'conservation-violated'
+    detail:           {'invariant': 'conserve/equality', 'entry': 77, 'exit': 78, 'deviation': 1}
+    position_path:    (17,)  (opcode chain)
+    offending_op:     0x11 (conserve)
+    valid_alts:       (none)
+    repair_hint:      replace operator `conserve` with one of [] to keep the body in the conserve invariant
+
+  Demo -- AI repair flow using ``valid_alternatives``:
+    AI reads scenario A's anomaly, sees offending_op=tau.
+    suggest_alternatives(tau) = (8, 10, 15) (['p', 'sigma', 'mobius'])
+    AI picks 'p' (byte 0x08) and retries with (budget 3 (merge (p 3) (p 12))).
+    New program retains the same structure, same cost -- still
+    fails budget (same count of nodes), but AI's next step is to
+    either raise budget (repair_hint says >= 4) or shrink body.
+
+==============================================================================
+  L3 -- static_analyze (pre-execution reasoning about programs)
+==============================================================================
+
+  pure integer computation
+    program: (merge (p 12) (tau 100))
+  nodes:           5
+  max depth:       3
+  effects:         {}
+  budget bound:    <= 5 units
+  deterministic:   True
+  uses conserve:   False
+  uses surprise:   False
+  uses lineage:    False
+
+  uses conservation budget
+    program: (budget 100 (merge (p 12) (sigma 12)))
+  nodes:           7
+  max depth:       4
+  effects:         {budget-scope}
+  budget bound:    <= 7 units
+  deterministic:   True
+  uses conserve:   True
+  uses surprise:   False
+  uses lineage:    False
+
+  uses surprise primitive
+    program: (if-surprise (surprise 10 (p 12)) 999 0)
+  nodes:           7
+  max depth:       4
+  effects:         {read-surprise, write-surprise-trace}
+  budget bound:    <= 7 units
+  deterministic:   True
+  uses conserve:   False
+  uses surprise:   True
+  uses lineage:    False
+
+  complex with let/ref
+    program: (let 0 12 (merge (p (ref 0)) (sigma (ref 0))))
+  nodes:           10
+  max depth:       5
+  effects:         {}
+  budget bound:    <= 10 units
+  deterministic:   True
+  uses conserve:   False
+  uses surprise:   False
+  uses lineage:    False
+
+  mixes conservation + surprise
+    program: (conserve 77 (surprise 77 (p 12)))
+  nodes:           6
+  max depth:       4
+  effects:         {conservation-check, write-surprise-trace}
+  budget bound:    <= 6 units
+  deterministic:   True
+  uses conserve:   True
+  uses surprise:   True
+  uses lineage:    False
+
+  interpretation:
+    AI can ask 'what will this program do' without running it.
+    The 'effects' set tells AI whether the program touches
+    the surprise trace, a conservation scope, or is pure.
+    'uses_surprise=True' is a flag that says 'this program
+    interacts with the debugger primitive'.  AI can gate on
+    that before executing in a sensitive context.
+
+==============================================================================
+  Composite -- AI-guided sampling using L1 stats
+==============================================================================
+
+  Simulated AI generation with depth-aware termination bias:
+    steps: 38
+    sample path (depth / chosen / term?):
+      step  0  depth=1  TERM  p
+      step  1  depth=1        surprise
+      step  2  depth=2  TERM  sigma
+      step  3  depth=2        gcd
+      step  4  depth=3  TERM  partition
+      step  5  depth=3  TERM  trace-surprise
+      step  6  depth=3  TERM  partition
+      step  7  depth=3  TERM  sigma
+      step  8  depth=3  TERM  seq
+      step  9  depth=3  TERM  end
+      step 10  depth=2  TERM  seq
+      step 11  depth=2        let
+      step 12  depth=5  TERM  lit
+      step 13  depth=4  TERM  mobius
+      step 14  depth=4  TERM  mobius
+      step 15  depth=4  TERM  partition
+      step 16  depth=4  TERM  p
+      step 17  depth=4  TERM  partition
+      step 18  depth=4  TERM  trace-surprise
+      step 19  depth=4  TERM  mobius
+      step 20  depth=4  TERM  lit
+      step 21  depth=3  TERM  partition
+      step 22  depth=3  TERM  p
+      step 23  depth=3  TERM  ref
+      step 24  depth=3  TERM  lit
+      step 25  depth=2  TERM  ref
+      step 26  depth=3  TERM  lit
+      step 27  depth=2  TERM  end
+      step 28  depth=1        gcd
+      step 29  depth=2  TERM  ref
+      step 30  depth=2  TERM  lit
+      step 31  depth=1  TERM  mobius
+      step 32  depth=1        surprise
+      step 33  depth=2  TERM  ref
+      step 34  depth=2  TERM  lit
+      step 35  depth=1  TERM  identity
+      step 36  depth=1  TERM  ref
+      step 37  depth=1  TERM  lit
+
+    program: (p (surprise (sigma (gcd (partition (trace-surprise (partition (sigma (seq))))) (seq (let 2 (mobius (mobius (partition (p (partition (trace-surprise (mobius 18))))))) (partition (p (ref 18)))) (ref 1)))) (gcd (ref 9) (mobius (surprise (ref 18) (identity (ref 3)))))))
+    bytes:   52
+    eval:    ValueError: unbound ref: 18
+
+==============================================================================
+  Experiment 06 -- complete
+==============================================================================
+  L1 ship: valid_next_with_stats returns TokenChoice objects
+    with arity / depth_delta / terminating / effects / cost.
+  L2 ship: trap anomalies carry kind / detail / position_path /
+    offending_op / valid_alternatives / repair_hint.
+  L3 ship: static_analyze returns effects, budget bound,
+    determinism, uses-of (conservation / surprise / lineage).
+
+  Next: Exp 07 -- Claude-vs-Claude benchmark using these APIs
+    as feedback signal.  Measures pass@1 delta with/without L1-L3.

@@ -1,0 +1,18 @@
+;;; coprime.lova  --  are two integers coprime?
+;;;
+;;; Two integers are coprime iff gcd(a, b) = 1.  Simplest possible
+;;; LOVA program for this: invert the gcd check via surprise.
+;;;
+;;; Returns:
+;;;   1  if a and b are coprime (gcd = 1)
+;;;   0  otherwise
+;;;
+;;; Observation: no `merge (ref 0) (ref 0)` trick needed here — we can
+;;; just compute gcd and compare to literal 1 via surprise.  Shorter,
+;;; shows that surprise is a general equality primitive in this
+;;; substrate, not only a debug mechanism.
+
+(if-surprise
+  (surprise 1 (gcd {a} {b}))     ; surprise = |1 - gcd(a,b)|
+  0                              ; non-zero surprise -> not coprime
+  1)                             ; zero surprise     -> coprime

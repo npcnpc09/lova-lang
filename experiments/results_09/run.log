@@ -1,0 +1,59 @@
+LOVA M6 Day 2 -- body-scanning DeltaTrap (Q20)
+
+==============================================================================
+  Demo 1 -- canonical жд-trap shapes: old outer-op vs new body_offender
+==============================================================================
+
+  program                                      dev  offender                          correction
+  ------------------------------------------  ----  --------------------------------  ----------
+  (conserve 77 (violate 77))                    +1  violate @ path=() d=0                     -1
+  (conserve 10 (merge 7 4))                     +1  merge @ path=() d=0                       -1
+  (conserve 10 (merge (violate 3) 4))           -2  violate @ path=(0,) d=1                   +2
+  (conserve 5 (violate (violate 2)))            -1  violate @ path=(0,) d=1                   +1
+  (conserve 10 7)                               -3  lit @ path=() d=0                         +3
+
+  Old signal in all five: offending_op == CONSERVE (the trap-raising
+  frame -- uniform across every case, hence uninformative).
+  New signal: specific sub-expression + correction value.
+
+==============================================================================
+  Demo 2 -- fuzz precision: 50 random single-VIOLATE programs
+==============================================================================
+
+  seed=42, N=50
+  scanner correctly pinpoints VIOLATE:  50/50  (100%)
+
+==============================================================================
+  Demo 3 -- closed-loop repair using body_offender.needed
+==============================================================================
+
+  Loop: eval -> DeltaTrap -> anomaly -> apply suggested patch -> eval -> pass
+
+  program: (conserve 77 (violate 77))
+    patched offender `violate` @ path (): 78 -> 77
+    patched program evaluates to 77 (conservation holds)
+
+  program: (conserve 10 (merge 7 4))
+    patched offender `merge` @ path (): 11 -> 10
+    patched program evaluates to 10 (conservation holds)
+
+  program: (conserve 10 (merge (violate 3) 4))
+    patched offender `violate` @ path (0,): 4 -> 6
+    patched program evaluates to 10 (conservation holds)
+
+  program: (conserve 5 (violate (violate 2)))
+    patched offender `violate` @ path (0,): 3 -> 4
+    patched program evaluates to 5 (conservation holds)
+
+  program: (conserve 10 7)
+    patched offender `lit` @ path (): 7 -> 10
+    patched program evaluates to 10 (conservation holds)
+
+==============================================================================
+  Experiment 09 -- complete
+==============================================================================
+  жд-traps now ship with a body_offender field pointing at the
+  deepest sub-expression whose single-node replacement closes
+  the deviation.  The outer CONSERVE frame is still recorded in
+  offending_op (for back-compat); body_offender is the signal
+  an AI repair loop actually uses.

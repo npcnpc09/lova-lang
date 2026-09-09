@@ -1,0 +1,75 @@
+LOVA M6 Day 1 -- compiler passes (scope-check + fold)
+
+==============================================================================
+  Demo 1 -- compile-time unbound-ref detection
+==============================================================================
+  program: (merge (p 12) (ref 99))
+
+  Before M6 (runtime):
+    ValueError at runtime: unbound ref: 99
+
+  After M6 (compile-time):
+    CompileError caught BEFORE execution.
+    anomaly:
+      kind                    'unbound-ref'
+      stage                   'compile'
+      detail                  {'name_id': 99, 'bound_names': []}
+      position_path           (3, 1, 47)
+      offending_op            47
+      offending_op_name       'ref'
+      valid_alternatives      ()
+      repair_hint             'REF 99 is not in scope.  Either wrap in a LET that binds 99, or use a bound name from (none in scope).'
+
+==============================================================================
+  Demo 2 -- constant folding on LOVABench v1 (20 tasks)
+==============================================================================
+
+   task    original   compiled   orig B   fold B  saved
+   pb01           2          1        4        3    25%
+   pb02           2          1        4        3    25%
+   pb03           2          1        4        3    25%
+   pb04           3          1        7        3    57%
+   pb05           2          1        4        3    25%
+   pb06           3          1        5        3    40%
+   pb07           3          1        5        3    40%
+   pb08           3          1        5        3    40%
+   pb09           5          1        9        3    67%
+   pb10           5          1        9        3    67%
+   pb11           3          1        5        3    40%
+   pb12           4          1        8        3    62%
+   pb13           7          1       13        3    77%
+   pb14           3          1        5        3    40%
+   pb15           5          1        9        3    67%
+   pb16          10         10       18       18     0%
+   pb17           4          1        8        3    62%
+   pb18           5          1       11        3    73%
+   pb19           7          4       14       11    21%
+   pb20           4          3        8        7    12%
+
+  total nodes:   82 -> 34  (compression 58.5%)
+  total bytes:   155 -> 87  (saved 43.9%)
+
+==============================================================================
+  Demo 3 -- compile errors and runtime traps share L2 anomaly shape
+==============================================================================
+
+  L2 anomaly fields expected: ('kind', 'detail', 'position_path', 'offending_op', 'valid_alternatives', 'repair_hint')
+
+  CompileError keys:  ['detail', 'kind', 'offending_op', 'offending_op_name', 'position_path', 'repair_hint', 'stage', 'valid_alternatives']
+  BudgetTrap keys:    ['_enriched', 'detail', 'kind', 'offending_op', 'offending_op_name', 'position_path', 'repair_hint', 'valid_alternatives']
+  DeltaTrap keys:     ['_enriched', 'detail', 'kind', 'offending_op', 'offending_op_name', 'position_path', 'repair_hint', 'valid_alternatives']
+
+  shared by all 3:    ['detail', 'kind', 'offending_op', 'offending_op_name', 'position_path', 'repair_hint', 'valid_alternatives']
+  OK -- all L2 spec fields present in compile + runtime errors.
+  AI handler can switch on `stage` (compile/runtime) and
+  `kind`; everything else is uniform.
+
+==============================================================================
+  Experiment 08 -- complete
+==============================================================================
+  Compile pipeline catches scope errors before execution,
+  folds pure subtrees to literals, shares L2 error shape with
+  runtime traps.  Error surface after M6:
+    compile:  { unbound-ref, type-mismatch }
+    runtime:  { budget-exceeded, conservation-violated, semantic }
+  All error classes are machine-actionable (anomaly schema).

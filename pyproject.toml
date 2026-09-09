@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lova-lang"
+version = "0.1.0"
+description = "LOVA — an AI-native integer-sequence programming language"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+keywords = ["programming-language", "ai-native", "code-generation", "type-directed-generation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Interpreters",
+]
+# The core language (tokens / types / runtime / conservation / lineage /
+# populations / observability / compiler / telemetry / surface) is
+# stdlib-only by design — Axiom 8's "small core" applies to dependencies too.
+dependencies = []
+
+[project.optional-dependencies]
+# tiktoken is used only by experiments/experiment_11_token_density.py to
+# measure LLM-token counts against a GPT-4-class tokenizer (cl100k_base).
+experiments = ["tiktoken>=0.5"]
+
+[tool.setuptools]
+packages = ["core", "corpus"]

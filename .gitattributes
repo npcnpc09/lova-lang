@@ -1,0 +1,4 @@
+# Normalise to LF in the repo; check out native on Windows.
+* text=auto eol=lf
+*.lova text eol=lf
+*.jsonl text eol=lf

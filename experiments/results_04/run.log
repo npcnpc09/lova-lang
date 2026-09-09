@@ -1,0 +1,65 @@
+LOVA M4 Day 1-2 -- Lineage intrinsic (Axiom 5)
+
+
+============================================================================
+  Test 1 -- lineage API (register, clone, mutate, query)
+============================================================================
+  a=1  b=2  c=3  d=4
+  c's ancestor chain: [3, 2, 1]
+  tree:
+    [1 gen=0 root=1 root]  # a
+      [2<-1 gen=1 root=1 mutate]  # strength=0.4 [op:tau->sigma]
+        [3<-2 gen=2 root=1 mutate]  # strength=0.4 [lit:3->6]
+      [4<-1 gen=1 root=1 clone]
+  OK -- lineage API works (register/clone/mutate/ancestors)
+
+============================================================================
+  Test 2 -- Wright-Fisher coalescence (seed=7, pop=5, gens=10)
+============================================================================
+
+  generation | root survivors (descendant count per initial root)
+    gen      R1    R2    R3    R4    R5    total alive
+      0       1     1     1     1     1    (5/5 alive)
+      1       2     1     1     1     0    (4/5 alive)
+      2       2     0     2     1     0    (3/5 alive)
+      3       3     0     2     0     0    (2/5 alive)
+      4       2     0     3     0     0    (2/5 alive)
+      5       3     0     2     0     0    (2/5 alive)
+      6       1     0     4     0     0    (2/5 alive)
+      7       1     0     4     0     0    (2/5 alive)
+      8       1     0     4     0     0    (2/5 alive)
+      9       1     0     4     0     0    (2/5 alive)
+     10       0     0     5     0     0    (1/5 alive)
+
+  after 10 generations: 1/5 root lines survive
+  dominant root: uid=3 with 5/5 of population
+
+  final population programs:
+    slot 0: gen=10  root=3  (sigma (tau 24))
+    slot 1: gen=10  root=3  (sigma (tau 24))
+    slot 2: gen=10  root=3  (mobius (sigma 24))
+    slot 3: gen=10  root=3  (tau (tau 24))
+    slot 4: gen=10  root=3  (p (tau 24))
+
+  coalescence stats: {'n_roots': 5, 'n_records': 55, 'max_generation': 10, 'n_leaves': 17}
+  OK -- Wright-Fisher coalescence observed and lineage queryable
+
+============================================================================
+  Test 3 -- mutation diversity (not stuck, not random)
+============================================================================
+  100 mutations of (merge (p 5) (tau 12))
+  distinct variants: 49
+  top 5 by frequency:
+     29x  (merge (p 5) (tau 12))
+      6x  (gcd (p 5) (tau 12))
+      4x  (merge (p 5) (p 12))
+      3x  (gcd (tau 5) (tau 12))
+      3x  (merge (mobius 5) (tau 12))
+  OK -- mutation produces structured diversity
+
+============================================================================
+  Experiment 04 -- ALL TESTS PASSED
+============================================================================
+  Axiom 5 operational: lineage is queryable, mutation
+  produces traceable variants, Wright-Fisher coalescence
+  observed at small-scale pop.

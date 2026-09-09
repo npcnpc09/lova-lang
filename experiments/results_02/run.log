@@ -1,0 +1,63 @@
+
+========================================================================
+  Test 1 -- concrete prefix walk (valid_next sharpness)
+========================================================================
+  empty (start)                    |valid| = 18  -> lit, partition, merge, identity, p, tau, sigma, gcd, ... (+10 more)
+  GCD . (expecting Int)            |valid| = 18  -> lit, partition, merge, identity, p, tau, sigma, gcd, ... (+10 more)
+  GCD LIT . (expecting Int)        |valid| = 18  -> lit, partition, merge, identity, p, tau, sigma, gcd, ... (+10 more)
+  LET . (name slot demands LiteralInt) |valid| =  1  -> lit
+  LET LIT LIT . (body slot, any Int) |valid| = 18  -> lit, partition, merge, identity, p, tau, sigma, gcd, ... (+10 more)
+  SEQ . (variadic; END is valid here) |valid| = 19  -> end, lit, partition, merge, identity, p, tau, sigma, ... (+11 more)
+  SEQ LIT . (still variadic)       |valid| = 19  -> end, lit, partition, merge, identity, p, tau, sigma, ... (+11 more)
+
+  findings:
+    * fresh/top-level slot admits 18 tokens (all Int producers)
+    * LET's name slot admits ONLY LIT_INT (sharp constraint)
+    * variadic slots include END as a terminator option
+
+========================================================================
+  Test 2 -- constrained_random: 1000 samples, expect 100% valid
+========================================================================
+  validated: 1000/1000  (100.0%)
+  avg bytes: 17.1  (generation time: 610ms for 1000 programs)
+
+  sample output (first 5 seeds):
+    seed 0: 18 1d 02 0f 2e 01 01 0c 10 01 01 0b 01 0 -> (surprise (trace-surprise (partition (mobius (let 12 (budget 11 16) 9)))) 3)
+    seed 1: 08 03 0f 07 2a 28 28 01 01 06 00 01 01 0 -> (p (merge (mobius (identity (if-surprise (seq (seq 6) 0 13) 8 18))) 10))
+    seed 2: 02 03 03 17 09 10 01 01 13 01 01 13 01 0 -> (partition (merge (merge (violate (tau (budget 19 19))) 18) 13))
+    seed 3: 0e 2f 01 01 0b 2a 03 01 01 0f 0f 01 01 0 -> (gcd (ref 11) (if-surprise (merge 15 (mobius 6)) 17 12))
+    seed 4: 0e 10 01 01 0c 2a 08 03 03 01 01 0c 01 0 -> (gcd (budget 12 (if-surprise (p (merge (merge 12 1) 16)) 8 3)) 6)
+
+========================================================================
+  Test 3 -- unconstrained_random: 1000 samples, expect << 100%
+========================================================================
+  validated: 0/1000  (0.00%)
+  (generation time: 27ms for 1000 programs)
+
+  interpretation:
+    * unconstrained generation is picking tokens without regard
+      for the state machine -- arity / type / END-placement all
+      violate frequently.  This is roughly what an unguided LLM
+      token sampler produces if it's never seen LOVA training data.
+
+========================================================================
+  Test 4 -- the AI-friendly property, quantified
+========================================================================
+  constrained validate rate:    100.00%
+  unconstrained validate rate:    0.00%
+  delta (absolute):             +100.00 pp
+  ratio (constrained / uncon.): infx
+
+  claim (Axiom 3):
+    A type-directed generator is, by construction, 100% valid.
+    An unguided generator over the same token set is << 100%.
+    The gap is load-bearing: this is the property that makes
+    LOVA AI-friendly -- LLM samplers constrained to valid_next
+    cannot emit ill-formed programs at all.
+
+========================================================================
+  Experiment 02 -- RESULT
+========================================================================
+  WIN.  Axiom 3 is operational: type-directed generation
+  produces 100% well-typed programs; unguided generation
+  produces only 0.0%.  Gap is load-bearing.

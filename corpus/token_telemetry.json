@@ -1,0 +1,1188 @@
+{
+  "version": 1,
+  "total_programs": 320,
+  "per_token": {
+    "0x01": {
+      "hits": 659,
+      "misses": 356
+    },
+    "0x02": {
+      "hits": 48,
+      "misses": 18
+    },
+    "0x03": {
+      "hits": 58,
+      "misses": 22
+    },
+    "0x07": {
+      "hits": 36,
+      "misses": 15
+    },
+    "0x08": {
+      "hits": 45,
+      "misses": 21
+    },
+    "0x09": {
+      "hits": 52,
+      "misses": 17
+    },
+    "0x0A": {
+      "hits": 63,
+      "misses": 26
+    },
+    "0x0E": {
+      "hits": 47,
+      "misses": 23
+    },
+    "0x0F": {
+      "hits": 47,
+      "misses": 18
+    },
+    "0x10": {
+      "hits": 50,
+      "misses": 18
+    },
+    "0x11": {
+      "hits": 2,
+      "misses": 58
+    },
+    "0x17": {
+      "hits": 43,
+      "misses": 23
+    },
+    "0x18": {
+      "hits": 47,
+      "misses": 17
+    },
+    "0x1D": {
+      "hits": 46,
+      "misses": 16
+    },
+    "0x28": {
+      "hits": 42,
+      "misses": 15
+    },
+    "0x2A": {
+      "hits": 63,
+      "misses": 23
+    },
+    "0x2E": {
+      "hits": 49,
+      "misses": 21
+    },
+    "0x2F": {
+      "hits": 2,
+      "misses": 63
+    }
+  },
+  "per_context": {
+    "0x01|0x02": {
+      "hits": 9,
+      "misses": 3
+    },
+    "0x01|0x03": {
+      "hits": 62,
+      "misses": 26
+    },
+    "0x01|0x07": {
+      "hits": 10,
+      "misses": 1
+    },
+    "0x01|0x08": {
+      "hits": 16,
+      "misses": 5
+    },
+    "0x01|0x09": {
+      "hits": 15,
+      "misses": 4
+    },
+    "0x01|0x0A": {
+      "hits": 17,
+      "misses": 9
+    },
+    "0x01|0x0E": {
+      "hits": 58,
+      "misses": 26
+    },
+    "0x01|0x0F": {
+      "hits": 14,
+      "misses": 3
+    },
+    "0x01|0x10": {
+      "hits": 77,
+      "misses": 24
+    },
+    "0x01|0x11": {
+      "hits": 2,
+      "misses": 64
+    },
+    "0x01|0x17": {
+      "hits": 9,
+      "misses": 4
+    },
+    "0x01|0x18": {
+      "hits": 61,
+      "misses": 19
+    },
+    "0x01|0x1D": {
+      "hits": 9,
+      "misses": 2
+    },
+    "0x01|0x28": {
+      "hits": 35,
+      "misses": 14
+    },
+    "0x01|0x2A": {
+      "hits": 138,
+      "misses": 44
+    },
+    "0x01|0x2E": {
+      "hits": 112,
+      "misses": 45
+    },
+    "0x01|0x2F": {
+      "hits": 2,
+      "misses": 63
+    },
+    "0x02|0x02": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x02|0x03": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x02|0x07": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x02|0x09": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x02|0x0A": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x02|0x0E": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x02|0x0F": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x02|0x10": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x02|0x11": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x02|0x17": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x02|0x18": {
+      "hits": 5,
+      "misses": 1
+    },
+    "0x02|0x1D": {
+      "hits": 4,
+      "misses": 1
+    },
+    "0x02|0x28": {
+      "hits": 4,
+      "misses": 2
+    },
+    "0x02|0x2A": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x02|0x2E": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x03|0x02": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x03|0x03": {
+      "hits": 4,
+      "misses": 1
+    },
+    "0x03|0x07": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x03|0x08": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x03|0x09": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x03|0x0A": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x03|0x0E": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x03|0x0F": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x03|0x10": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x03|0x11": {
+      "hits": 0,
+      "misses": 5
+    },
+    "0x03|0x17": {
+      "hits": 5,
+      "misses": 3
+    },
+    "0x03|0x18": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x03|0x1D": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x03|0x28": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x03|0x2A": {
+      "hits": 2,
+      "misses": 2
+    },
+    "0x03|0x2E": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x07|0x02": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x07|0x03": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x07|0x09": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x07|0x0A": {
+      "hits": 2,
+      "misses": 2
+    },
+    "0x07|0x0E": {
+      "hits": 1,
+      "misses": 2
+    },
+    "0x07|0x0F": {
+      "hits": 5,
+      "misses": 0
+    },
+    "0x07|0x11": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x07|0x17": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x07|0x1D": {
+      "hits": 2,
+      "misses": 2
+    },
+    "0x07|0x2A": {
+      "hits": 3,
+      "misses": 2
+    },
+    "0x07|0x2E": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x08|0x02": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x08|0x03": {
+      "hits": 3,
+      "misses": 2
+    },
+    "0x08|0x07": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x08|0x08": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x08|0x09": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x08|0x0A": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x08|0x0F": {
+      "hits": 2,
+      "misses": 3
+    },
+    "0x08|0x10": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x08|0x11": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x08|0x17": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x08|0x18": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x08|0x1D": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x08|0x28": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x08|0x2A": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x08|0x2E": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x09|0x02": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x09|0x03": {
+      "hits": 5,
+      "misses": 4
+    },
+    "0x09|0x07": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x09|0x08": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x09|0x09": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x09|0x0A": {
+      "hits": 5,
+      "misses": 0
+    },
+    "0x09|0x0E": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x09|0x0F": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x09|0x10": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x09|0x11": {
+      "hits": 1,
+      "misses": 3
+    },
+    "0x09|0x17": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x09|0x18": {
+      "hits": 4,
+      "misses": 1
+    },
+    "0x09|0x1D": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x09|0x28": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x09|0x2A": {
+      "hits": 4,
+      "misses": 1
+    },
+    "0x09|0x2E": {
+      "hits": 5,
+      "misses": 1
+    },
+    "0x0A|0x02": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x0A|0x03": {
+      "hits": 7,
+      "misses": 3
+    },
+    "0x0A|0x07": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x0A|0x08": {
+      "hits": 2,
+      "misses": 2
+    },
+    "0x0A|0x09": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x0A|0x0A": {
+      "hits": 5,
+      "misses": 1
+    },
+    "0x0A|0x0E": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x0A|0x0F": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x0A|0x10": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x0A|0x11": {
+      "hits": 0,
+      "misses": 6
+    },
+    "0x0A|0x17": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x0A|0x18": {
+      "hits": 2,
+      "misses": 3
+    },
+    "0x0A|0x1D": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x0A|0x28": {
+      "hits": 5,
+      "misses": 0
+    },
+    "0x0A|0x2A": {
+      "hits": 6,
+      "misses": 1
+    },
+    "0x0A|0x2E": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x0E|0x02": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x0E|0x03": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x0E|0x07": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x0E|0x08": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x0E|0x09": {
+      "hits": 5,
+      "misses": 2
+    },
+    "0x0E|0x0A": {
+      "hits": 2,
+      "misses": 3
+    },
+    "0x0E|0x0E": {
+      "hits": 3,
+      "misses": 3
+    },
+    "0x0E|0x0F": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x0E|0x10": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x0E|0x11": {
+      "hits": 0,
+      "misses": 4
+    },
+    "0x0E|0x17": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x0E|0x18": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x0E|0x1D": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x0E|0x28": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x0E|0x2A": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x0E|0x2E": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x0F|0x02": {
+      "hits": 5,
+      "misses": 0
+    },
+    "0x0F|0x03": {
+      "hits": 7,
+      "misses": 0
+    },
+    "0x0F|0x07": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x0F|0x08": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x0F|0x0A": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x0F|0x0E": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x0F|0x0F": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x0F|0x10": {
+      "hits": 1,
+      "misses": 2
+    },
+    "0x0F|0x11": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x0F|0x17": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x0F|0x18": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x0F|0x1D": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x0F|0x28": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x0F|0x2A": {
+      "hits": 6,
+      "misses": 2
+    },
+    "0x0F|0x2E": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x10|0x02": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x10|0x03": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x10|0x07": {
+      "hits": 3,
+      "misses": 3
+    },
+    "0x10|0x08": {
+      "hits": 3,
+      "misses": 2
+    },
+    "0x10|0x09": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x10|0x0A": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x10|0x0E": {
+      "hits": 5,
+      "misses": 1
+    },
+    "0x10|0x0F": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x10|0x10": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x10|0x17": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x10|0x18": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x10|0x1D": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x10|0x28": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x10|0x2A": {
+      "hits": 7,
+      "misses": 1
+    },
+    "0x10|0x2E": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x11|0x02": {
+      "hits": 1,
+      "misses": 5
+    },
+    "0x11|0x03": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x11|0x07": {
+      "hits": 1,
+      "misses": 3
+    },
+    "0x11|0x08": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x11|0x09": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x11|0x0A": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x11|0x0E": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x11|0x0F": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x11|0x11": {
+      "hits": 0,
+      "misses": 5
+    },
+    "0x11|0x17": {
+      "hits": 0,
+      "misses": 4
+    },
+    "0x11|0x18": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x11|0x1D": {
+      "hits": 0,
+      "misses": 5
+    },
+    "0x11|0x28": {
+      "hits": 0,
+      "misses": 4
+    },
+    "0x11|0x2A": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x11|0x2E": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x17|0x02": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x17|0x03": {
+      "hits": 4,
+      "misses": 1
+    },
+    "0x17|0x07": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x17|0x08": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x17|0x09": {
+      "hits": 3,
+      "misses": 2
+    },
+    "0x17|0x0A": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x17|0x0E": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x17|0x0F": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x17|0x10": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x17|0x11": {
+      "hits": 0,
+      "misses": 4
+    },
+    "0x17|0x18": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x17|0x1D": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x17|0x28": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x17|0x2A": {
+      "hits": 2,
+      "misses": 4
+    },
+    "0x17|0x2E": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x18|0x02": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x18|0x03": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x18|0x07": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x18|0x08": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x18|0x09": {
+      "hits": 3,
+      "misses": 2
+    },
+    "0x18|0x0A": {
+      "hits": 7,
+      "misses": 1
+    },
+    "0x18|0x0E": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x18|0x0F": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x18|0x10": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x18|0x11": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x18|0x17": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x18|0x18": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x18|0x1D": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x18|0x28": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x18|0x2A": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x18|0x2E": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x1D|0x02": {
+      "hits": 1,
+      "misses": 2
+    },
+    "0x1D|0x03": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x1D|0x07": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x1D|0x08": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x1D|0x09": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x1D|0x0A": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x1D|0x0E": {
+      "hits": 5,
+      "misses": 0
+    },
+    "0x1D|0x0F": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x1D|0x10": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x1D|0x11": {
+      "hits": 0,
+      "misses": 5
+    },
+    "0x1D|0x17": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x1D|0x18": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x1D|0x1D": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x1D|0x28": {
+      "hits": 4,
+      "misses": 1
+    },
+    "0x1D|0x2A": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x1D|0x2E": {
+      "hits": 1,
+      "misses": 2
+    },
+    "0x28|0x02": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x28|0x03": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x28|0x07": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x28|0x08": {
+      "hits": 2,
+      "misses": 2
+    },
+    "0x28|0x09": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x28|0x0A": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x28|0x0E": {
+      "hits": 4,
+      "misses": 2
+    },
+    "0x28|0x0F": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x28|0x10": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x28|0x17": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x28|0x18": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x28|0x1D": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x28|0x28": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x28|0x2A": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x28|0x2E": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x2A|0x02": {
+      "hits": 5,
+      "misses": 1
+    },
+    "0x2A|0x03": {
+      "hits": 3,
+      "misses": 1
+    },
+    "0x2A|0x07": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x2A|0x08": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x2A|0x09": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x2A|0x0A": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x2A|0x0E": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x2A|0x0F": {
+      "hits": 1,
+      "misses": 2
+    },
+    "0x2A|0x10": {
+      "hits": 5,
+      "misses": 0
+    },
+    "0x2A|0x11": {
+      "hits": 0,
+      "misses": 4
+    },
+    "0x2A|0x17": {
+      "hits": 2,
+      "misses": 2
+    },
+    "0x2A|0x18": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x2A|0x1D": {
+      "hits": 6,
+      "misses": 1
+    },
+    "0x2A|0x28": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x2A|0x2A": {
+      "hits": 5,
+      "misses": 0
+    },
+    "0x2A|0x2E": {
+      "hits": 7,
+      "misses": 0
+    },
+    "0x2E|0x02": {
+      "hits": 6,
+      "misses": 0
+    },
+    "0x2E|0x03": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x2E|0x07": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x2E|0x08": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x2E|0x09": {
+      "hits": 1,
+      "misses": 1
+    },
+    "0x2E|0x0A": {
+      "hits": 2,
+      "misses": 0
+    },
+    "0x2E|0x0E": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x2E|0x0F": {
+      "hits": 4,
+      "misses": 0
+    },
+    "0x2E|0x10": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x2E|0x11": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x2E|0x17": {
+      "hits": 3,
+      "misses": 2
+    },
+    "0x2E|0x18": {
+      "hits": 1,
+      "misses": 0
+    },
+    "0x2E|0x1D": {
+      "hits": 4,
+      "misses": 1
+    },
+    "0x2E|0x28": {
+      "hits": 2,
+      "misses": 1
+    },
+    "0x2E|0x2A": {
+      "hits": 4,
+      "misses": 3
+    },
+    "0x2E|0x2E": {
+      "hits": 3,
+      "misses": 0
+    },
+    "0x2F|0x02": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x2F|0x03": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x2F|0x07": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x2F|0x08": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x2F|0x09": {
+      "hits": 1,
+      "misses": 3
+    },
+    "0x2F|0x0A": {
+      "hits": 1,
+      "misses": 5
+    },
+    "0x2F|0x0E": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x2F|0x0F": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x2F|0x10": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x2F|0x11": {
+      "hits": 0,
+      "misses": 1
+    },
+    "0x2F|0x17": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x2F|0x18": {
+      "hits": 0,
+      "misses": 2
+    },
+    "0x2F|0x1D": {
+      "hits": 0,
+      "misses": 4
+    },
+    "0x2F|0x28": {
+      "hits": 0,
+      "misses": 4
+    },
+    "0x2F|0x2A": {
+      "hits": 0,
+      "misses": 3
+    },
+    "0x2F|0x2E": {
+      "hits": 0,
+      "misses": 5
+    }
+  }
+}

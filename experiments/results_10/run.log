@@ -1,0 +1,56 @@
+LOVA M6 Day 3 -- historical pass-rate telemetry (Q22)
+
+==============================================================================
+  Bootstrapping telemetry from 20 LOVABench refs + 300 constrained_random samples
+==============================================================================
+  LOVABench refs recorded: 20/20  (all pass=True)
+  random programs:  passed=185  failed=115  decode-skip=0
+  total programs recorded: 320
+  distinct tokens tracked: 18
+  distinct (token, parent) pairs: 277
+
+  saved telemetry to C:\Users\Administrator\Desktop\新建文件夹\lova\corpus\token_telemetry.json  (19240 bytes)
+
+==============================================================================
+  Demo A -- global pass-rate vs context pass-rate (where they diverge)
+==============================================================================
+
+  probe                                                   global         context
+  ----------------------------------------------  --------------  --------------
+  lit as child of merge                             65% (n=1015)      70% (n=88)
+  lit as child of conserve (contract slot)          65% (n=1015)       3% (n=66)
+  lit as child of violate                           65% (n=1015)      69% (n=13)
+  violate (any context)                               65% (n=66)               -
+  sigma (any context)                                 71% (n=89)               -
+  merge as child of conserve (body slot)              72% (n=80)        0% (n=5)
+
+==============================================================================
+  Demo B -- weighted vs uniform sampling: pass-rate on 50 fresh samples
+==============================================================================
+
+  uniform sampler       pass rate:   38/50  (76.0%)
+  telemetry-weighted    pass rate:   48/50  (96.0%)
+  delta (weighted - uniform):                 +20.0%
+  -> weighted sampler materially safer (>+5pp).
+
+==============================================================================
+  Demo C -- TokenChoice carries populated prior_* fields when telemetry is provided
+==============================================================================
+
+  (fresh state -- root slot, no parent_op)
+  0x03 merge            arity=  2  d-depth=+1  term=False  effects={}  pass=72% (n=80)  ctx=  - (n=0)
+  0x0E gcd              arity=  2  d-depth=+1  term=False  effects={}  pass=67% (n=70)  ctx=  - (n=0)
+  0x10 budget           arity=  2  d-depth=+1  term=False  effects={budget-scope}  pass=74% (n=68)  ctx=  - (n=0)
+  0x11 conserve         arity=  2  d-depth=+1  term=False  effects={conservation-check}  pass=3% (n=60)  ctx=  - (n=0)
+  0x18 surprise         arity=  2  d-depth=+1  term=False  effects={write-surprise-trace}  pass=73% (n=64)  ctx=  - (n=0)
+  0x2A if-surprise      arity=  3  d-depth=+2  term=False  effects={read-surprise}  pass=73% (n=86)  ctx=  - (n=0)
+  0x2E let              arity=  3  d-depth=+2  term=False  effects={}  pass=70% (n=70)  ctx=  - (n=0)
+  0x01 lit              arity=  0  d-depth=-1  term=True   effects={}  pass=65% (n=1015)  ctx=  - (n=0)
+
+==============================================================================
+  Experiment 10 -- complete
+==============================================================================
+  TokenChoice now carries prior_pass_rate / prior_pass_rate_ctx
+  (+ sample counts) whenever a TelemetryDB is supplied to
+  valid_next_with_stats.  Weighted samplers score measurably
+  higher than uniform on pass-without-trap.

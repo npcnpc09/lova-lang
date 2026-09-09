@@ -1,0 +1,70 @@
+
+======================================================================
+  Test 1 -- round-trip losslessness (surface <-> integer sequence)
+======================================================================
+  (p 12)                                        ->    4 B  ->  (p 12)
+  (tau 12)                                      ->    4 B  ->  (tau 12)
+  (sigma 12)                                    ->    4 B  ->  (sigma 12)
+  (gcd 12 18)                                   ->    7 B  ->  (gcd 12 18)
+  (merge (p 3) (tau 12))                        ->    9 B  ->  (merge (p 3) (tau 12))
+  (seq (p 3) (p 4) (p 5))                       ->   14 B  ->  (seq (p 3) (p 4) (p 5))
+  (let 1 12 (p (ref 1)))                        ->   12 B  ->  (let 1 12 (p (ref 1)))
+  (budget 100 (p 12))                           ->    8 B  ->  (budget 100 (p 12))
+  (conserve 77 (p 12))                          ->    8 B  ->  (conserve 77 (p 12))
+  (surprise 10 (p 12))                          ->    8 B  ->  (surprise 10 (p 12))
+  (if-surprise (surprise 10 (p 12)) 999 0)      ->   16 B  ->  (if-surprise (surprise 10 (p 12)) 999 0)
+  OK -- round-trip lossless on all programs
+
+======================================================================
+  Test 2 -- number-theoretic primitives
+======================================================================
+  OK (p 12)                                   = 77    (12th partition number)
+  OK (tau 12)                                 = 6     (divisor count of 12)
+  OK (sigma 12)                               = 28    (divisor sum of 12)
+  OK (gcd 12 18)                              = 6     (gcd of 12 and 18)
+  OK (mobius 30)                              = -1    (mu(30) -- 30 = 2*3*5, three primes -> -1)
+  OK (merge (p 3) (tau 12))                   = 9     (p(3)=3, tau(12)=6, merge = 9)
+  OK (seq (p 3) (p 4) (p 5))                  = 7     (sequential; last value = p(5) = 7)
+  OK (let 1 12 (p (ref 1)))                   = 77    (let-bind 12 as id 1, compute p)
+  OK -- all number-theoretic primitives return reference values
+
+======================================================================
+  Test 3 -- conservation catches budget overrun (Delta trap)
+======================================================================
+  program: (budget 3 (merge (p 3) (tau 12)))
+  OK -- BudgetTrap raised: BUDGET trap: spent 4 > limit 3 (overrun 1)
+    anomaly metadata: {'kind': 'budget-exceeded', 'limit': 3, 'spent': 4, 'overrun': 1}
+  program: (budget 100 (p 12))            = 77  (within budget)
+  program: (conserve 77 (violate 77))
+  OK -- DeltaTrap raised: ¦¤ trap: conserve/equality violated ¡ª entry 77 vs exit 78
+    anomaly metadata: {'invariant': 'conserve/equality', 'entry': 77, 'exit': 78, 'deviation': 1}
+  OK -- both traps surface structured anomaly metadata
+
+======================================================================
+  Test 4 -- surprise emits structured trace
+======================================================================
+  (surprise 10 (p 12))  ->  deviation = 67
+    event: predicted=10  actual=77  deviation=67
+
+surprise events (3):
+  [00] predicted=10  actual=77  deviation=67  ctx='surprise'
+  [01] predicted=3  actual=3  deviation=0  ctx='surprise'
+  [02] predicted=100  actual=6  deviation=94  ctx='surprise'
+  OK -- surprise trace accumulates ordered, structured events
+
+======================================================================
+  Demonstration -- a program IS an integer
+======================================================================
+  surface form:     (merge (p 3) (tau 12))
+  byte sequence:    03 08 01 01 03 09 01 01 0c
+  canonical integer: 55916975560956379404
+  byte count:       9
+
+  This integer IS the program.  The surface text is a Stage-1
+  projection; the integer is the substrate's canonical form.
+
+======================================================================
+  Experiment 01 -- ALL TESTS PASSED
+======================================================================
+  Milestone 1 substrate is operational.
+  Next: Milestone 2 (type-directed generation constraints)
