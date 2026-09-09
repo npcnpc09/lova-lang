@@ -182,9 +182,11 @@ def _sample_uniform(rng: random.Random, max_depth: int = 3) -> bytes:
             valid = cheapest_to_finish(state, valid)
         token = rng.choice(valid)
         out.append(token)
+        payload = None
         if token == LIT_INT:
-            out.extend(encode_lit(rng.randint(0, 19)))
-        state = state.step(token)
+            payload = state.literal_for(rng)          # M16: names are names
+            out.extend(encode_lit(payload))
+        state = state.step(token, payload)
         depth += 1
     return bytes(out)
 
@@ -217,9 +219,11 @@ def _sample_weighted(
         tied = [c for c in ranked if abs(score(c) - score(top)) < 1e-9]
         pick = rng.choice(tied)
         out.append(pick.token)
+        payload = None
         if pick.token == LIT_INT:
-            out.extend(encode_lit(rng.randint(0, 19)))
-        state = state.step(pick.token)
+            payload = state.literal_for(rng)          # M16: names are names
+            out.extend(encode_lit(payload))
+        state = state.step(pick.token, payload)
         depth += 1
     return bytes(out)
 

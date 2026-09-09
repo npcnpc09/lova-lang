@@ -123,12 +123,13 @@ full argument behind each.
 3. **Type-constrained generation.** For any partial program, the set of
    well-typed next tokens is computable. AI generation traverses this
    space only. Ill-typed programs are not representable.
-   *Precision (Exp 12, F4):* this holds at the **operator** level.
-   Anything depending on a *name* — an unbound reference, or a
-   reference to a function-valued binding used in an integer slot —
-   is caught by the compiler, not by generation, because name ids
-   live in `LIT_INT` payloads that the generation state machine never
-   sees. Quote the axiom with that qualifier.
+   *Precision (Exp 12 F4, Exp 16):* for **generated** programs this
+   now holds at the name level too — since M16 the state machine is
+   given literal payloads and keeps scope, so an unbound or wrongly
+   typed reference is unrepresentable (704/1000 → 0). For hand-written
+   or mutated trees the compiler's scope and type passes are the check.
+   Mutual recursion is compilable but not generatable (Q64). Quote the
+   axiom with that qualifier.
 4. **Conservation is a type, not a runtime afterthought.** Every
    function declares its effect / budget / surprise bounds in its
    signature. Violations are type errors at declaration-site and
@@ -373,7 +374,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M15)
+## Current state (2026-09-09 — post-M16)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -465,6 +466,14 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M16** made generation scope-aware. `GenState.step` takes the
+literal's payload, keeps frames, and offers `ref` only where a bound,
+type-compatible name exists. Exp 16: unbound references in generated
+programs 704/1000 → 0, runnable 16% → 37%, `Fn` slots filled by
+references 74 → 5 (Q54 closed). Axiom 3 now holds at the name level for
+generated programs; the compiler remains the check for everything else.
+Exp 10 with real names: +32 pp. Q64–Q66.
+
 **M15** completed Axiom 6. A `Population` is a value; `defpop` /
 `fitness` / `variant` / `select` / `retire` / `evolve` are operators on
 the Evolution family's own slots, and `evolve` applies
@@ -530,7 +539,7 @@ are genuinely free (see the slot-budget note above). See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-425 unit tests passing, 15 experiments (pb11 has a v1 pilot + v2 re-run),
+447 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

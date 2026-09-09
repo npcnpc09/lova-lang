@@ -27,8 +27,9 @@ from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 from core.tokens import (
-    APPLY, END, IF_SURPRISE, LET, LIT_INT, RESULT_FOLLOWS_OPERANDS,
-    RESULT_NOT_STATIC, SIGNATURES, TYPED_TOKENS, WHEN_ANOMALY,
+    APPLY, END, IF_SURPRISE, LAMBDA, LET, LIT_INT, REF,
+    RESULT_FOLLOWS_OPERANDS, RESULT_NOT_STATIC, SIGNATURES, TYPED_TOKENS,
+    WHEN_ANOMALY,
 )
 from core.types import INT, LITERAL_INT, Type
 
@@ -50,6 +51,29 @@ class Slot:
     expected_type: Type
     variadic_continuation: bool = False
     parent_op: Optional[int] = None
+    # M16 -- what a literal in this slot *means*.  "binder": the name a
+    # LET or LAMBDA introduces.  "ref-name": the name a REF resolves.
+    # "binding-value": the value slot of a LET, whose first token tells
+    # the frame its type.  None for an ordinary literal or expression.
+    role: Optional[str] = None
+    frame: Optional[int] = None
+    ref_type: Optional[Type] = None
+
+
+@dataclass
+class Frame:
+    """One name in scope during generation (M16).
+
+    ``name`` is None until the binder's literal is stepped with a
+    payload; ``type`` is None -- unknown, fits anywhere -- until the
+    binding's value shows its first token.  ``base`` is the stack depth
+    the binding form was opened at; the frame is live while the stack
+    is deeper than that, and is discarded the moment the form's subtree
+    completes.
+    """
+    name: Optional[int]
+    type: Optional[Type]
+    base: int
 
 
 @dataclass
@@ -60,14 +84,76 @@ class GenState:
     When the stack is empty, the program is complete.
     """
     stack: List[Slot] = field(default_factory=list)
+    # M16 -- the names in scope at this point of the program.  Until
+    # M16 the state machine saw only operator bytes: a name id lives in
+    # a LIT_INT payload it never inspected, so it could not know which
+    # names were bound, and `ref` was offered everywhere on the chance
+    # that one was.  Axiom 3 therefore held at the operator level and
+    # not the name level (Exp 12, F4).  With payloads passed to `step`,
+    # the machine keeps scope, `ref` is offered only where a compatible
+    # bound name exists, and an unbound reference is unrepresentable
+    # rather than a compile error.
+    scopes: List[Frame] = field(default_factory=list)
+    track_scope: bool = True
 
     @classmethod
-    def fresh(cls, top_type: Type = INT) -> "GenState":
-        """Start a fresh state expecting a single expression of ``top_type``."""
-        return cls(stack=[Slot(expected_type=top_type)])
+    def fresh(cls, top_type: Type = INT, track_scope: bool = True) -> "GenState":
+        """Start a fresh state expecting a single expression of ``top_type``.
+
+        ``track_scope=False`` restores the pre-M16 machine -- every
+        `ref` offered, no names kept -- which is what Experiment 16
+        measures against.
+        """
+        return cls(stack=[Slot(expected_type=top_type)], track_scope=track_scope)
 
     def is_complete(self) -> bool:
         return not self.stack
+
+    # ---- scope (M16) ------------------------------------------------------
+
+    def bound_names(self) -> List[Frame]:
+        """Frames whose binder has been named, innermost last."""
+        return [f for f in self.scopes if f.name is not None]
+
+    def valid_names(self) -> List[int]:
+        """Name ids a `ref` may use in the current slot.
+
+        Empty unless the top slot is a ref-name slot.  A name fits when
+        its binding's type is unknown or a subtype of what the `ref` has
+        to produce.  Innermost binding of a name wins, as at run time.
+        """
+        if not self.stack or self.stack[-1].role != "ref-name":
+            return []
+        from core.types import is_subtype
+        wanted = self.stack[-1].ref_type
+        seen: Dict[int, Frame] = {}
+        for frame in self.bound_names():
+            seen[frame.name] = frame              # later shadows earlier
+        out = []
+        for name, frame in seen.items():
+            if frame.type is None or wanted is None or is_subtype(frame.type, wanted):
+                out.append(name)
+        return sorted(out)
+
+    def fresh_name(self) -> int:
+        """A name id not bound in the current scope."""
+        taken = {f.name for f in self.bound_names()}
+        candidate = 0
+        while candidate in taken:
+            candidate += 1
+        return candidate
+
+    def literal_for(self, rng, small_lit_range: int = 20) -> int:
+        """The payload a sampler should emit for the top literal slot."""
+        if self.stack:
+            role = self.stack[-1].role
+            if role == "binder":
+                return self.fresh_name()
+            if role == "ref-name":
+                names = self.valid_names()
+                if names:
+                    return rng.choice(names)
+        return rng.randint(0, small_lit_range - 1)
 
     # ---- valid next ------------------------------------------------------
 
@@ -93,12 +179,19 @@ class GenState:
                 continue
             if tok in RESULT_NOT_STATIC:
                 # Either the result type follows the slot (if / let /
-                # apply) or it follows a binding the state machine cannot
-                # see (ref).  Both fit anywhere -- except a slot that
-                # demands a literal, which demands a *literal*, not a
-                # type.
-                if slot.expected_type != LITERAL_INT:
-                    valid.add(tok)
+                # apply / eval) or it follows a binding.  A binding the
+                # machine can see (M16) is checked: `ref` is offered only
+                # where some bound name fits.  Nothing fits a slot that
+                # demands a literal, which demands a *literal*, not a type.
+                if slot.expected_type == LITERAL_INT:
+                    continue
+                if tok == REF and self.track_scope:
+                    probe = Slot(expected_type=LITERAL_INT, role="ref-name",
+                                 ref_type=slot.expected_type)
+                    if not GenState(stack=self.stack + [probe],
+                                    scopes=self.scopes).valid_names():
+                        continue
+                valid.add(tok)
                 continue
             # subtype check: does this token produce something that
             # fits the expected slot?
@@ -110,10 +203,17 @@ class GenState:
 
     # ---- step -----------------------------------------------------------
 
-    def step(self, token: int) -> "GenState":
+    def step(self, token: int, payload: Optional[int] = None) -> "GenState":
         """Consume a token, return a new state reflecting the advance.
 
-        Raises ``ValueError`` if ``token`` is not in ``self.valid_next()``.
+        ``payload`` is the value of a LIT_INT.  It matters in exactly
+        three places -- the name slot of LET, of LAMBDA, and of REF --
+        where it is what the machine needs to keep scope.  Elsewhere it
+        is ignored.  Without it a binder binds an anonymous name and a
+        ref is unchecked, which is the pre-M16 behaviour.
+
+        Raises ``ValueError`` if ``token`` is not in ``self.valid_next()``,
+        or if a ref names something not in scope.
         """
         valid = self.valid_next()
         if token not in valid:
@@ -121,22 +221,44 @@ class GenState:
                 f"token 0x{token:02X} not in valid_next {sorted(valid)}"
             )
 
+        scopes = [Frame(f.name, f.type, f.base) for f in self.scopes]
+
         # Closing a variadic?
         if token == END:
             new_stack = list(self.stack)
             closed = new_stack.pop()
             assert closed.variadic_continuation
-            return GenState(stack=new_stack)
+            return self._advance(new_stack, scopes)
 
         sig = SIGNATURES[token]
         new_stack = list(self.stack)
         top = new_stack[-1]
+
+        if self.track_scope:
+            if token == LIT_INT and top.role == "binder" and top.frame is not None:
+                scopes[top.frame].name = payload
+            elif token == LIT_INT and top.role == "ref-name" and payload is not None:
+                if payload not in self.valid_names():
+                    raise ValueError(
+                        f"ref {payload} names nothing in scope that fits "
+                        f"{top.ref_type}; in scope: {self.valid_names()}"
+                    )
+            if top.role == "binding-value" and top.frame is not None:
+                declared = sig.get("out_type")
+                if token == LIT_INT:
+                    scopes[top.frame].type = INT
+                elif token in RESULT_NOT_STATIC or declared is None:
+                    scopes[top.frame].type = None
+                else:
+                    scopes[top.frame].type = declared
 
         # If the top slot is a variadic continuation, we do NOT pop it —
         # it stays on the stack, ready to accept another element or END.
         # If it's a single slot, pop it (we're about to fill it).
         if not top.variadic_continuation:
             new_stack.pop()
+
+        base = len(new_stack)
 
         # Push the operator's children.  Variadic operators push a
         # single "variadic continuation" slot.  Fixed-arity operators
@@ -158,10 +280,28 @@ class GenState:
             for t in reversed(sig.get("head_types", ())):
                 new_stack.append(Slot(expected_type=t, parent_op=token))
         else:
-            for t in reversed(_child_types(token, top.expected_type)):
-                new_stack.append(Slot(expected_type=t, parent_op=token))
+            children = [Slot(expected_type=t, parent_op=token)
+                        for t in _child_types(token, top.expected_type)]
+            if self.track_scope and token in (LET, LAMBDA):
+                scopes.append(Frame(name=None, type=None, base=base))
+                index = len(scopes) - 1
+                children[0].role, children[0].frame = "binder", index
+                if token == LET:
+                    children[1].role, children[1].frame = "binding-value", index
+            elif self.track_scope and token == REF:
+                children[0].role = "ref-name"
+                children[0].ref_type = top.expected_type
+            for child in reversed(children):
+                new_stack.append(child)
 
-        return GenState(stack=new_stack)
+        return self._advance(new_stack, scopes)
+
+    def _advance(self, new_stack: List[Slot], scopes: List[Frame]) -> "GenState":
+        # A frame lives while the stack is deeper than where its binding
+        # form was opened; when the form's subtree completes, the stack
+        # is back at that depth and the name goes out of scope.
+        live = [f for f in scopes if f.base < len(new_stack)]
+        return GenState(stack=new_stack, scopes=live, track_scope=self.track_scope)
 
 
 # --- termination control -----------------------------------------------------
@@ -334,6 +474,7 @@ def constrained_random(
     seed: int = 0,
     max_depth: int = 8,
     small_lit_range: int = 20,
+    track_scope: bool = True,
 ) -> bytes:
     """Generate a random well-typed program, guided by ``valid_next``.
 
@@ -347,7 +488,7 @@ def constrained_random(
     well-typed LOVA program.
     """
     rng = random.Random(seed)
-    state = GenState.fresh()
+    state = GenState.fresh(track_scope=track_scope)
     out = bytearray()
     depth = 0
     emitted = 0
@@ -362,10 +503,13 @@ def constrained_random(
             valid = cheapest_to_finish(state, valid)
         token = rng.choice(valid)
         out.append(token)
+        payload = None
         if token == LIT_INT:
-            v = rng.randint(0, small_lit_range - 1)
-            out.extend(encode_lit(v))
-        state = state.step(token)
+            # A fresh name for a binder, a bound one for a ref, a small
+            # integer anywhere else (M16).
+            payload = state.literal_for(rng, small_lit_range)
+            out.extend(encode_lit(payload))
+        state = state.step(token, payload)
         depth += 1
         emitted += 1
         if emitted > MAX_GENERATED_TOKENS:
@@ -407,7 +551,7 @@ def unconstrained_random(
 
 # --- validation helpers -----------------------------------------------------
 
-def validates(data: bytes, top_type: Type = None) -> bool:
+def validates(data: bytes, top_type: Type = None, track_scope: bool = True) -> bool:
     """True if ``data`` parses as a single well-typed LOVA program.
 
     Uses the integer decoder (``core.tokens.decode``) plus an independent
@@ -430,15 +574,15 @@ def validates(data: bytes, top_type: Type = None) -> bool:
         from core.types import VALUE
         top_type = VALUE
     try:
-        _walk_tree(node, top_type)
+        _walk_tree(node, top_type, track_scope)
     except ValueError:
         return False
     return True
 
 
-def _walk_tree(node, top_type: Type = INT) -> None:
+def _walk_tree(node, top_type: Type = INT, track_scope: bool = True) -> None:
     """Rebuild a GenState from a Node tree and assert each step is valid."""
-    state = GenState.fresh(top_type)
+    state = GenState.fresh(top_type, track_scope=track_scope)
     _apply_node(state, node)
     # After walking the whole tree, state must be complete.
     # NB: _apply_node mutates a new state each step via its return.
@@ -446,11 +590,11 @@ def _walk_tree(node, top_type: Type = INT) -> None:
 
 
 def _apply_node(state: GenState, node) -> GenState:
-    # Enter this token.
-    state = state.step(node.op)
+    # Enter this token.  A literal carries its value, which the machine
+    # uses only where the literal is a name (M16).
     if node.op == LIT_INT:
-        # LIT_INT has no children in the AST — payload is intrinsic.
-        return state
+        return state.step(node.op, int(node.args[0]))
+    state = state.step(node.op)
     # Walk the operator's children.
     for child in node.args:
         state = _apply_node(state, child)

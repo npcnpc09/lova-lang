@@ -129,7 +129,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (425 tests, stdlib unittest only)
+# run the test suite (447 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -173,9 +173,10 @@ statistical guarantees** — sample sizes are stated for each.
 | ...by adding `lt` and `sub` as primitives | 9%, for 2 slots — so they shipped as macros instead | Exp 13 |
 | ...residual, unreachable by any token-table change | 61% (s-expression syntax) | Exp 13 |
 | Runaway programs producing a structured anomaly | 5/5, all with the full L2 schema | Exp 12 |
+| Unbound references in generated programs | 704/1000 → **0/1000**; runnable 16% → 37% | Exp 16 (scope-aware generation) |
 | Self-healing, written as a LOVA program | 9/10 seeds improve, 3/10 converge, best 35 → 1 | Exp 15 (10 seeds × 30 generations) |
 | Constant-folding compression | 58.5% fewer nodes, 43.9% fewer bytes | Exp 08 |
-| Telemetry-weighted vs uniform sampling | +40 pp pass-without-trap (100% vs 60%) | Exp 10 (N=50, re-run at M13) |
+| Telemetry-weighted vs uniform sampling | +32 pp pass-without-trap (88% vs 56%) | Exp 10 (N=50, re-run at M16 with scope-aware samplers) |
 
 ### What the correctness number actually measures
 
@@ -259,7 +260,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         425 unit tests, stdlib only
+tests/         447 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
@@ -281,11 +282,12 @@ Stated plainly, because the list is short and the omissions are large:
   track arity or return type, so a partial application or a call result
   used in the wrong slot fails at run time rather than compile time
   (Q35, Q51).
-- **Generation-time type safety is operator-level, not name-level.**
-  `valid_next` cannot consult scope — name ids live in literal payloads
-  the generation state machine never sees — so a misused reference is a
-  compile error rather than being unrepresentable. Same boundary as
-  `unbound-ref` (Exp 08).
+- **Generation cannot reach mutual recursion.** Since M16 the
+  generation state machine keeps scope, so an unbound or wrongly typed
+  reference is unrepresentable in a generated program (Exp 16: 704/1000
+  → 0). But a left-to-right machine cannot name something bound later,
+  so a mutually recursive `def` chain — legal since M12 — compiles and
+  cannot be generated (Q64).
 
 ## Reading order
 

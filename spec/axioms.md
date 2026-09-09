@@ -85,14 +85,16 @@ prefix.
 - It does not mean types are always explicit. Types are **positional**
   — determined by the preceding operator's signature. No annotation
   tokens needed.
-- **It holds at the operator level, not the name level** (Exp 08,
-  Exp 12/F4). `valid_next` sees a stream of operator bytes; a name id
-  lives inside a `LIT_INT` payload, which the generation state machine
-  never inspects. So anything that depends on *which* name is bound —
-  an unbound reference, or a reference to a function-valued binding
-  used in an integer slot — is caught by the compiler's scope and
-  type passes rather than being unreachable during generation. Both
-  surface as the same L2 anomaly, so the error handler is unchanged;
+- **It holds at the name level for generated programs, and at the
+  operator level for everything else** (Exp 08; Exp 12/F4; Exp 16).
+  Since M16 the generation state machine is given each literal's
+  payload and keeps scope, so a reference to nothing, or to a binding of
+  the wrong type, is unrepresentable by generation — 704 of 1000
+  generated programs had one before, none do now. The compiler's scope
+  and type passes remain the check for trees that did not come from the
+  generator: hand-written, mutated, or read back from text. One shape
+  the compiler accepts cannot be generated left-to-right: a mutually
+  recursive `def` chain (Q64). Both paths surface the same L2 anomaly;
   what differs is *when*. State the axiom with this qualifier.
 - It does not mean curried arity is tracked. `Fn` distinguishes
   callable from integer and nothing finer, so a partial application
