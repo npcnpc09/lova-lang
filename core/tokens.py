@@ -79,7 +79,7 @@ APPLY           = 0x2D
 LET             = 0x2E   # (let name value body)
 REF             = 0x2F   # (ref name) — dereference bound name
 
-# Family 0x30-0x37  Effects / IO (stdout/stdin M11; boundary, fs, clock M19)
+# Family 0x30-0x37  Effects / IO (stdout/stdin M11; boundary, fs, clock M19; net M21)
 EXTERNAL_BOUNDARY = 0x30
 NET_SEND        = 0x31
 NET_RECV        = 0x32
@@ -162,7 +162,7 @@ SIGNATURES = {
     REF:          {"name": "ref",           "arity": 1, "family": "comp"},
     # IO (placeholders)
     EXTERNAL_BOUNDARY: {"name": "external-boundary", "arity": 2, "family": "io"},
-    NET_SEND:     {"name": "net-send",      "arity": 1, "family": "io"},
+    NET_SEND:     {"name": "net-send",      "arity": 2, "family": "io"},
     NET_RECV:     {"name": "net-recv",      "arity": 0, "family": "io"},
     FS_READ:      {"name": "fs-read",       "arity": 1, "family": "io"},
     FS_WRITE:     {"name": "fs-write",      "arity": 2, "family": "io"},
@@ -350,6 +350,18 @@ _TYPE_INFO = {
     FS_READ:        {"in_types": [LIST], "out_type": LIST},
     FS_WRITE:       {"in_types": [LIST, VALUE], "out_type": INT},
     CLOCK:          {"in_types": [], "out_type": INT},
+    # M21 -- the network, as datagrams.  `(net-send "host:port" value)`
+    # sends one UDP datagram (the value as UTF-8 text, an integer as its
+    # digits) and yields the bytes sent; `(net-recv)` yields the next
+    # datagram on the granted listening port as a codepoint list, or
+    # `nil` when none arrives within the runtime's timeout -- the
+    # end-of-input shape `stdin` has, because a receive that can hang
+    # is a receive that can hang the substrate.  The program declares
+    # the *kind* (`net`); the host names the *places* (`--allow
+    # net=host:port` to send there, `net=:port` to listen there).
+    # Where lives in host policy, not in the byte sequence (Q69).
+    NET_SEND:       {"in_types": [LIST, VALUE], "out_type": INT},
+    NET_RECV:       {"in_types": [], "out_type": LIST},
     # END is a structural sentinel — no out_type; the generator
     # handles it specially as a variadic terminator.
 }

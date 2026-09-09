@@ -241,6 +241,32 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 21 (2026-09-09) — The network, as datagrams
+The IO family's last two slots, activated as named: **`net-send`
+(0x31)** sends one UDP datagram — `(net-send "host:port" value)`, the
+value as UTF-8 text or an integer as its digits — and yields the bytes
+sent; **`net-recv` (0x32)** yields the next datagram on the granted
+listening port as a codepoint list, or `nil` when none arrives within
+the runtime's timeout, the end-of-input shape `stdin` has, because a
+receive that can hang is a receive that can hang the substrate.
+
+Q69 asked what the declaration looks like when the world has more than
+one place in it. The answer keeps text out of the core: **the program
+declares the kind, the host names the places.** `(boundary "net" ...)`
+is the whole program-side declaration — one bit; `--allow
+net=host:port` grants sending there, `--allow net=:port` grants
+listening there, `net=*` grants any destination, and a datagram to a
+place the host did not name is a `capability-denied` fault even inside
+a granting boundary. `--allow all` does not include the network,
+because a network grant without a place is not a grant. Datagrams
+rather than streams because a datagram is one value in and one value
+out — the shape every other operator has — and a stream would need a
+handle, which is a value kind the language does not have (Q72).
+
+**59 / 64 operators.** The token table is now spent but for the four
+free slots (0x12, 0x13, 0x14, 0x16) that have been waiting on a
+decision since M10; nothing else is reserved. Tests 574 → 595.
+
 ### Milestone 20 (2026-09-09) — Function shapes
 No new operator, no new byte: a compiler inference. `Fn` said
 "callable" and nothing more, so three misuses could only fail at run
@@ -942,12 +968,16 @@ the corpus grows again.
   carries "enclosed" with its mask. A function written *outside* any
   boundary still declares for itself — that is a library saying what
   it needs, and the host's grant is the authority across the call.
-- **Q69**: `net-send` / `net-recv` are the last reserved slots of the
-  IO family. A network effect is not a file with a longer name — it
-  needs an address, a boundary that names *where*, not only *what* —
-  and the capability mask as it stands has one bit for all of it.
-  What does the declaration look like when the world has more than
-  one place in it?
+- ~~**Q69**~~: *closed by M21.* The program declares the kind (`net`,
+  one bit); the host names the places (`--allow net=host:port`,
+  `net=:port`). Where is host policy, not program text, so the byte
+  sequence stays free of addresses and Stage 3 is untouched.
+- **Q72**: The network is datagrams because a datagram is one value
+  in, one value out, and a stream needs a handle — a value kind LOVA
+  does not have. Neither does a file: `fs-read` reads whole. Is a
+  *handle* the sixth value kind the language eventually needs, or is
+  whole-value IO the honest limit of a substrate whose programs are
+  integers?
 - **Q68**: `stdout` / `stdin` are ambient — M11 shipped them without a
   boundary and M19 left them so, because every experiment and the REPL
   would otherwise need a grant to print. But the terminal *is* the

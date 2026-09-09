@@ -131,21 +131,52 @@ def parse_allow(values: Optional[List[str]]) -> int:
 
     What the host grants this run.  A program still has to declare what
     it uses in a `boundary`; the grant is the other half of the
-    contract, and nothing is granted unless asked (M19).
+    contract, and nothing is granted unless asked (M19).  The network
+    is granted by place -- ``net=host:port`` to send there, ``net=:port``
+    to listen there (M21) -- and ``all`` does not include it, because a
+    network grant without a place is not a grant.
     """
     mask = 0
     for value in values or ():
         for name in value.replace(",", " ").split():
             if name == "all":
                 mask |= ALL_CAPABILITIES
+            elif name == "net":
+                raise ValueError(
+                    "--allow: the network is granted by place: "
+                    "net=host:port to send there, net=:port to listen")
             elif name in CAPABILITY_BITS:
                 mask |= CAPABILITY_BITS[name]
+            elif name.startswith("net="):
+                mask |= CAPABILITY_BITS["net"]
             else:
                 raise ValueError(
                     f"--allow: unknown capability {name!r}; known: "
-                    + ", ".join(CAPABILITY_BITS) + ", all"
+                    + ", ".join(CAPABILITY_BITS) + ", all, net=host:port, net=:port"
                 )
     return mask
+
+
+def parse_net_allow(values: Optional[List[str]]):
+    """The places ``--allow net=...`` named: (send-to set, listen-on set)."""
+    send_to, listen_on = set(), set()
+    for value in values or ():
+        for name in value.replace(",", " ").split():
+            if not name.startswith("net="):
+                continue
+            place = name[len("net="):]
+            if place == "*":
+                send_to.add("*")
+                continue
+            host, sep, port = place.rpartition(":")
+            if not sep or not port.isdigit():
+                raise ValueError(
+                    f"--allow: {name!r} is not net=host:port or net=:port")
+            if host:
+                send_to.add(f"{host}:{int(port)}")
+            else:
+                listen_on.add(int(port))
+    return send_to, listen_on
 
 
 def report_error(exc: Exception) -> int:
@@ -185,13 +216,15 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     try:
         granted = parse_allow(args.allow)
+        send_to, listen_on = parse_net_allow(args.allow)
     except ValueError as exc:
         return report_error(exc)
     runtime = Runtime(out_stream=sys.stdout,
                       input_source=sys.stdin.readline,
                       max_steps=args.max_steps,
                       max_call_depth=args.max_depth,
-                      granted=granted)
+                      granted=granted,
+                      net_send_to=send_to, net_listen_on=listen_on)
     try:
         value = evaluate(tree, runtime)
     except (BudgetTrap, DeltaTrap) as trap:
@@ -308,10 +341,12 @@ def cmd_repl(args: argparse.Namespace) -> int:
         except (CompileError, ValueError) as exc:
             report_error(exc)
             continue
+        send_to, listen_on = parse_net_allow(args.allow)
         runtime = Runtime(out_stream=sys.stdout,
                           max_steps=args.max_steps,
                           max_call_depth=args.max_depth,
-                          granted=parse_allow(args.allow))
+                          granted=parse_allow(args.allow),
+                          net_send_to=send_to, net_listen_on=listen_on)
         try:
             value = evaluate(tree, runtime)
         except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError) as exc:
@@ -343,7 +378,8 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--max-depth", type=int, default=200)
         sub.add_argument("--allow", action="append", metavar="CAPS",
                          help="grant capabilities: fs-read, fs-write, clock, "
-                              "or all (comma-separated, repeatable)")
+                              "all, net=host:port, net=:port "
+                              "(comma-separated, repeatable)")
         return sub
 
     run = common(subparsers.add_parser("run", help="evaluate a program"))

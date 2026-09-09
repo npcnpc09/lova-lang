@@ -15,7 +15,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  57 of the 64 tokens are implemented.
+  59 of the 64 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -103,8 +103,8 @@ Legend:
 | Byte | Name | Arity | In types | Out type | Effects | Status |
 |---|---|---|---|---|---|---|
 | 0x30 | `external-boundary` | 2 | LiteralInt, Value | Value | - | **impl** |
-| 0x31 | `net-send` | 1 | - | - | - | Reserved |
-| 0x32 | `net-recv` | 0 | - | - | - | Reserved |
+| 0x31 | `net-send` | 2 | List, Value | Int | {net-send} | **impl** |
+| 0x32 | `net-recv` | 0 | - | List | {net-recv} | **impl** |
 | 0x33 | `fs-read` | 1 | List | List | {read-fs} | **impl** |
 | 0x34 | `fs-write` | 2 | List, Value | Int | {write-fs} | **impl** |
 | 0x35 | `stdout` | 1 | Value | Int | {write-stdout} | **impl** |
@@ -252,4 +252,4 @@ the identifier was a convenience for whoever typed it.
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  57/64 operators implemented.
+  59/64 operators implemented.

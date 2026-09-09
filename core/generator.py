@@ -166,8 +166,8 @@ class GenState:
             if role == "caps":
                 top = self.stack[-1]
                 if top.enclosed:
-                    return rng.randint(0, 7) & top.caps   # narrow only (Q70)
-                return rng.randint(0, 7)          # any mix of fs-read/fs-write/clock
+                    return rng.randint(0, 15) & top.caps  # narrow only (Q70)
+                return rng.randint(0, 15)         # any mix of fs-read/fs-write/clock/net
         return rng.randint(0, small_lit_range - 1)
 
     # ---- valid next ------------------------------------------------------

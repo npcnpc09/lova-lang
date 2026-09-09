@@ -11,8 +11,8 @@ Operators implemented:
 - NIL, CONS, HEAD, TAIL, IS_NIL          (lists -- and therefore pairs,
   and therefore strings as codepoint lists)
 - STDOUT, STDIN                          (the terminal, ambient)
-- EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CLOCK
-                                         (M19: the world, under a declared boundary)
+- EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CLOCK, NET_SEND, NET_RECV
+                                         (M19/M21: the world, under a declared boundary)
 - WHEN_ANOMALY                           (in-language error handling)
 - QUOTE, EVAL, READ                      (programs as values; text -> program)
 - EXPLAIN, HASH, UID, GENERATION, ANCESTOR_OF, LINEAGE_QUERY, WHY, TRACE
@@ -78,6 +78,7 @@ Those arrive in Milestone 2+.
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import time
 from dataclasses import dataclass, field
@@ -98,7 +99,7 @@ from core.tokens import (
     MUTATE, QUOTE, TRACE, UID, WHY, encode,
     DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
     CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CAPABILITY_OF,
-    capability_names,
+    capability_names, NET_RECV, NET_SEND,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -642,6 +643,16 @@ class Runtime:
     # compiler's rule wherever the closure is applied.
     enclosed: bool = False
     clock: Any = None
+    # M21 -- the network.  The host names the places: ``net_send_to`` is
+    # the set of "host:port" strings a datagram may go to ("*" for any),
+    # ``net_listen_on`` the ports `net-recv` may bind.  ``net_sockets``
+    # caches a bound socket per port so consecutive receives share one
+    # queue (a test may pre-bind and inject one); ``net_timeout`` is how
+    # long a receive waits before yielding `nil`.
+    net_send_to: Any = None
+    net_listen_on: Any = None
+    net_sockets: Dict[int, Any] = field(default_factory=dict)
+    net_timeout: float = 5.0
 
     def write(self, text: str) -> None:
         """Emit ``text``, recording it and forwarding it if asked."""
@@ -926,6 +937,18 @@ def _scan_body_offender(
                 "fix": "heuristic-value-equals-deviation",
             }
     return None
+
+
+def _net_address(text: str, ctx: str) -> Tuple[str, int]:
+    """``"host:port"`` to a (host, port) pair, or a structured fault."""
+    host, sep, port_text = text.rpartition(":")
+    if not sep or not host or not port_text.isdigit() or not 0 < int(port_text) < 65536:
+        raise DomainTrap(
+            "domain-error", f"{ctx}: not an address: {text!r}",
+            {"operator": ctx, "address": text},
+            f'give {ctx} an address of the form "host:port"',
+        )
+    return host, int(port_text)
 
 
 def _require_capability(rt: Runtime, op: int, name: str) -> None:
@@ -1500,6 +1523,64 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
                 "give `fs-write` a path in a directory that exists",
             ) from None
         return len(text)
+
+    if op == NET_SEND:
+        _require_capability(rt, NET_SEND, "net-send")
+        address = _as_text(_eval(node.args[0], rt), "net-send")
+        payload = _as_text(_eval(node.args[1], rt), "net-send")
+        host, port = _net_address(address, "net-send")
+        allowed = set(rt.net_send_to or ())
+        if "*" not in allowed and f"{host}:{port}" not in allowed:
+            raise DomainTrap(
+                "capability-denied",
+                f"net-send: {host}:{port} is not a granted address",
+                {"operator": "net-send", "address": f"{host}:{port}",
+                 "granted": sorted(allowed)},
+                f"run with `--allow net={host}:{port}`",
+            )
+        data = payload.encode("utf-8")
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.sendto(data, (host, port))
+        except OSError as exc:
+            raise DomainTrap(
+                "domain-error", f"net-send: {host}:{port}: {exc}",
+                {"operator": "net-send", "address": f"{host}:{port}",
+                 "reason": type(exc).__name__},
+                "give `net-send` a reachable host:port",
+            ) from None
+        return len(data)
+
+    if op == NET_RECV:
+        _require_capability(rt, NET_RECV, "net-recv")
+        ports = sorted(rt.net_listen_on or ())
+        if not ports:
+            raise DomainTrap(
+                "capability-denied",
+                "net-recv: no listening port was granted",
+                {"operator": "net-recv", "granted": []},
+                "run with `--allow net=:PORT`",
+            )
+        port = ports[0]                 # the lowest granted port listens
+        sock = rt.net_sockets.get(port)
+        try:
+            if sock is None:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.bind(("", port))
+                rt.net_sockets[port] = sock
+            sock.settimeout(rt.net_timeout)
+            data, _peer = sock.recvfrom(65535)
+        except socket.timeout:
+            return NIL_VALUE            # nothing arrived; not an error
+        except OSError as exc:
+            raise DomainTrap(
+                "domain-error", f"net-recv: port {port}: {exc}",
+                {"operator": "net-recv", "port": port,
+                 "reason": type(exc).__name__},
+                "grant a port that is free to bind",
+            ) from None
+        text = data.decode("utf-8", errors="replace")
+        return list_from([ord(ch) for ch in text])
 
     if op == CLOCK:
         _require_capability(rt, CLOCK, "clock")

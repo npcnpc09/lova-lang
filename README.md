@@ -90,7 +90,10 @@ semantics.
   declares it, the runtime refuses a boundary the host did not grant
   (`lova run --allow fs-read,clock`), nothing is granted by default,
   and a generated program cannot use the world without declaring it.
-  Axiom 4, for effects that touch the world
+  The network is `net-send` / `net-recv` over UDP datagrams: the
+  program declares the kind, the host names the places (`--allow
+  net=host:port`, `net=:port`). Axiom 4, for effects that touch the
+  world
 - **Libraries** — `(use "evolution")` includes `lib/evolution.lova`,
   where a custom evolution rule is nine lines over the six Evolution
   operators; `(use "prelude")` is the standard library, loaded by the
@@ -142,7 +145,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (574 tests, stdlib unittest only)
+# run the test suite (595 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -273,17 +276,17 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         574 unit tests, stdlib only
+tests/         595 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
 
 Stated plainly, because the list is short and the omissions are large:
 
-- **No network.** `net-send` / `net-recv` (0x31 / 0x32) are the last
-  reserved slots of the IO family; a network effect needs an address,
-  which the capability mask does not yet name (Q69). The terminal is
-  ambient rather than declared (Q68).
+- **IO is whole values.** `fs-read` reads a whole file, `net-recv` one
+  datagram: there are no handles and no streams, because a handle
+  would be a sixth value kind (Q72). The terminal is ambient rather
+  than declared (Q68).
 - **Modules are textual.** `(use "name")` includes `lib/name.lova`
   once and transitively, and `drop-unused` makes it free — but two
   libraries defining the same name shadow in inclusion order; there

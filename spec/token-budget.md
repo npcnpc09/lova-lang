@@ -371,6 +371,20 @@ implemented.** The four free slots are unchanged: 0x12 `delta-check`,
 0x13 `respawn`, 0x14 `budget-remaining`, 0x16 `preserve`. Reserved
 beyond those: 0x31 `net-send`, 0x32 `net-recv`.
 
+### M21 activated the network
+
+| Byte | Name | Type |
+|---|---|---|
+| 0x31 | `net-send` | `List, Value -> Int` |
+| 0x32 | `net-recv` | `-> List` |
+
+Activations as named; `net-send` grew from arity 1 to 2 because a
+datagram needs a destination. The destination is an operand and the
+grant is the host's (`--allow net=host:port`), so no address ever
+enters the byte sequence. **59 of 64 implemented.** The IO family is
+8/8. Nothing is reserved any more except the four free slots below,
+which have been waiting on a decision since M10.
+
 ### Still unspent, still needing a decision
 
 | Candidate | Slots | Status |

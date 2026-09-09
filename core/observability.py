@@ -39,7 +39,7 @@ from core.tokens import (
     ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
     MUTATE, QUOTE, TRACE, UID, WHY,
     DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
-    CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE,
+    CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, NET_RECV, NET_SEND,
 )
 from core.types import INT, LITERAL_INT, Type, is_subtype
 
@@ -97,6 +97,8 @@ _EFFECTS: dict = {
     FS_READ: frozenset({"read-fs"}),
     FS_WRITE: frozenset({"write-fs"}),
     CLOCK: frozenset({"read-clock"}),
+    NET_SEND: frozenset({"net-send"}),
+    NET_RECV: frozenset({"net-recv"}),
     # M13 -- handling an anomaly is an effect on the run's trace, and it
     # also means the enclosed cost is not the program's declared cost.
     WHEN_ANOMALY: frozenset({"handle-anomaly"}),

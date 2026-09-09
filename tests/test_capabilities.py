@@ -340,7 +340,7 @@ class TestGeneration(unittest.TestCase):
         state = GenState.fresh(INT).step(EXTERNAL_BOUNDARY)
         self.assertEqual(state.stack[-1].role, "caps")
         for seed in range(20):
-            self.assertIn(state.literal_for(random.Random(seed)), range(8))
+            self.assertIn(state.literal_for(random.Random(seed)), range(16))
 
     def test_generation_still_terminates_and_validates(self):
         self.assertTrue(all(validates(constrained_random(seed=s, max_depth=6))

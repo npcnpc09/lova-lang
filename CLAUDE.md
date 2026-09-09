@@ -376,7 +376,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M20)
+## Current state (2026-09-09 — post-M21)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -468,6 +468,14 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M21** activated the network on the IO family's last two slots:
+`net-send` / `net-recv` over UDP datagrams, under the `net` bit of the
+boundary. The program declares the kind; the host names the places
+(`--allow net=host:port`, `net=:port`), so no address enters the byte
+sequence (Q69 closed). A receive that gets nothing yields `nil`, never
+hangs. **59 / 64 operators; the IO family is 8/8; only the four free
+slots remain.** Q72 (handles as a value kind?).
+
 **M20** gave the checker function shapes: `Fn<arity,ret>` inferred
 from a visible lambda, flowing through `let` and `apply`, so a partial
 application in an integer slot, a call with too many arguments, or a
@@ -484,7 +492,7 @@ declares it; the runtime refuses a boundary the host did not grant
 (`--allow`, nothing by default); the boundary is lexical, captured by
 closures; the generator offers the world only where it is declared.
 Axiom 4, concrete for effects that touch the world. Q68–Q70.
-**57 / 64 operators; the two network slots and four free ones remain.**
+**57 / 64 operators at M19; M21 took the network slots.**
 
 **M18** added `read` (0x1E), the inverse of `explain`, so a program
 can construct a program from text and `eval` it; `(use "name")`, a
@@ -568,13 +576,13 @@ proved the token table could not beat) and on LOVABench 2.00× →
 **5.38×** vs sympy-Python. Exp 11's Stage-2 *projection* understated
 density by 70%; node count is a poor proxy in both directions.
 
-**57 / 64 operators runtime-implemented**; the two network slots are
-reserved and 4 are genuinely free (see the slot-budget note above). See
+**59 / 64 operators runtime-implemented**; nothing is reserved any
+more, and 4 slots are genuinely free (see the slot-budget note above). See
 `spec/tokens.md` for the complete table (generated) and
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-574 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+595 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 
