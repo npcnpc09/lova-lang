@@ -1,0 +1,51 @@
+;;; palindrome.lova  --  is a string the same read backwards?
+;;;
+;;; The first LOVA program that operates on data rather than on a
+;;; number.  Until M10 the only value in the language was a scalar
+;;; integer: no strings, no lists, no way to return two things.  A cons
+;;; cell changed that, and a string turned out to cost nothing on top of
+;;; it -- `"racecar"` is surface sugar for a list of codepoints, so the
+;;; token table spends no slots on strings at all.
+;;;
+;;; Returns:
+;;;   1  if the string reads the same both ways
+;;;   0  otherwise
+;;;
+;;; Three things worth noticing.
+;;;
+;;; 1. `rev` carries its accumulator as a second curried parameter --
+;;;    the same pattern collatz.lova needed, for the same reason: LOVA
+;;;    has no mutable state.  What is new is that the accumulator can
+;;;    now be a *list*.
+;;;
+;;; 2. `dist` is `surprise`: |a - b|, zero exactly when two codepoints
+;;;    are equal.  Equality has never needed its own operator here --
+;;;    the surprise primitive was always a comparison.
+;;;
+;;; 3. `nil?` is the only way to see the end of a list, so every
+;;;    traversal is a guarded recursion.  Taking the head of an empty
+;;;    list is an error with a repair hint, not a silent zero.
+;;;
+;;; The short spellings (`if`, `dist`, `def`) are the one-token aliases
+;;; Exp 13 measured: identical programs, 30% fewer LLM tokens.
+
+;; Reverse a list onto an accumulator.
+(def rev [xs acc]
+  (if (nil? xs)
+    acc
+    (rev (tail xs) (cons (head xs) acc))))
+
+;; Are two lists elementwise equal?
+(def same [a b]
+  (if (nil? a)
+    (nil? b)                          ; a ended -- equal iff b ended too
+    (if (nil? b)
+      0                               ; b ended first
+      (if (dist (head a) (head b))
+        0                             ; heads differ
+        (same (tail a) (tail b))))))  ; heads match -- keep going
+
+(def palindrome? [s]
+  (same s (rev s (nil))))
+
+(palindrome? {s})

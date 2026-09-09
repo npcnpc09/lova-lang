@@ -1,0 +1,48 @@
+;;; collatz.lova  --  how many steps does n take to reach 1?
+;;;
+;;; The Collatz step: halve an even number, else 3n+1.  Iterate until
+;;; the value is 1 and count the iterations.  Nobody knows whether this
+;;; terminates for every n, which makes it an honest exercise of the
+;;; substrate's ceilings rather than a decorative one: a program that
+;;; might not stop must fail as a structured anomaly, not as a hang.
+;;;
+;;; Returns: the number of steps from n to 1.
+;;;
+;;; Two things worth noticing.
+;;;
+;;; 1. The counter.  LOVA has no mutable state (Constraint 4) and no
+;;;    pair type, so a loop cannot carry an accumulator alongside its
+;;;    value.  The accumulator is instead an extra parameter and the
+;;;    iteration is recursion -- which is what currying is for:
+;;;    (steps n acc) is (lambda n (lambda acc ...)) applied twice.
+;;;
+;;; 2. The ceiling.  Recursion depth here is the step count itself, so
+;;;    a seed whose trajectory is longer than MAX_CALL_DEPTH raises a
+;;;    DepthTrap.  That is the designed behaviour: n=27 takes 111 steps
+;;;    and returns; n=2463 takes 208 and traps, with an anomaly naming
+;;;    the limit and what to do about it.  Compare a Python version,
+;;;    which would raise RecursionError with a stack trace an agent has
+;;;    to parse.
+;;;
+;;; `loop-until` would give unbounded iteration without any call depth
+;;; at all -- (apply (loop-until pred step) seed) -- but it threads a
+;;; single value, so it cannot count.  It is the right tool for
+;;; something like the odd part of n:
+;;;     (apply (loop-until (lambda x (mod x 2))
+;;;                        (lambda x (partition x))) n)
+
+;; One Collatz step: n/2 when even, 3n+1 when odd.
+;; `partition` is 0x02, which halves; `mod n 2` is the parity test.
+(defn next [n]
+  (if-surprise (mod n 2)
+    (merge (mul 3 n) 1)               ; odd  -> 3n + 1
+    (partition n)))                   ; even -> n / 2
+
+;; Count steps until the value is 1.  `(deviation n 1)` is non-zero for
+;; as long as n differs from 1, which is exactly the loop condition.
+(defn steps [n acc]
+  (if-surprise (deviation n 1)
+    (steps (next n) (merge acc 1))
+    acc))
+
+(steps {n} 0)

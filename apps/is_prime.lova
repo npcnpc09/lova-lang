@@ -1,0 +1,40 @@
+;;; is_prime.lova  --  primality by trial division
+;;;
+;;; The first LOVA program with a real algorithm in it.  Everything in
+;;; apps/ before this one was a single fixed-depth expression: the
+;;; language had no functions, no recursion and no loops, so a program
+;;; could only be as long as it was written.  This one recurses.
+;;;
+;;; Returns:
+;;;   1  if n is prime
+;;;   0  otherwise
+;;;
+;;; Three M9 pieces carry it:
+;;;
+;;;   `defn`       -- a named, curried function.  Sugar: it desugars to
+;;;                   (let name (lambda a (lambda b body)) ...), and the
+;;;                   `let` is a letrec, which is why `check` may call
+;;;                   itself.
+;;;   `mod`        -- 0x0C, the divisibility test.
+;;;   `threshold`  -- with `deviation`, the ordering test.  There is no
+;;;                   `<` operator in the 64-token core; ordering is
+;;;                   built out of the surprise family:
+;;;                       (a > b)  ==  (threshold (deviation a b))
+;;;
+;;; Recursion depth is sqrt(n), so n up to MAX_NT_INPUT stays far
+;;; inside the substrate's MAX_CALL_DEPTH.
+
+;; Has n a divisor at or above d?  Walks d upward until d*d exceeds n.
+(defn check [d n]
+  (if-surprise (threshold (deviation (mul d d) n))
+    1                                 ; d*d > n  -- no divisor exists, prime
+    (if-surprise (mod n d)
+      (check (merge d 1) n)           ; n mod d != 0  -- try the next d
+      0)))                            ; d divides n   -- composite
+
+(defn is-prime [n]
+  (if-surprise (threshold (deviation 2 n))
+    0                                 ; 2 > n  -- 0 and 1 are not prime
+    (check 2 n)))
+
+(is-prime {n})

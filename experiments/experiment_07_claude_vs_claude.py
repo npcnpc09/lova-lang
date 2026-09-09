@@ -313,9 +313,19 @@ def solve(p_arg, n): return abs(p_arg - p(n))
 }
 
 
-# --- LOVA solutions (from Exp 03's CLAUDE_SOLUTIONS, inlined for completeness) ---
+# --- LOVA solutions -----------------------------------------------------
+#
+# Imported from Experiment 03 rather than copied.  They *were* copied,
+# and that is why both experiments silently died when LOVABench grew
+# from twenty tasks to sixty: two tables, one corpus, no link between
+# them.  One table per language now, and the coverage assertion below
+# fails loudly rather than four months later.
 
-LOVA_SOLUTIONS: Dict[str, str] = {
+from experiments.experiment_03_lovabench import CLAUDE_SOLUTIONS
+
+LOVA_SOLUTIONS: Dict[str, str] = dict(CLAUDE_SOLUTIONS)
+
+_SUPERSEDED_INLINE_LOVA: Dict[str, str] = {
     "pb01": "(p {n})",
     "pb02": "(tau {n})",
     "pb03": "(sigma {n})",
@@ -364,6 +374,24 @@ def _classify_python_error(exc: BaseException) -> str:
     if isinstance(exc, ZeroDivisionError): return "arithmetic"
     if isinstance(exc, AssertionError): return "assertion"
     return type(exc).__name__.lower()
+
+
+# The v2 forty live in ``corpus/python_solutions.py`` -- written for
+# Exp 11's density measurement and never wired back to here, which is
+# the other half of why this experiment stopped running.  Exp 11 merges
+# the same two dicts; this is that merge, in the experiment that owns
+# the comparison.
+from corpus.python_solutions import PYTHON_PURE as _PYTHON_V2
+
+PYTHON_SOLUTIONS.update(
+    {task_id: code for task_id, code in _PYTHON_V2.items()
+     if task_id not in PYTHON_SOLUTIONS}
+)
+
+_MISSING_LOVA = {t.id for t in TASKS} - set(LOVA_SOLUTIONS)
+_MISSING_PY = {t.id for t in TASKS} - set(PYTHON_SOLUTIONS)
+assert not _MISSING_LOVA, f"no LOVA solution for {sorted(_MISSING_LOVA)}"
+assert not _MISSING_PY, f"no Python solution for {sorted(_MISSING_PY)}"
 
 
 def run_python_solution(task: Task, code: str) -> TaskOutcome:
@@ -556,7 +584,7 @@ def part3_density(py_outs: List[TaskOutcome], pa_outs: List[TaskOutcome]) -> Non
     mean_pa = total_pa / len(pa_outs)
     ratio = total_py / max(total_pa, 1)
     print()
-    print(f"  total bytes (20 tasks):")
+    print(f"  total bytes ({len(TASKS)} tasks):")
     print(f"    Python (UTF-8 source): {total_py:>6}  (mean {mean_py:>5.0f} / task)")
     print(f"    LOVA (integer):     {total_pa:>6}  (mean {mean_pa:>5.0f} / task)")
     print(f"    density ratio:         {ratio:.1f}x  (LOVA denser)")
@@ -581,25 +609,26 @@ def summary(py: List[TaskOutcome], pa: List[TaskOutcome]) -> None:
     total_tests = sum(o.n_total for o in py)
 
     print()
-    print(f"  tasks fully solved   Python: {py_pass:>2}/20      LOVA: {pa_pass:>2}/20")
+    n = len(TASKS)
+    print(f"  tasks fully solved   Python: {py_pass:>2}/{n}      LOVA: {pa_pass:>2}/{n}")
     print(f"  test cases passed    Python: {py_tests:>2}/{total_tests:<3}    LOVA: {pa_tests:>2}/{total_tests:<3}")
 
     # Error distribution
     print()
-    print("  error-kind distribution (Python, over 20 solutions):")
+    print(f"  error-kind distribution (Python, over {n} solutions):")
     from collections import Counter
     py_errs = Counter(o.error_kind for o in py if not o.passed)
     pa_errs = Counter(o.error_kind for o in pa if not o.passed)
     for kind, count in sorted(py_errs.items()):
         print(f"    {kind:<15s} {count:>3d}")
     if not py_errs:
-        print(f"    (no errors -- 20/20 passed)")
+        print(f"    (no errors -- {n}/{n} passed)")
     print()
-    print("  error-kind distribution (LOVA, over 20 solutions):")
+    print(f"  error-kind distribution (LOVA, over {n} solutions):")
     for kind, count in sorted(pa_errs.items()):
         print(f"    {kind:<15s} {count:>3d}")
     if not pa_errs:
-        print(f"    (no errors -- 20/20 passed)")
+        print(f"    (no errors -- {n}/{n} passed)")
 
     # The structural claim
     print()

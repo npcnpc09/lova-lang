@@ -34,6 +34,8 @@ from core.tokens import (
     END, IF_SURPRISE, LIT_INT, SEQ, SIGMA, SIGNATURES, SURPRISE, TAU,
     TYPED_TOKENS, TRACE_SURPRISE, VIOLATE, CONSERVE, BUDGET, MERGE, GCD,
     PARTITION, IDENTITY, P, MOBIUS, LET, REF, Node,
+    APPLY, DEVIATION, LAMBDA, LOOP_UNTIL, MOD, MUL, THRESHOLD,
+    CONS, DIV, HEAD, IS_NIL, NIL, TAIL, STDIN, STDOUT, WHEN_ANOMALY,
 )
 from core.types import INT, LITERAL_INT, Type, is_subtype
 
@@ -57,12 +59,36 @@ _EFFECTS: dict = {
     MERGE: frozenset(),
     PARTITION: frozenset(),
     IDENTITY: frozenset(),
+    MUL: frozenset(),
+    MOD: frozenset(),
+    DIV: frozenset(),
+    # lists (M10) -- pure constructors and accessors
+    NIL: frozenset(),
+    CONS: frozenset(),
+    HEAD: frozenset(),
+    TAIL: frozenset(),
+    IS_NIL: frozenset(),
+    DEVIATION: frozenset(),
+    THRESHOLD: frozenset(),
     LIT_INT: frozenset(),
     # composition — effects inherited from children
     SEQ: frozenset(),
     LET: frozenset(),
     REF: frozenset(),
     IF_SURPRISE: frozenset({"read-surprise"}),
+    # abstraction (M9).  Building a closure is pure; *calling* one is
+    # where cost and non-termination enter, so APPLY and LOOP_UNTIL
+    # declare an effect that says exactly that: the static budget
+    # bound stops being a bound.
+    LAMBDA: frozenset(),
+    APPLY: frozenset({"unbounded-cost"}),
+    LOOP_UNTIL: frozenset({"unbounded-cost"}),
+    # effects / IO (M11) -- the first operators that touch the world
+    STDOUT: frozenset({"write-stdout"}),
+    STDIN: frozenset({"read-stdin"}),
+    # M13 -- handling an anomaly is an effect on the run's trace, and it
+    # also means the enclosed cost is not the program's declared cost.
+    WHEN_ANOMALY: frozenset({"handle-anomaly"}),
     # conservation
     BUDGET: frozenset({"budget-scope"}),
     CONSERVE: frozenset({"conservation-check"}),
@@ -87,8 +113,10 @@ def _depth_delta(token: int) -> int:
         return -1
     in_types = sig.get("in_types")
     if in_types is None:
-        # variadic — pushes a continuation slot, pops none of its own
-        return 0
+        # Variadic — pushes a continuation slot (net 0) plus one slot per
+        # typed head argument.  APPLY's Fn head is the only such slot
+        # today, and it must be filled before the tail opens.
+        return len(sig.get("head_types", ()))
     return len(in_types) - 1
 
 
@@ -184,7 +212,9 @@ def _tokenchoice(
     else:
         if "variadic_type" in sig:
             arity: object = "variadic"
-            in_type_names: Tuple[str, ...] = (f"{sig['variadic_type']!s}*",)
+            in_type_names: Tuple[str, ...] = tuple(
+                str(t) for t in sig.get("head_types", ())
+            ) + (f"{sig['variadic_type']!s}*",)
         elif "in_types" in sig and sig["in_types"] is not None:
             arity = len(sig["in_types"])
             in_type_names = tuple(str(t) for t in sig["in_types"])
@@ -262,6 +292,8 @@ class StaticAnalysis:
     uses_surprise: bool
     uses_lineage: bool
     lineage_root: Optional[int]
+    is_cost_bounded: bool = True
+    uses_abstraction: bool = False
 
     def summary(self) -> str:
         eff = "{" + ", ".join(sorted(self.effects)) + "}" if self.effects else "{}"
@@ -269,11 +301,16 @@ class StaticAnalysis:
             f"  nodes:           {self.node_count}",
             f"  max depth:       {self.max_depth}",
             f"  effects:         {eff}",
-            f"  budget bound:    <= {self.budget_upper_bound} units",
+            f"  budget bound:    "
+            + (f"<= {self.budget_upper_bound} units"
+               if self.is_cost_bounded
+               else f"UNBOUNDED (node count {self.budget_upper_bound} is "
+                    "not a bound once a function can be called)"),
             f"  deterministic:   {self.is_deterministic}",
             f"  uses conserve:   {self.uses_conservation}",
             f"  uses surprise:   {self.uses_surprise}",
             f"  uses lineage:    {self.uses_lineage}",
+            f"  uses abstraction:{self.uses_abstraction}",
         ]
         if self.lineage_root is not None:
             lines.append(f"  lineage root:    uid={self.lineage_root}")
@@ -290,6 +327,13 @@ _SWAP_GROUPS_FOR_REPAIR = [
     frozenset({P, TAU, SIGMA, MOBIUS}),
     frozenset({MERGE, GCD}),
     frozenset({IDENTITY, PARTITION}),
+    # M9 arithmetic.  Kept as its own group rather than folded into
+    # {MERGE, GCD}: widening an existing group would change which
+    # offender the Δ-trap body scanner names for shapes measured in
+    # Exp 09, and those numbers are in the journal.
+    frozenset({MUL, MOD, DIV}),
+    frozenset({HEAD, TAIL}),
+    frozenset({DEVIATION, THRESHOLD}),
 ]
 
 
@@ -313,7 +357,7 @@ def static_analyze(node: Node) -> StaticAnalysis:
     """Walk a Node tree, summarise what it does, without running it."""
     effects_accum: set = set()
     counts = {"nodes": 0, "max_depth": 0,
-              "conserve": 0, "surprise": 0, "lineage": 0}
+              "conserve": 0, "surprise": 0, "lineage": 0, "abstraction": 0}
 
     def walk(n: Node, depth: int) -> None:
         counts["nodes"] += 1
@@ -321,8 +365,11 @@ def static_analyze(node: Node) -> StaticAnalysis:
         effects_accum.update(_EFFECTS.get(n.op, frozenset()))
         if n.op in (BUDGET, CONSERVE, VIOLATE):
             counts["conserve"] += 1
-        if n.op in (SURPRISE, IF_SURPRISE, TRACE_SURPRISE):
+        if n.op in (SURPRISE, IF_SURPRISE, TRACE_SURPRISE,
+                    DEVIATION, THRESHOLD, WHEN_ANOMALY):
             counts["surprise"] += 1
+        if n.op in (LAMBDA, APPLY, LOOP_UNTIL):
+            counts["abstraction"] += 1
         if getattr(n, "uid", None) is not None:
             counts["lineage"] += 1
         if n.op == LIT_INT:
@@ -336,7 +383,7 @@ def static_analyze(node: Node) -> StaticAnalysis:
     # LOVA M5 runtime is deterministic by construction (no random,
     # no IO, no clock).  This will change when we add effect tokens.
     is_deterministic = True
-    for bad_effect in ("read-clock", "net-recv", "random"):
+    for bad_effect in ("read-clock", "net-recv", "random", "read-stdin"):
         if bad_effect in effects_accum:
             is_deterministic = False
             break
@@ -351,4 +398,10 @@ def static_analyze(node: Node) -> StaticAnalysis:
         uses_surprise=counts["surprise"] > 0,
         uses_lineage=counts["lineage"] > 0,
         lineage_root=getattr(node, "uid", None),
+        # Node count is an upper bound on cost only while every node is
+        # evaluated at most once.  A call or a loop breaks that, so the
+        # honest answer for such a program is "unbounded" — the actual
+        # ceiling is the substrate's MAX_STEPS, not anything static.
+        is_cost_bounded="unbounded-cost" not in effects_accum,
+        uses_abstraction=counts["abstraction"] > 0,
     )

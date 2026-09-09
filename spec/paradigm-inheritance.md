@@ -217,7 +217,7 @@ Each of LOVA's 10 axioms has a clear lineage and a clear extension.
   loop" — a program's control flow depends on whether what just
   happened surprised it.
 
-### p / τ / σ / φ₃ / ψ₇ / η (0x08 / 0x09 / 0x0A / 0x0B / 0x0C / 0x0D)
+### p / τ / σ / η / gcd / μ (0x08 / 0x09 / 0x0A / 0x0D / 0x0E / 0x0F)
 
 - **Inherits from**: Mathematica's number-theory primitives;
   SageMath's NT module; Pari/GP.
@@ -225,6 +225,35 @@ Each of LOVA's 10 axioms has a clear lineage and a clear extension.
   of the core 64 tokens. This is deliberate: an AI working in LOVA
   has a richer semantic vocabulary over integers than any mainstream
   language provides natively.
+- **Measured cost of that choice** (Exp 12): the density advantage this
+  buys is real on tasks that match the built-ins and *reverses* on
+  tasks that do not — algorithmic code costs 1.5× more LLM tokens than
+  Python, partly because slots spent here were not spent on `div` or a
+  comparison operator. The trade is defensible; it should be made with
+  the number in view (Q31).
+
+### mul / mod (0x0B / 0x0C)
+
+- **Inherits from**: every language with arithmetic. There is no
+  interesting ancestor trajectory here, which is the point — these are
+  table stakes, and the language went nine milestones without them.
+- **History**: these slots held `φ₃` and `ψ₇`, the mock-theta
+  placeholders inherited from DNA OS's timing primitives. They carried
+  a name and an arity from M1 and never an implementation. M9
+  reallocated them, so the DNA OS lineage for the *architecture*
+  stands while these two slots do not.
+
+### lambda / apply / loop-until (0x2C / 0x2D / 0x2B)
+
+- **Inherits from**: the lambda calculus by way of Lisp and ML;
+  currying from Schönfinkel and Haskell; the loop combinator from the
+  fixed-point combinators of the same tradition.
+- **Extends**: `loop-until` is a *combinator*, not a statement — it
+  returns the function that iterates — which keeps unbounded iteration
+  off the call stack and gives conservation a natural place to bound
+  it. Non-termination becomes a `DepthTrap` or `StepTrap` carrying the
+  same anomaly schema as every other failure, rather than a hang or a
+  host-language stack trace.
 
 ---
 

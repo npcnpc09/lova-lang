@@ -40,11 +40,49 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.tokens import (
-    BUDGET, CONSERVE, GCD, IDENTITY, IF_SURPRISE, LET, LIT_INT, MERGE,
-    MOBIUS, P, PARTITION, REF, SIGMA, SIGNATURES, SURPRISE, SEQ, TAU,
-    TRACE_SURPRISE, VIOLATE, Lit, Node,
+    APPLY, BUDGET, CONS, CONSERVE, DEVIATION, DIV, GCD, HEAD, IDENTITY,
+    IF_SURPRISE, IS_NIL, LAMBDA, LET, LIT_INT, LOOP_UNTIL, MERGE, MOBIUS,
+    MOD, MUL, NIL, P, PARTITION, REF, RESULT_FOLLOWS_OPERANDS, SIGMA,
+    SIGNATURES, SURPRISE, SEQ, TAIL, TAU, THRESHOLD, TRACE_SURPRISE,
+    VIOLATE, WHEN_ANOMALY, Lit, Node,
 )
-from core.types import INT, LITERAL_INT, Type, is_subtype
+from core.types import FN, INT, LIST, LITERAL_INT, VALUE, Type, is_subtype
+
+
+# A lambda parameter's type is not knowable from the definition: LOVA has
+# no parameter annotations, and inferring one would mean checking the body
+# once per call site.  The checker therefore treats a parameter as
+# *unknown* and accepts a reference to it in any slot, leaving a genuine
+# misuse -- passing a list where an Int is wanted -- to the runtime, which
+# reports it with the same structured error as every other fault.
+#
+# This is the same boundary the scope pass already draws (Exp 08) and the
+# same one `Fn`'s untracked curried arity draws (journal Q35): the static
+# guarantee is operator-level, and anything that depends on a *name* is
+# checked later or not at all.  See journal Q43.
+_UNKNOWN = object()
+
+# Operators whose result type is not their own but their operands'.
+#
+# ``(if c a b)`` is whatever its branches are; ``(let n v body)`` is
+# whatever ``body`` is; ``(seq ... last)`` is whatever ``last`` is; and
+# ``(apply f ...)`` is whatever ``f`` returns.  Declaring them all `Int`
+# -- which is what the table does, because ``valid_next`` needs a single
+# answer per operator -- made every list-returning conditional
+# unrepresentable: `map`, `filter` and `reverse` could not be written,
+# because each is `(if (nil? xs) (nil) (cons ...))` and the branches were
+# forced to `Int`.
+#
+# So the checker treats these four as transparent: it pushes the
+# *expected* type into the position that determines the result, and does
+# not gate on their declared ``out_type``.  For the first three that is
+# strictly more precise than before.  For ``APPLY`` it is strictly less:
+# the result of a call is unknown, for the same reason curried arity is
+# unknown (journal Q35), so a call used in the wrong slot fails at run
+# time with a structured error rather than at compile time.
+# SEQ joins the generator's set here: the compiler can see how many
+# children a `seq` has, so it can check the empty case separately.
+_RESULT_FOLLOWS_OPERANDS = RESULT_FOLLOWS_OPERANDS | {SEQ}
 
 
 # --- CompileError ----------------------------------------------------------
@@ -85,6 +123,25 @@ class CompileError(Exception):
 
 # --- Pass 1: scope resolution ----------------------------------------------
 
+def _chain_names(node: Node) -> Set[int]:
+    """Every name bound by a chain of ``LET``s in body position.
+
+    ``(let f .. (let g .. (let h .. body)))`` binds f, g and h as one
+    group, matching the single frame the runtime gives them.  A shadowed
+    name ends the chain, because the runtime starts a new frame there.
+    """
+    names: Set[int] = set()
+    current = node
+    while (current.op == LET and len(current.args) == 3
+           and current.args[0].op == LIT_INT):
+        name_id = int(current.args[0].args[0])
+        if name_id in names:
+            break                     # shadowing: a fresh frame starts here
+        names.add(name_id)
+        current = current.args[2]
+    return names
+
+
 def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
     """Walk the tree; every REF must bind to a name in ``env``."""
     if node.op == LIT_INT:
@@ -107,9 +164,40 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
                     "current expression with a literal integer."
                 ),
             )
-        name_id = int(name_node.args[0])
-        _scope_check(node.args[1], env, path + (node.op, 1))  # value uses outer env
-        _scope_check(node.args[2], env | {name_id}, path + (node.op, 2))
+        # LET is a letrec (M9), and a *chain* of LETs is one mutually
+        # recursive group (M12): every name in the chain is in scope in
+        # every value and body of it.  The runtime shares one frame
+        # across such a chain, so the checker has to see the same shape,
+        # or it would reject programs that run.
+        #
+        # Both changes strictly widen what compiles -- a forward or self
+        # reference used to be an unbound-ref error -- so nothing that
+        # used to compile changes meaning.
+        group = env | _chain_names(node)
+        _scope_check(node.args[1], group, path + (node.op, 1))
+        _scope_check(node.args[2], group, path + (node.op, 2))
+        return
+    if node.op == LAMBDA:
+        # (lambda param body) -- param is a LiteralInt; body sees it bound.
+        param_node = node.args[0]
+        if param_node.op != LIT_INT:
+            raise CompileError(
+                kind="type-mismatch",
+                detail={
+                    "context": "LAMBDA param slot",
+                    "expected": "LiteralInt",
+                    "got": SIGNATURES[param_node.op]["name"],
+                },
+                position_path=path + (node.op, param_node.op),
+                offending_op=param_node.op,
+                repair_hint=(
+                    "LAMBDA's first slot demands a LiteralInt naming the "
+                    "parameter; replace the current expression with a "
+                    "literal integer."
+                ),
+            )
+        param_id = int(param_node.args[0])
+        _scope_check(node.args[1], env | {param_id}, path + (node.op, 1))
         return
     if node.op == REF:
         name_node = node.args[0]
@@ -153,14 +241,127 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
 
 # --- Pass 2: type check ----------------------------------------------------
 
-def _type_check(node: Node, expected: Type, path: Tuple[int, ...]) -> None:
-    """Walk the tree; each node's out_type must be a subtype of expected."""
+def _binding_type(node: Node, type_env: Dict[int, Type]) -> Type:
+    """The type a LET value slot actually produces.
+
+    ``REF`` declares ``out_type = Int`` because that is what the vast
+    majority of references are and because ``valid_next`` has no scope
+    to consult (name ids live in LIT_INT payloads, which the generation
+    state machine never sees).  The compiler *does* have scope, so here
+    a reference resolves to whatever its binding holds.
+    """
+    if node.op == REF and node.args and node.args[0].op == LIT_INT:
+        return type_env.get(int(node.args[0].args[0]), INT)  # type: ignore[return-value]
+    declared = SIGNATURES[node.op].get("out_type")
+    return declared if declared is not None else INT
+
+
+def _check_transparent(
+    node: Node,
+    expected: Type,
+    path: Tuple[int, ...],
+    type_env: Dict[int, Type],
+) -> None:
+    """Check an operator whose result type follows its operands."""
+    if node.op == LET and len(node.args) == 3 and node.args[0].op == LIT_INT:
+        name_id = int(node.args[0].args[0])
+        value_node = node.args[1]
+        inner_env = dict(type_env)
+        # Every name in the binding group is visible, matching the scope
+        # pass and the runtime's shared frame.  A group member whose type
+        # is not yet known is recorded as unknown rather than guessed.
+        for other in _chain_names(node):
+            inner_env.setdefault(other, _UNKNOWN)
+        inner_env[name_id] = _binding_type(value_node, inner_env)
+        _type_check(value_node, VALUE, path + (node.op, 1), inner_env)
+        _type_check(node.args[2], expected, path + (node.op, 2), inner_env)
+        return
+
+    if node.op == IF_SURPRISE and len(node.args) == 3:
+        # The condition is a surprise magnitude, always an Int; the two
+        # branches are whatever the context wants.
+        _type_check(node.args[0], INT, path + (node.op, 0), type_env)
+        _type_check(node.args[1], expected, path + (node.op, 1), type_env)
+        _type_check(node.args[2], expected, path + (node.op, 2), type_env)
+        return
+
+    if node.op == SEQ:
+        if not node.args:
+            # `(seq)` evaluates to 0, so it is an Int wherever it stands.
+            if not is_subtype(INT, expected):
+                raise CompileError(
+                    kind="type-mismatch",
+                    detail={"at_operator": "seq", "produces": "Int",
+                            "expected": str(expected),
+                            "note": "an empty seq evaluates to 0"},
+                    position_path=path + (node.op,),
+                    offending_op=node.op,
+                    repair_hint=(
+                        "an empty `seq` yields the integer 0; give it a "
+                        f"final expression of type {expected}, or use an "
+                        "operator that produces one"
+                    ),
+                )
+            return
+        # Everything but the last is evaluated for effect.
+        for index, child in enumerate(node.args[:-1]):
+            if isinstance(child, Node):
+                _type_check(child, VALUE, path + (node.op, index), type_env)
+        if node.args and isinstance(node.args[-1], Node):
+            _type_check(node.args[-1], expected,
+                        path + (node.op, len(node.args) - 1), type_env)
+        return
+
+    if node.op == WHEN_ANOMALY and len(node.args) == 2:
+        # The guarded expression carries the result type; the handler is
+        # a function, and what it returns is its own business (the same
+        # boundary every call has -- journal Q51).
+        _type_check(node.args[0], expected, path + (node.op, 0), type_env)
+        _type_check(node.args[1], FN, path + (node.op, 1), type_env)
+        return
+
+    if node.op == APPLY:
+        sig = SIGNATURES[node.op]
+        head_types = sig.get("head_types", ())
+        for index, child in enumerate(node.args):
+            if not isinstance(child, Node):
+                continue
+            here = head_types[index] if index < len(head_types) else VALUE
+            _type_check(child, here, path + (node.op, index), type_env)
+        return
+
+    raise AssertionError(f"no transparent rule for {SIGNATURES[node.op]['name']}")
+
+
+def _type_check(
+    node: Node,
+    expected: Type,
+    path: Tuple[int, ...],
+    type_env: Optional[Dict[int, Type]] = None,
+) -> None:
+    """Walk the tree; each node's out_type must be a subtype of expected.
+
+    ``type_env`` maps bound name ids to the type of what they hold, so
+    a reference to a function-valued binding is rejected in an integer
+    slot (and accepted in the ``Fn`` head slot of APPLY).  This is the
+    same division of labour as the scope pass: ``valid_next`` guarantees
+    operator-level well-typedness at generation time, while everything
+    that depends on *names* is settled at compile time.
+    """
+    if type_env is None:
+        type_env = {}
     sig = SIGNATURES[node.op]
-    out_type = sig.get("out_type")
+    out_type = _binding_type(node, type_env) if node.op == REF else sig.get("out_type")
+    if out_type is _UNKNOWN:
+        # A reference to a lambda parameter: accepted in any slot.
+        return
     if out_type is None:
         # Reserved operator without a type -- M1 runtime can't handle
         # these but compile is about correctness-of-form; let it pass
         # (runtime will raise NotImplementedError).
+        return
+    if node.op in _RESULT_FOLLOWS_OPERANDS:
+        _check_transparent(node, expected, path, type_env)
         return
     if not is_subtype(out_type, expected):
         raise CompileError(
@@ -180,15 +381,33 @@ def _type_check(node: Node, expected: Type, path: Tuple[int, ...]) -> None:
         )
     if node.op == LIT_INT:
         return
+
+    if node.op == LAMBDA and len(node.args) == 2 and node.args[0].op == LIT_INT:
+        param_id = int(node.args[0].args[0])
+        inner_env = dict(type_env)
+        # APPLY's tail slots are typed Int, so a parameter is always an
+        # integer.  LOVA functions are first-order in M9 — a function
+        # cannot be passed to a function.  (See journal/experiment_12.)
+        inner_env[param_id] = _UNKNOWN
+        # The body is a Value: currying makes the body of an outer
+        # lambda another lambda.
+        _type_check(node.args[1], VALUE, path + (node.op, 1), inner_env)
+        return
+
     if "variadic_type" in sig:
+        # A head-typed variadic (APPLY) checks its leading slots against
+        # ``head_types`` and everything after against ``variadic_type``.
+        head_types = sig.get("head_types", ())
         inner = sig["variadic_type"]
         for i, child in enumerate(node.args):
-            if isinstance(child, Node):
-                _type_check(child, inner, path + (node.op, i))
+            if not isinstance(child, Node):
+                continue
+            expected_here = head_types[i] if i < len(head_types) else inner
+            _type_check(child, expected_here, path + (node.op, i), type_env)
     elif sig.get("in_types") is not None:
         for i, (child, in_type) in enumerate(zip(node.args, sig["in_types"])):
             if isinstance(child, Node):
-                _type_check(child, in_type, path + (node.op, i))
+                _type_check(child, in_type, path + (node.op, i), type_env)
 
 
 # --- Pass 3: constant folding ---------------------------------------------
@@ -196,8 +415,17 @@ def _type_check(node: Node, expected: Type, path: Tuple[int, ...]) -> None:
 # Pure operators — no side effects, no surprise, no conservation, no
 # control flow.  All inputs deterministically map to output.
 _PURE_OPS = frozenset({
-    P, TAU, SIGMA, MOBIUS, GCD, MERGE, PARTITION, IDENTITY,
+    P, TAU, SIGMA, MOBIUS, GCD, MERGE, PARTITION, IDENTITY, DIV,
+    # M9 arithmetic and comparison.  DEVIATION and THRESHOLD are pure in
+    # a way SURPRISE is not: SURPRISE writes to the surprise trace, so
+    # folding it would erase an observation the program asked for.
+    MUL, MOD, DEVIATION, THRESHOLD,
 })
+
+# Pure, but folding them is pointless: their result is a list, and the
+# folder can only emit a LIT_INT.  Listed so the omission is deliberate
+# rather than forgotten.
+_PURE_BUT_UNFOLDABLE = frozenset({NIL, CONS, TAIL})
 
 
 def _is_lit(node: Node) -> bool:
@@ -233,6 +461,129 @@ def _fold(node: Node) -> Node:
     return folded
 
 
+# --- Pass 4: drop unused bindings ------------------------------------------
+#
+# A standard-library prelude is only usable if what a program does not
+# call costs it nothing.  Without this pass, prepending ~15 definitions
+# would add them to every program's node count, byte count and LLM-token
+# count -- which, for a language whose pitch is density, would make the
+# standard library a tax rather than a convenience.
+#
+# The pass is conservative in exactly one way that matters: a binding is
+# dropped only when its *value* has no effects.  Before M11 that was
+# vacuous; `stdout` made it load-bearing, because dropping
+# `(let x (stdout 5) body)` would silently lose the write.
+
+
+def _subtree_effects(node: Node) -> set:
+    """Effects that fire when ``node`` is evaluated.
+
+    Does not descend into a lambda body: building a closure is pure, and
+    whatever the body would do happens only if something applies it.
+    Without that distinction no recursive prelude function could ever be
+    dropped, since its body contains an `apply`.
+    """
+    from core.observability import _EFFECTS
+
+    found = set(_EFFECTS.get(node.op, frozenset()))
+    if node.op == LIT_INT:
+        return found
+    for index, child in enumerate(node.args):
+        if not isinstance(child, Node):
+            continue
+        if node.op == LAMBDA and index == 1:
+            continue          # the body runs only when applied
+        found |= _subtree_effects(child)
+    return found
+
+
+def _references(node: Node, found: Set[int]) -> None:
+    """Collect every name id reachable from ``node`` via REF."""
+    if node.op == LIT_INT:
+        return
+    if node.op == REF and node.args and node.args[0].op == LIT_INT:
+        found.add(int(node.args[0].args[0]))
+        return
+    for child in node.args:
+        if isinstance(child, Node):
+            _references(child, found)
+
+
+def _split_chain(node: Node) -> Tuple[List[Tuple[int, Node]], Node]:
+    """A chain of ``LET``s as ``([(name, value), ...], final_body)``."""
+    bindings: List[Tuple[int, Node]] = []
+    seen: Set[int] = set()
+    current = node
+    while (current.op == LET and len(current.args) == 3
+           and current.args[0].op == LIT_INT):
+        name_id = int(current.args[0].args[0])
+        if name_id in seen:
+            break                     # shadowing starts a new group
+        seen.add(name_id)
+        bindings.append((name_id, current.args[1]))
+        current = current.args[2]
+    return bindings, current
+
+
+def _drop_unused(node: Node) -> Tuple[Node, int]:
+    """Remove bindings nothing in the group reaches.
+
+    Liveness is a fixpoint over the whole binding group, not a lookup in
+    one body.  With mutual recursion (M12) a binding can be reached only
+    from an *earlier* sibling's value -- `ev` calling `od` -- so asking
+    "does my body mention me" drops half of every mutually recursive
+    pair and produces a program that no longer runs.
+    """
+    if node.op == LIT_INT:
+        return node, 0
+
+    if node.op == LET and len(node.args) == 3 and node.args[0].op == LIT_INT:
+        bindings, body = _split_chain(node)
+        dropped = 0
+        rebuilt: List[Tuple[int, Node]] = []
+        for name_id, value in bindings:
+            new_value, n = _drop_unused(value)
+            rebuilt.append((name_id, new_value))
+            dropped += n
+        new_body, n = _drop_unused(body)
+        dropped += n
+
+        values = dict(rebuilt)
+        live: Set[int] = set()
+        _references(new_body, live)
+        frontier = set(live)
+        while frontier:
+            name_id = frontier.pop()
+            value = values.get(name_id)
+            if value is None:
+                continue
+            reached: Set[int] = set()
+            _references(value, reached)
+            # A binding that only references itself is not thereby live.
+            fresh = reached - live - {name_id}
+            live |= fresh
+            frontier |= fresh
+
+        out = new_body
+        for name_id, value in reversed(rebuilt):
+            if name_id not in live and not _subtree_effects(value):
+                dropped += 1
+                continue
+            out = Node(op=LET, args=[Lit(name_id), value, out])
+        return out, dropped
+
+    dropped = 0
+    new_args: List[Any] = []
+    for child in node.args:
+        if isinstance(child, Node):
+            rewritten, n = _drop_unused(child)
+            new_args.append(rewritten)
+            dropped += n
+        else:
+            new_args.append(child)
+    return Node(op=node.op, args=new_args), dropped
+
+
 # --- public API ------------------------------------------------------------
 
 @dataclass
@@ -242,6 +593,7 @@ class CompileReport:
     compiled_nodes: int
     folded_subtrees: int
     passes: Tuple[str, ...] = field(default_factory=tuple)
+    dropped_bindings: int = 0
 
     def compression_ratio(self) -> float:
         if self.original_nodes == 0:
@@ -263,6 +615,8 @@ def compile(
     fold: bool = True,
     type_check: bool = True,
     scope_check: bool = True,
+    drop_unused: bool = True,
+    top_type: Type = VALUE,
 ) -> Tuple[Node, CompileReport]:
     """Run the static pipeline on ``node``.
 
@@ -278,10 +632,20 @@ def compile(
         passes.append("scope-check")
 
     if type_check:
-        _type_check(node, expected=INT, path=())
+        # A program is an expression of *any* type.  Demanding Int here
+        # would reject `"hi"` and `(reverse xs)` as whole programs, which
+        # is a statement about the top-level slot rather than about the
+        # program.  Pass `top_type=INT` to require an integer result.
+        _type_check(node, expected=top_type, path=())
         passes.append("type-check")
 
     compiled = node
+    dropped = 0
+    if drop_unused:
+        compiled, dropped = _drop_unused(compiled)
+        passes.append("drop-unused")
+
+    node = compiled
     folded_subtrees = 0
     if fold:
         before = original_count
@@ -296,11 +660,17 @@ def compile(
         compiled_nodes=compiled_count,
         folded_subtrees=folded_subtrees,
         passes=tuple(passes),
+        dropped_bindings=dropped,
     )
     return compiled, report
 
 
 # --- self-test -------------------------------------------------------------
+
+def evaluate_for_selftest(node):
+    from core.runtime import evaluate
+    return evaluate(node)
+
 
 def _self_test() -> None:
     from core.surface import parse, pretty
@@ -335,6 +705,65 @@ def _self_test() -> None:
     compiled4, report4 = compile(parse(src4_ok))
     print(f"  {src4_ok} -> {pretty(compiled4)}  "
           f"(fold kept {report4.compiled_nodes} nodes due to ref)")
+
+    # 5. Recursive binding passes scope check (letrec, M9)
+    src5 = ("(let 1 (lambda 0 (if-surprise (ref 0) "
+            "(mul (ref 0) (apply (ref 1) (merge (ref 0) -1))) 1)) "
+            "(apply (ref 1) 6))")
+    compiled5, report5 = compile(parse(src5))
+    print(f"  recursive factorial compiles (letrec scope OK), "
+          f"{report5.original_nodes} -> {report5.compiled_nodes} nodes")
+
+    # 6. A function in an Int slot is a compile-time type error
+    try:
+        compile(parse("(merge (lambda 0 (ref 0)) 1)"))
+        raise AssertionError("expected a type-mismatch for Fn in an Int slot")
+    except CompileError as e:
+        assert e.anomaly["kind"] == "type-mismatch"
+        print(f"  Fn in Int slot caught at compile-time: "
+              f"{e.anomaly['detail']}")
+
+    # 7. New pure ops fold
+    compiled7, _ = compile(parse("(mul (mod 17 5) (threshold (deviation 5 3)))"))
+    assert compiled7.op == LIT_INT and compiled7.args[0] == 2, pretty(compiled7)
+    print(f"  (mul (mod 17 5) (threshold (deviation 5 3))) -> {pretty(compiled7)}")
+
+    # 8. Lists type-check, and a list in an Int slot does not
+    node8, _ = compile(parse("(head (cons 7 (nil)))"))
+    assert evaluate_for_selftest(node8) == 7
+    try:
+        compile(parse("(merge (nil) 1)"))
+        raise AssertionError("expected a type-mismatch for List in an Int slot")
+    except CompileError as e:
+        assert e.anomaly["kind"] == "type-mismatch"
+        print(f"  List in Int slot caught at compile-time: {e.anomaly['detail']}")
+
+    # 9. A function may take a list -- the parameter type is unknown, so a
+    #    reference to it is accepted in a List slot.
+    src9 = "(defn total [xs] (if (nil? xs) 0 (merge (head xs) (total (tail xs)))))(total (cons 1 (cons 2 (nil))))"
+    node9, _ = compile(parse(src9))
+    assert evaluate_for_selftest(node9) == 3, pretty(node9)
+    print("  list-consuming function compiles and runs (sum = 3)")
+
+    # 10. Unused bindings go away; used and effectful ones stay.
+    unused = "(let 0 (mul 6 7) (let 1 99 (ref 1)))"
+    node10, report10 = compile(parse(unused))
+    assert report10.dropped_bindings == 1, report10
+    # Binding 0 goes (nothing mentions it); binding 1 stays (the body does).
+    assert pretty(node10) == "(let 1 99 (ref 1))", pretty(node10)
+    kept = "(let 0 (stdout 5) 7)"
+    _node11, report11 = compile(parse(kept))
+    assert report11.dropped_bindings == 0, "a write must never be dropped"
+    # A whole unused function chain collapses, which is what makes a
+    # prelude free for programs that do not call it.
+    chain = "(def f [x] (mul x 2))(def g [x] (f x))7"
+    node12, report12 = compile(parse(chain))
+    assert report12.dropped_bindings == 2, report12
+    assert pretty(node12) == "7", pretty(node12)
+    print(f"  drop-unused: {unused}")
+    print(f"               -> {pretty(node10)}  (effectful bindings kept)")
+    print(f"               two unused definitions -> {pretty(node12)}, "
+          f"{report12.original_nodes} -> {report12.compiled_nodes} nodes")
 
     print("core.compiler self-test OK")
 

@@ -2,12 +2,27 @@
 
 Axiom 4: conservation is a type, not a runtime afterthought.
 
-Two trap classes:
+Trap classes:
 
 - ``BudgetTrap`` — a ``(budget k body)`` scope overran its declared
   cost budget.
+- ``DepthTrap`` (⊂ ``BudgetTrap``) — recursion nested past
+  ``runtime.MAX_CALL_DEPTH``.
+- ``StepTrap`` (⊂ ``BudgetTrap``) — the run exceeded
+  ``runtime.MAX_STEPS`` evaluation steps.  This is the substrate-level
+  non-termination backstop: it applies even when the program declares
+  no budget of its own.
 - ``DeltaTrap`` — a ``(conserve k body)`` invariant was violated at
   exit (body produced a value inconsistent with the declared contract).
+- ``DomainTrap`` (⊂ ``ValueError``) — division by zero, the head of an
+  empty list, a reference to nothing, a value used at the wrong type.
+  These carry the same anomaly schema as the rest, so the uniform
+  handler really is uniform.
+
+Every one of them is catchable *inside* LOVA with ``when-anomaly``,
+with one deliberate exception: ``StepTrap``.  The step ceiling is the
+substrate's guarantee that a program terminates, and a guarantee a
+program can mask is not one.
 
 **M5 observability layer (AI-friendly errors).** Each trap carries a
 rich ``anomaly`` dict (and the older string ``__str__`` for human
@@ -82,6 +97,123 @@ class BudgetTrap(Exception):
             .format(**anomaly["detail"])
         )
         self.anomaly = anomaly
+
+
+class DepthTrap(BudgetTrap):
+    """Raised when recursion nests deeper than ``MAX_CALL_DEPTH`` (M9).
+
+    Subclasses ``BudgetTrap`` deliberately: call depth *is* a budget,
+    and every existing ``except BudgetTrap`` handler — including the
+    runtime's trap-enrichment path — keeps working unchanged.  The
+    anomaly ``kind`` distinguishes it for consumers that care.
+    """
+
+    def __init__(self, depth: int, limit: int, call_chain: Tuple[int, ...] = ()):
+        Exception.__init__(
+            self, f"Depth trap: call depth {depth} > limit {limit}"
+        )
+        self.anomaly: Dict[str, Any] = {
+            "kind": "recursion-depth-exceeded",
+            "detail": {
+                "limit": limit,
+                "spent": depth,
+                "overrun": depth - limit,
+                "call_chain": tuple(call_chain),
+            },
+            "position_path": (),
+            "offending_op": None,
+            "offending_op_name": "",
+            "valid_alternatives": (),
+            "repair_hint": (
+                "the recursion has no reachable base case, or needs more "
+                f"than {limit} frames; add / fix the `if-surprise` guard "
+                "that terminates it, or shrink the input"
+            ),
+        }
+
+
+class StepTrap(BudgetTrap):
+    """Raised when a run exceeds ``MAX_STEPS`` evaluation steps (M9).
+
+    This is the always-on ceiling that makes non-terminating programs
+    *observable* rather than hanging.  ``BUDGET`` scopes are the
+    program-declared, fine-grained version of the same idea; this is
+    the substrate-level backstop that applies even to programs which
+    declare no budget at all.
+    """
+
+    def __init__(self, steps: int, limit: int):
+        Exception.__init__(
+            self, f"Step trap: {steps} evaluation steps > limit {limit}"
+        )
+        self.anomaly: Dict[str, Any] = {
+            "kind": "step-limit-exceeded",
+            "detail": {
+                "limit": limit,
+                "spent": steps,
+                "overrun": steps - limit,
+            },
+            "position_path": (),
+            "offending_op": None,
+            "offending_op_name": "",
+            "valid_alternatives": (),
+            "repair_hint": (
+                "the program does not terminate within the substrate step "
+                f"ceiling ({limit}); check the loop-until predicate or the "
+                "recursive base case"
+            ),
+        }
+
+
+class DomainTrap(ValueError):
+    """A runtime fault that is neither a budget nor a contract violation.
+
+    Division by zero, the head of an empty list, a reference to nothing,
+    applying something that is not a function -- until M13 each of these
+    raised a bare ``ValueError`` with a sentence in it and no ``kind``,
+    which meant the "one error handler for everything" property the
+    project claims (Exp 08) held for two of its four fault classes.
+
+    Subclasses ``ValueError`` deliberately: every existing handler and
+    test that catches ``ValueError`` keeps working, and gains structure
+    it can use if it wants it.
+    """
+
+    def __init__(self, kind: str, message: str,
+                 detail: Optional[Dict[str, Any]] = None,
+                 repair_hint: str = ""):
+        super().__init__(message)
+        self.anomaly: Dict[str, Any] = {
+            "kind": kind,
+            "detail": detail or {},
+            "position_path": (),
+            "offending_op": None,
+            "offending_op_name": "",
+            "valid_alternatives": (),
+            "repair_hint": repair_hint,
+        }
+
+
+# Anomaly kinds as integers, because a LOVA program that handles one can
+# only branch on a number.  Kept small and stable: a program written
+# against these is written against the substrate's error model.
+ANOMALY_CODES: Dict[str, int] = {
+    "budget-exceeded": 1,
+    "recursion-depth-exceeded": 2,
+    "conservation-violated": 3,
+    "domain-error": 4,
+    "type-violation": 5,
+    "unbound-ref": 6,
+    "malformed": 7,
+    "step-limit-exceeded": 8,   # not catchable; see the WHEN_ANOMALY handler
+}
+
+ANOMALY_KINDS: Dict[int, str] = {v: k for k, v in ANOMALY_CODES.items()}
+
+
+def anomaly_code(anomaly: Dict[str, Any]) -> int:
+    """The integer a handler receives for this anomaly.  0 if unknown."""
+    return ANOMALY_CODES.get(anomaly.get("kind", ""), 0)
 
 
 class DeltaTrap(Exception):

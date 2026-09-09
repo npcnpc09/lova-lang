@@ -24,10 +24,13 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import FrozenSet, List, Optional, Set
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
-from core.tokens import END, LIT_INT, SIGNATURES, TYPED_TOKENS
-from core.types import INT, Type
+from core.tokens import (
+    APPLY, END, IF_SURPRISE, LET, LIT_INT, RESULT_FOLLOWS_OPERANDS,
+    RESULT_NOT_STATIC, SIGNATURES, TYPED_TOKENS, WHEN_ANOMALY,
+)
+from core.types import INT, LITERAL_INT, Type
 
 
 # --- generation state -------------------------------------------------------
@@ -82,14 +85,23 @@ class GenState:
             return frozenset()  # program complete
         slot = self.stack[-1]
         valid: Set[int] = set()
+        from core.types import LITERAL_INT, is_subtype
         for tok in TYPED_TOKENS:
             sig = SIGNATURES[tok]
             out_type = sig.get("out_type")
             if out_type is None:
                 continue
+            if tok in RESULT_NOT_STATIC:
+                # Either the result type follows the slot (if / let /
+                # apply) or it follows a binding the state machine cannot
+                # see (ref).  Both fit anywhere -- except a slot that
+                # demands a literal, which demands a *literal*, not a
+                # type.
+                if slot.expected_type != LITERAL_INT:
+                    valid.add(tok)
+                continue
             # subtype check: does this token produce something that
             # fits the expected slot?
-            from core.types import is_subtype
             if is_subtype(out_type, slot.expected_type):
                 valid.add(tok)
         if slot.variadic_continuation:
@@ -131,7 +143,11 @@ class GenState:
         # push their ``in_types`` in reverse, so the first arg is at
         # the top of the stack.
         if sig.get("in_types") is None:
-            # variadic
+            # Variadic.  The continuation slot goes on FIRST so that it
+            # ends up *below* any typed head slots — the head arguments
+            # are consumed before the variadic tail opens.  APPLY is the
+            # only head-typed variadic today: ``(apply f a b ...)`` wants
+            # an Fn first and Values thereafter.
             new_stack.append(
                 Slot(
                     expected_type=sig["variadic_type"],
@@ -139,11 +155,166 @@ class GenState:
                     parent_op=token,
                 )
             )
+            for t in reversed(sig.get("head_types", ())):
+                new_stack.append(Slot(expected_type=t, parent_op=token))
         else:
-            for t in reversed(sig["in_types"]):
+            for t in reversed(_child_types(token, top.expected_type)):
                 new_stack.append(Slot(expected_type=t, parent_op=token))
 
         return GenState(stack=new_stack)
+
+
+# --- termination control -----------------------------------------------------
+#
+# A depth-limited sampler needs to know which choice gets it *finished*,
+# and neither of the two obvious tests answers that.
+#
+# "Does this token shrink the slot stack" cannot: ``LOOP_UNTIL`` pushes
+# two ``Fn`` slots and ``LAMBDA`` pushes none, yet both have a stack
+# delta of +1.  Sampling uniformly between them is a *critical* branching
+# process — mean one offspring — which terminates with probability 1 and
+# infinite expected time.  In practice, a hang (Experiment 02, seed 808).
+#
+# "Does this token push another slot of the type I am filling" cannot
+# either: in an ``Int`` slot ``APPLY`` pushes no ``Int``, so it looks
+# safe, while actually opening an ``Fn`` slot *and* a variadic ``Value``
+# tail that only closes on ``END``.  Sampling it repeatedly grows the
+# stack without ever repeating a type (Experiment 02, seed 2: 358 slots
+# still open after 4096 tokens).
+#
+# What does answer it is the **minimum number of tokens still needed to
+# finish**.  Choosing a minimum-cost token strictly decreases that
+# quantity, so generation terminates in at most `cost` further steps.
+
+def _child_types(token: int, slot_type: Type) -> List[Type]:
+    """The types of a fixed-arity operator's children, given its slot.
+
+    For most operators this is just the declared ``in_types``.  For the
+    result-follows-operands set it is the declared types with the
+    *slot's* type substituted into the positions that determine the
+    result -- both branches of an `if`, the body of a `let`.  Without
+    this the generator can build `(if c 1 2)` but never
+    `(if c (nil) xs)`, so no generated program can have the shape of
+    `map` (journal Q52).
+    """
+    sig = SIGNATURES[token]
+    declared = list(sig["in_types"])
+    if token == IF_SURPRISE:
+        return [declared[0], slot_type, slot_type]
+    if token == LET:
+        return [declared[0], declared[1], slot_type]
+    if token == WHEN_ANOMALY:
+        return [slot_type, declared[1]]
+    return declared
+
+
+def _pushed_types(token: int, slot_type: Type = INT) -> Tuple[List[Type], bool]:
+    """The slot types ``token`` opens, and whether it opens a variadic tail."""
+    sig = SIGNATURES[token]
+    if sig.get("in_types") is None:
+        return list(sig.get("head_types", ())), True
+    return _child_types(token, slot_type), False
+
+
+def _compute_completion_costs() -> Dict[Type, int]:
+    """Fixpoint: the fewest tokens that can close a slot of each type.
+
+    ``Int`` and ``Value`` cost 1 (a literal), ``List`` 1 (``nil``),
+    ``LiteralInt`` 1, ``Fn`` 3 (``lambda`` plus a name plus a body).
+    A variadic tail costs 1, because ``END`` closes it.
+    """
+    from core.types import is_subtype
+
+    types = {slot.expected_type for slot in ()}  # placeholder for clarity
+    types = set()
+    for tok in TYPED_TOKENS:
+        pushed, _variadic = _pushed_types(tok)
+        types.update(pushed)
+        out = SIGNATURES[tok].get("out_type")
+        if out is not None:
+            types.add(out)
+
+    costs: Dict[Type, int] = {t: _UNREACHABLE for t in types}
+    for _ in range(len(types) + 2):
+        changed = False
+        for target in types:
+            best = _UNREACHABLE
+            for tok in TYPED_TOKENS:
+                out = SIGNATURES[tok].get("out_type")
+                if out is None:
+                    continue
+                transparent = tok in RESULT_NOT_STATIC
+                if not transparent and not is_subtype(out, target):
+                    continue
+                if transparent and target == LITERAL_INT:
+                    continue
+                pushed, variadic = _pushed_types(tok, target)
+                total = 1 + (1 if variadic else 0)
+                for child in pushed:
+                    total += costs.get(child, _UNREACHABLE)
+                best = min(best, total)
+            if best < costs[target]:
+                costs[target] = best
+                changed = True
+        if not changed:
+            break
+    return costs
+
+
+_UNREACHABLE = 10 ** 6
+COMPLETION_COST: Dict[Type, int] = {}
+
+
+def completion_cost(slot_type: Type) -> int:
+    """Fewest tokens that can close a slot of ``slot_type``."""
+    if not COMPLETION_COST:
+        COMPLETION_COST.update(_compute_completion_costs())
+    return COMPLETION_COST.get(slot_type, _UNREACHABLE)
+
+
+def token_completion_cost(token: int, slot: Slot) -> int:
+    """Fewest tokens to finish everything, if ``token`` fills ``slot``.
+
+    ``END`` costs 1 and closes the slot.  Any other token in a variadic
+    continuation leaves that continuation open, so its own ``END`` is
+    still owed — which is what makes ``END`` the cheapest choice in a
+    tail, and a literal the cheapest choice in a fixed slot.
+    """
+    if token == END:
+        return 1
+    pushed, variadic = _pushed_types(token, slot.expected_type)
+    total = 1 + (1 if variadic else 0)
+    for child in pushed:
+        total += completion_cost(child)
+    if slot.variadic_continuation:
+        total += 1
+    return total
+
+
+def cheapest_to_finish(state: "GenState", tokens) -> List[int]:
+    """Restrict ``tokens`` to those that finish the program soonest.
+
+    Exposed because every sampler needs it and the obvious hand-rolled
+    version is wrong.  "Prefer END, else LIT_INT" reads like a
+    termination rule and is not one: neither is valid in an ``Fn`` slot,
+    so the filter silently does nothing exactly where it is needed, and
+    the walk becomes a critical branching process.  Experiment 10 had
+    that version copied into both of its samplers and hung the moment
+    M13 made ``Fn`` slots common.
+    """
+    if not state.stack:
+        return list(tokens)
+    slot = state.stack[-1]
+    costs = {t: token_completion_cost(t, slot) for t in tokens}
+    if not costs:
+        return list(tokens)
+    cheapest = min(costs.values())
+    return [t for t in costs if costs[t] == cheapest]
+
+
+# A sampler that cannot terminate is a bug, not a slow path, so the loop
+# carries a hard ceiling and reports rather than spins.
+MAX_GENERATED_TOKENS = 4096
 
 
 # --- literal payload helpers ------------------------------------------------
@@ -179,13 +350,16 @@ def constrained_random(
     state = GenState.fresh()
     out = bytearray()
     depth = 0
+    emitted = 0
     while not state.is_complete():
-        valid = list(state.valid_next())
-        # Termination bias: past max_depth, prefer LIT_INT or END.
+        valid = sorted(state.valid_next())
+        # Termination bias: past max_depth, restrict the candidates to
+        # those with the smallest completion cost.  That is a strict
+        # decrease in the work remaining, so the program closes in at
+        # most `cost` further tokens — unlike the two weaker tests this
+        # replaced, both of which admitted non-terminating walks.
         if depth > max_depth:
-            terminating = [t for t in valid if t in (LIT_INT, END)]
-            if terminating:
-                valid = terminating
+            valid = cheapest_to_finish(state, valid)
         token = rng.choice(valid)
         out.append(token)
         if token == LIT_INT:
@@ -193,6 +367,14 @@ def constrained_random(
             out.extend(encode_lit(v))
         state = state.step(token)
         depth += 1
+        emitted += 1
+        if emitted > MAX_GENERATED_TOKENS:
+            raise ValueError(
+                f"constrained_random(seed={seed}) exceeded "
+                f"MAX_GENERATED_TOKENS={MAX_GENERATED_TOKENS} with "
+                f"{len(state.stack)} slots still open; the termination bias "
+                "failed to close the program"
+            )
     return bytes(out)
 
 
@@ -225,13 +407,17 @@ def unconstrained_random(
 
 # --- validation helpers -----------------------------------------------------
 
-def validates(data: bytes) -> bool:
+def validates(data: bytes, top_type: Type = None) -> bool:
     """True if ``data`` parses as a single well-typed LOVA program.
 
     Uses the integer decoder (``core.tokens.decode``) plus an independent
     re-walk through the type-directed state machine to confirm that every
     token was in its valid-next set.  This is the canonical "well-formed"
     predicate.
+
+    The top slot is ``Value``: a program is an expression, not an integer
+    expression, which is the same choice the compiler makes.  Pass
+    ``top_type=INT`` to ask the narrower question.
     """
     from core.tokens import decode
     try:
@@ -240,16 +426,19 @@ def validates(data: bytes) -> bool:
         return False
     # Walk the resulting tree through the state machine to verify each
     # token is in the valid-next set at its position.
+    if top_type is None:
+        from core.types import VALUE
+        top_type = VALUE
     try:
-        _walk_tree(node)
+        _walk_tree(node, top_type)
     except ValueError:
         return False
     return True
 
 
-def _walk_tree(node) -> None:
+def _walk_tree(node, top_type: Type = INT) -> None:
     """Rebuild a GenState from a Node tree and assert each step is valid."""
-    state = GenState.fresh()
+    state = GenState.fresh(top_type)
     _apply_node(state, node)
     # After walking the whole tree, state must be complete.
     # NB: _apply_node mutates a new state each step via its return.
@@ -266,6 +455,8 @@ def _apply_node(state: GenState, node) -> GenState:
     for child in node.args:
         state = _apply_node(state, child)
     # For variadic, after all children we also need to close with END.
+    # Head-typed variadics (APPLY) are no different here: the head is
+    # simply the first child, and END closes the tail.
     sig = SIGNATURES[node.op]
     if sig.get("in_types") is None:
         state = state.step(END)
@@ -294,9 +485,57 @@ def _self_test() -> None:
         f"after LET, valid_next should be {{LIT_INT}} but got {sorted(v1)}"
     )
 
+    # An Int slot must never offer LAMBDA / LOOP_UNTIL (they produce Fn),
+    # and the APPLY head slot must offer only Fn-producing operators.
+    from core.tokens import APPLY, LAMBDA, LOOP_UNTIL
+    assert LAMBDA not in v0 and LOOP_UNTIL not in v0, (
+        "Fn-producing operators leaked into an Int slot"
+    )
+    s_apply = s0.step(APPLY)
+    v_apply = s_apply.valid_next()
+    # Fn producers, plus the operators whose result type follows their
+    # slot -- `(apply (if c f g) x)` chooses between two functions, and
+    # that is a legitimate program.
+    assert {LAMBDA, LOOP_UNTIL} <= v_apply, sorted(v_apply)
+    assert v_apply <= {LAMBDA, LOOP_UNTIL} | RESULT_NOT_STATIC, (
+        f"APPLY head slot admits a non-Fn producer: {sorted(v_apply)}"
+    )
+
+    # Every slot type must be closable, and the cheapest closer must be
+    # the one the sampler is supposed to reach for.
+    from core.tokens import APPLY as _AP, LOOP_UNTIL as _LU, NIL
+    from core.types import FN as _FN, LIST as _LIST, VALUE as _VALUE
+    # A literal closes Int, Value and LiteralInt in one token; `nil`
+    # closes List in one.  Fn takes two, because the cheapest way to
+    # produce a function is to name one -- `(ref k)` is an operator plus
+    # its literal, against `lambda`'s three.
+    expected = {INT: 1, LITERAL_INT: 1, _VALUE: 1, _LIST: 1, _FN: 2}
+    for slot_type, want in expected.items():
+        got = completion_cost(slot_type)
+        assert got == want, f"completion_cost({slot_type}) = {got}, want {want}"
+    from core.tokens import REF as _REF
+    for slot_type, escape in ((INT, LIT_INT), (_VALUE, LIT_INT),
+                              (_LIST, NIL), (_FN, _REF)):
+        slot = Slot(expected_type=slot_type)
+        costs = {t: token_completion_cost(t, slot)
+                 for t in GenState.fresh(slot_type).valid_next()}
+        assert min(costs, key=lambda t: (costs[t], t)) == escape, (
+            f"{slot_type}: cheapest closer is not {SIGNATURES[escape]['name']}"
+        )
+    # The two shapes that defeated the earlier tests.
+    fn_slot = Slot(expected_type=_FN)
+    assert token_completion_cost(_LU, fn_slot) > token_completion_cost(LAMBDA, fn_slot)
+    assert token_completion_cost(LAMBDA, fn_slot) > token_completion_cost(_REF, fn_slot)
+    int_slot = Slot(expected_type=INT)
+    assert token_completion_cost(_AP, int_slot) > token_completion_cost(LIT_INT, int_slot)
+
     print("core.generator self-test OK")
     print(f"  fresh state valid_next size: {len(v0)}  (all Int-producing ops)")
     print(f"  after LET valid_next size:   {len(v1)}  (only LIT_INT allowed)")
+    print(f"  after APPLY valid_next:      {sorted(hex(t) for t in v_apply)}  (Fn slot)")
+    print(f"  completion costs: "
+          + ", ".join(f"{t}={completion_cost(t)}"
+                      for t in sorted(COMPLETION_COST, key=str)))
 
     # Constrained random: 10 programs, all must validate.
     pass_count = 0

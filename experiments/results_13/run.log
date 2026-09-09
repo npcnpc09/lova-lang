@@ -1,0 +1,180 @@
+LOVA Experiment 13 -- re-deriving the 64-slot token budget
+
+==============================================================================
+  1. Slot census -- what does existing LOVA code actually use?
+==============================================================================
+  operator                   LOVABench v2  algorithmic (Exp 12)                 apps/
+  --------------------------------------------------------------------------
+  0x01 lit                            166                   150                    88
+  0x02 partition                        0                     1                     1
+  0x03 merge                           18                    16                     4
+  0x04 cons                             0                     0                     1
+  0x05 head                             0                     0                     3
+  0x06 tail                             0                     0                     3
+  0x08 p                               37                     0                     0
+  0x09 tau                             32                     0                     0
+  0x0A sigma                           28                     0                     1
+  0x0B mul                              0                     5                     2
+  0x0C mod                              0                     4                     2
+  0x0E gcd                             20                     0                     1
+  0x0F mobius                           7                     0                     0
+  0x11 conserve                        11                     0                     0
+  0x15 nil                              0                     0                     1
+  0x18 surprise                        11                     0                     3
+  0x19 nil?                             0                     0                     4
+  0x1B threshold                        0                     5                     2
+  0x1F deviation                        0                     6                     3
+  0x28 seq                              1                     0                     0
+  0x2A if-surprise                      4                    14                    11
+  0x2C lambda                           0                    19                    11
+  0x2D apply                            0                    24                    11
+  0x2E let                             18                    13                     8
+  0x2F ref                             27                    73                    44
+  --------------------------------------------------------------------------
+  LOVABench v2            60 programs, 13 distinct operators used   (authored in the language, pre-M9)
+  algorithmic (Exp 12)    10 programs, 12 distinct operators used   (recursion / iteration)
+  apps/                    5 programs, 20 distinct operators used   (programs written to do something)
+
+  Number-theory family (0x08-0x0F), 8 of 64 slots:
+    LOVABench v2            124 uses  (33% of all operator uses)
+    algorithmic (Exp 12)      9 uses  (3% of all operator uses)
+    apps/                     6 uses  (3% of all operator uses)
+
+  Implemented but unused across all three corpora: ['identity', 'div', 'budget', 'violate', 'trace-surprise', 'loop-until']
+
+  family          impl  reserved   free?
+  ----------------------------------------
+  Structural         7         1       0
+  NumberTheory       8         0       0
+  Conservation       4         4       4
+  Surprise           5         3       3
+  Evolution          0         8       0
+  Composition        7         1       1
+  Effects/IO         0         8       0
+  Meta/lineage       0         8       0
+  ----------------------------------------
+  TOTAL             31        33       8
+  free slots: ['delta-check', 'respawn', 'budget-remaining', 'preserve', 'when-anomaly', 'predict', 'normal-range', 'par']
+
+==============================================================================
+  2. Where the Stage-1 tokens go
+==============================================================================
+  corpus                   total    names   parens  literals  brackets   space
+  --------------------------------------------------------------------------
+  LOVABench v2               866      269      265       166         0     166
+  algorithmic (Exp 12)       471      240      119        48        26      38
+  apps/                      315      146       97        29        14      29
+
+  On the algorithmic corpus, operator names and identifiers are
+  51% of the cost and parentheses 25%.
+  A new operator can only ever reclaim tokens from the *names*
+  share, and only where it removes nesting.  The paren share is
+  a property of s-expressions, not of the table.
+
+  operator names costing more than one tiktoken token:
+    0x0F mobius           2 tokens
+    0x11 conserve         2 tokens
+    0x17 violate          2 tokens
+    0x18 surprise         2 tokens
+    0x19 nil?             2 tokens
+    0x1D trace-surprise   3 tokens
+    0x1F deviation        2 tokens
+    0x2A if-surprise      3 tokens
+    0x2B loop-until       3 tokens
+
+==============================================================================
+  3. Three levers -- what each one is worth, and what it costs
+==============================================================================
+  task                       base  +alias  +prims  Python   contractions
+  ------------------------------------------------------------------------
+  factorial                    29      26      26      22   lt=0 sub=1
+  fibonacci                    43      39      37      26   lt=1 sub=2
+  is-prime                     84      74      69      56   lt=2 sub=0
+  collatz-steps                70      63      63      51   lt=0 sub=0
+  sum-to                       32      29      29      24   lt=0 sub=1
+  power-of-two                 33      30      30      25   lt=0 sub=1
+  gcd-euclid                   28      25      25      22   lt=0 sub=0
+  count-divisors               68      61      59      31   lt=1 sub=0
+  multiply-by-adding           36      33      33      28   lt=0 sub=1
+  divide-by-subtracting        48      44      38      27   lt=1 sub=1
+  ------------------------------------------------------------------------
+  TOTAL                       471     424     409     312   lt=5 sub=7
+
+  every column re-parsed and re-evaluated: 10/10 tasks, identical results
+  (the `+prims` column was a projection when this experiment first
+   ran; M10 shipped `lt` and `sub` as macros, so it now executes)
+
+  lever                                   slots   tokens   vs Python
+  ------------------------------------------------------------------
+  as shipped                                  0      471       0.66x
+  + one-token operator aliases                0      424       0.74x
+  + lt and sub (M10: macros, 0 slots)         0      409       0.76x
+
+  gap to parity closed by the free lever:  30%
+  gap to parity closed by the 2 slots:     9%
+
+  node count (drives encoded bytes and the Stage-2 estimate):
+    as shipped 330 -> with lt+sub 325 (2% fewer)
+
+  `div` is not an idiom contraction -- it deletes a definition:
+    today:        48 tokens, 33 nodes, O(a/b) recursion
+    with a slot:  6 tokens, 3 nodes, O(1)
+    One task's density, but every future program that divides.
+
+  Residual after every lever: parentheses and identifiers, which
+  no change to the table can reclaim.  Closing the rest means a
+  different surface (Stage 2), not different operators.
+
+==============================================================================
+  4. Allocation ledger
+==============================================================================
+  free slots when this proposal was written: 14
+  free slots now:                            8
+    ['delta-check', 'respawn', 'budget-remaining', 'preserve', 'when-anomaly', 'predict', 'normal-range', 'par']
+  (6 spent since -- see the M10 record in journal/README.md; the rows below are the proposal as measured, not the current state)
+
+  proposed                        slots       basis
+  --------------------------------------------------------------------------
+  nil, cons, head, tail, nil?         5      census
+                                                     one cons cell buys pairs AND lists AND strings-as-codepoint-lists; without it there is no two-value return and no collection at all
+  div                                 1  complexity
+                                                     48 tokens and O(a/b) recursion per use become 6 tokens and O(1)
+  quote, eval                         2       axiom
+                                                     a program as a value -- required by Axiom 1 and by Stage 3's (explain program), neither of which is reachable today
+  lt, sub                             2     density
+                                                     measured: 9% of the algorithmic density gap, 5+7 sites in 10 tasks
+  --------------------------------------------------------------------------
+  TOTAL                              10   of 14 free -> 4 slots headroom, deliberately unspent
+
+  Not proposed:
+    reallocate the number-theory family (8 slots)
+      the census says 3-5% use outside the benchmark, which looks damning until you notice the demand above fits in 14 slots without touching it; spend them only if strings-as-lists proves too slow
+    a dedicated string type (5-6 slots)
+      unnecessary: a string is a list of codepoints once cons exists, and a "abc" surface literal is sugar, costing zero slots
+    shorter operator names (0 slots)
+      not a slot decision at all -- it is the single largest measured density lever and it is free; see the Axiom 8 revision
+
+  What each lever is actually worth, side by side:
+    lever                             slots   gap closed
+    ----------------------------------------------------
+    operator spelling (surface)           0         30%
+    lt + sub (new primitives)             2          9%
+    residual: parens + identifiers      n/a         61%
+
+  The free lever is worth three times the two slots, and the
+  residual is worth more than both together.  A table change
+  is the wrong instrument for the density problem; it is the
+  right instrument for the expressiveness problem.
+
+==============================================================================
+  Experiment 13 -- summary
+==============================================================================
+  algorithmic density vs Python:
+    as shipped                          0.66x
+    + operator aliases   (0 slots)      0.74x
+    + lt, sub            (2 slots)      0.76x
+    ...still below parity: the rest is s-expression syntax.
+
+  number-theory family use: LOVABench v2 124, algorithmic (Exp 12) 9, apps/ 6
+  proposed spend: 10 of 14 free slots at the time; 8 free now
+  implemented but unused in any corpus: ['identity', 'div', 'budget', 'violate', 'trace-surprise', 'loop-until']

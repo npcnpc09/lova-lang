@@ -3,8 +3,12 @@
 **An AI-native integer-sequence programming language.**
 
 *Status: early research prototype. 10/10 design axioms have a working
-implementation and an experiment behind them; the language is not yet
-usable for general-purpose work.*
+implementation and an experiment behind them. M9 made the language
+computationally universal — before it, there were no functions,
+recursion or loops. M10 gave it data: one cons cell, so pairs, lists
+and strings. It is still not usable for general-purpose work: no IO,
+no modules, and the Evolution and Meta operator families are entirely
+unimplemented.*
 
 ## The one-paragraph pitch
 
@@ -17,24 +21,62 @@ conservation-preserving substrate. The semantics, type system, error
 model, and evolution machinery are all built around what AI does well.
 
 ```lova
-(defn square [n] (n ⊗ n))
+(defn square [n] (⊗ n n))
+(square 7)
 ```
 
 ...is a Stage-1 *projection*. The program itself is an integer sequence;
-the text is a pretty-printer over it, and round-trips losslessly.
+the text is a pretty-printer over it. `⊗` is `mul`, `defn` desugars to
+`let` + `lambda`, and the call desugars to `apply` — so what the
+substrate stores is:
+
+```lova
+(let 0 (lambda 1 (mul (ref 1) (ref 1))) (apply (ref 0) 7))
+```
+
+Identifiers are interned to integer name ids at parse time and printed
+back as integers, because the integer is the program (Axiom 1). Every
+form above compiles to the existing 64 operators; the sugar adds no
+semantics.
 
 ## Three stages
 
 | Stage | Surface | Status |
 |---|---|---|
-| **1 — Text-surface LOVA** | Lisp-like s-expressions compiling 1:1 to tokens | **current** |
-| **2 — AI-primary LOVA** | terse / APL-dense; LLM fine-tuned on a LOVA corpus | planned (M8) |
+| **1 — Text-surface LOVA** | Lisp-like s-expressions compiling 1:1 to tokens | **current**, and now audit-oriented |
+| **2 — AI-primary LOVA** | one character per byte, no delimiters (`core/surface2.py`) | **surface built and measured** (Exp 14); fine-tuned model still M8 |
 | **3 — Pure-AI LOVA** | no text; programs are integer sequences, humans read via `(explain program)` | north star |
 
 ## What's actually implemented
 
-- **64-token core ISA** (8 families × 8), 1 byte per operator — 19 operators
-  have runtime semantics, 45 are reserved (`spec/tokens.md`)
+- **64-token core ISA** (8 families × 8), 1 byte per operator — 31 operators
+  have runtime semantics, 33 are reserved (`spec/tokens.md`, generated
+  from the table by `spec/generate_tokens_md.py`)
+- **Data** — one cons cell (`nil` / `cons` / `head` / `tail` / `nil?`)
+  gives pairs, lists, and strings as codepoint lists, so `"abc"` is
+  surface sugar and costs the token table nothing (`spec/token-budget.md`)
+- **Two surfaces** — Stage 1 s-expressions for authoring and audit, and
+  the Stage-2 projection of the byte encoding for density: one character
+  per byte, no delimiters, lossless in both directions
+  (`core/surface2.py`)
+- **IO** — `stdout` / `stdin`, the first operators that touch the world;
+  the only non-determinism in the language, and `static_analyze` reports it
+- **A standard library written in LOVA** — `lib/prelude.lova`: `map`,
+  `filter`, `fold`, `range`, `append`, `reverse`, `digits`, `println` and
+  the rest, none of them builtins. Free to include: the compiler's
+  `drop-unused` pass takes a program that calls none of it from 474 nodes
+  back to 1
+- **A command line** — `lova run | repl | emit | analyze`
+  (`core/cli.py`)
+- **One error model, reachable from inside** — every fault carries the
+  same structured anomaly, and `(when-anomaly body handler)` hands a
+  program the anomaly's code so it can recover. The substrate's
+  termination ceiling is the one thing a program cannot mask
+- **Abstraction** — unary closures with currying, `letrec`, and a loop
+  combinator, so recursion and unbounded iteration are expressible.
+  Two always-on ceilings (`MAX_CALL_DEPTH`, `MAX_STEPS`) turn
+  non-termination into a structured anomaly rather than a hang
+  (`core/runtime.py`)
 - **Type-directed generation** — for any partial program the set of
   well-typed next tokens is computable, so ill-typed programs are not
   representable (`core/types.py`, `core/generator.py`)
@@ -51,7 +93,8 @@ the text is a pretty-printer over it, and round-trips losslessly.
   errors share the runtime anomaly schema so an agent has one error
   handler (`core/compiler.py`)
 - **LOVABench** — 60 tasks / 180 cases across 5 categories, with a
-  reference evaluator (`corpus/`)
+  reference evaluator (`corpus/`). Note: every task predates M9, so
+  none of them exercises recursion or iteration (Q33).
 
 ## Quick start
 
@@ -61,16 +104,34 @@ Requires Python ≥ 3.10. The core has **no dependencies**.
 git clone <this-repo> lova && cd lova
 export PYTHONPATH="$PWD"
 
-# run the test suite (122 tests, stdlib unittest only)
+# run a program
+python -m core.cli run apps/is_prime.lova 1999      # => 1
+python -m core.cli run apps/palindrome.lova racecar # => 1
+
+# an interactive session, with the standard library loaded
+python -m core.cli repl
+
+# see a program as the Stage-2 surface, as bytes, or as one integer
+python -m core.cli emit apps/coprime.lova 14 15 --form stage2
+python -m core.cli emit apps/coprime.lova 14 15 --form int
+
+# what will this program do, without running it
+python -m core.cli analyze apps/collatz.lova 27
+
+# run the test suite (354 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
 python experiments/experiment_01_hello_lova.py
 
-# run a real LOVA program end-to-end
+# the per-app Python drivers still work, and print the whole pipeline
 #   (parse → analyse → compile → encode → evaluate)
 python apps/is_perfect.py 28
 ```
+
+All 14 experiments run. Exp 03 and Exp 07 had been dead since the
+corpus grew from 20 tasks to 60; they were fixed at M13 and their
+numbers below are the 60-task ones.
 
 Experiment 11 additionally needs `tiktoken`:
 
@@ -86,17 +147,94 @@ statistical guarantees** — sample sizes are stated for each.
 
 | Metric | Result | Source |
 |---|---|---|
-| pass@1, same tasks & same LLM | LOVA 20/20 vs Python 19/20 | Exp 07 (LOVABench v1, 20 tasks, single run) |
-| Raw byte density vs Python | 39.2× | Exp 07 |
-| LLM-token density vs sympy-Python | **2.0×** (50% fewer tokens) | Exp 11b (LOVABench v2, 60 tasks, tiktoken cl100k_base) |
-| LLM-token density vs pure Python | 8.5× | Exp 11b |
+| pass@1, same tasks & same LLM | LOVA 60/60 vs Python 59/60 | Exp 07 (LOVABench v2, 60 tasks, single run) |
+| test cases passed, same comparison | LOVA 180/180 vs Python 177/180 | Exp 07 |
+| Raw byte density vs Python, number-theory tasks | 25.8× | Exp 07 (v1's 20-task slice reported 39.2×) |
+| LLM-token density vs sympy-Python, number-theory tasks | 2.0× (50% fewer tokens) | Exp 11b (LOVABench v2, 60 tasks, tiktoken cl100k_base) |
+| LLM-token density vs pure Python, number-theory tasks | 8.5× | Exp 11b |
+| **LLM-token density vs Python, algorithmic tasks — Stage 2** | **1.13× (denser)** | Exp 14 |
+| ...same tasks, Stage-1 s-expression surface | 0.66× — Stage 1 costs 1.5× MORE | Exp 12 |
+| LLM-token density vs sympy-Python — Stage 2, LOVABench v2 | **5.38×** | Exp 14 |
+| Stage-2 surface losslessness | 2150 / 2150 round-trips exact | Exp 14 |
+| Byte density vs Python, algorithmic tasks | 1.19× | Exp 12 |
+| Tasks needing recursion/iteration that LOVA can express | 44/44 cases (0/10 before M9) | Exp 12 |
+| Algorithmic density gap closed by operator *spelling* alone | 30%, for **zero** token slots | Exp 13 |
+| ...by adding `lt` and `sub` as primitives | 9%, for 2 slots — so they shipped as macros instead | Exp 13 |
+| ...residual, unreachable by any token-table change | 61% (s-expression syntax) | Exp 13 |
+| Runaway programs producing a structured anomaly | 5/5, all with the full L2 schema | Exp 12 |
 | Constant-folding compression | 58.5% fewer nodes, 43.9% fewer bytes | Exp 08 |
-| Telemetry-weighted vs uniform sampling | +20 pp pass-without-trap (96% vs 76%) | Exp 10 (N=50) |
+| Telemetry-weighted vs uniform sampling | +40 pp pass-without-trap (100% vs 60%) | Exp 10 (N=50, re-run at M13) |
+
+### What the correctness number actually measures
+
+The 60/60 is real and it is narrower than it looks. LOVABench's tasks
+were authored *in* LOVA, and the v2 prompts state the formula outright
+— "Compute p(tau(sigma(n)))". So what the Claude-as-oracle baseline
+measures is **transcription into s-expressions**, not program synthesis.
+Read it as evidence that the surface is writable by a model, which is
+worth knowing, and not as evidence that a model can program in LOVA,
+which it does not show. An algorithmic corpus (Q33) would measure that.
+
+### What the density numbers actually measure
+
+Read the two density rows together, because they disagree and the
+disagreement is the finding.
+
+The 8.5× comes from number-theory tasks where the LOVA program is
+`(sigma n)` — a one-byte built-in — and the Python is an import plus a
+sympy call. That comparison credits the language for its standard
+library. It is a real and defensible argument for a domain-shaped
+operator set, but it is not a measurement of writing programs.
+
+Exp 12 measures ten tasks where neither side has a shortcut and both
+have to write the algorithm out: factorial, fibonacci, primality,
+Collatz, Euclid's gcd, and so on. There LOVA's Stage-1 surface costs
+**1.5× more LLM tokens than Python**, and the Stage-2 projection does
+not rescue it (0.65×) — `(merge n -1)` is seven tokens where `n - 1`
+is three, and no tokenizer fixes an operator set that spends five AST
+nodes on a decrement.
+
+So: LOVA is dense where its built-ins match the task, and less dense
+than Python for general algorithmic code. Both numbers stay in the
+table.
+
+Exp 13 then decomposed that gap and found the table was the wrong
+instrument for it: **51% of the Stage-1 token cost is operator names and
+25% is parentheses**, so shortening the names closed 30% of the gap for
+zero slots — three times what the two candidate new operators were
+worth — and the remaining 61% is s-expression syntax that no allocation
+of 64 slots can reach.
+
+Exp 14 built the instrument that *can* reach it. The parentheses were
+never necessary: the byte encoding has no delimiters, because arity
+determines structure, so Stage 1 was spending a quarter of its tokens
+re-stating what the substrate already knew. The Stage-2 surface is the
+byte sequence written in characters —
+
+```
+Stage 1   (defn square [n] (mul n n))(square 7)
+Stage 2   W0\1*LL$A7;
+```
+
+— and it takes algorithmic code from 0.66× to **1.13×**, past the 0.76×
+ceiling the token table could never beat, and LOVABench from 2.00× to
+**5.38×** against sympy-Python. It round-trips losslessly 2150/2150.
+
+So the honest one-line claim is not "8.5× denser". It is: **LOVA's
+Stage-2 surface is 5.4× denser than sympy-Python where its built-ins
+match the task, and 1.1× denser where they do not.** Smaller, and it
+survives the obvious attack.
+
+One thing this does *not* show: whether a model can write Stage 2.
+`valid_next` should make it easier than Stage 1 — there are no
+delimiters to misplace — but that is untested and is the project's
+load-bearing open question (Q47).
 
 Note on honesty: Exp 11's first run on the narrower 20-task set reported
 2.5×/13.3×; re-running on the broader 60-task v2 set dropped it to
-2.0×/8.5×. The v2 number is the one quoted above. NULL and weakened
-results are kept in the journal on purpose.
+2.0×/8.5×. The v2 number is the one quoted above. NULL, weakened and —
+as of Exp 12 — outright negative results are kept in the journal on
+purpose.
 
 ## Repository layout
 
@@ -108,8 +246,35 @@ corpus/        LOVABench tasks, JSONL export, evaluator, telemetry DB
 experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
-tests/         122 unit tests, stdlib only
+lib/           prelude.lova — the standard library, written in LOVA
+tests/         354 unit tests, stdlib only
 ```
+
+## What LOVA still cannot do
+
+Stated plainly, because the list is short and the omissions are large:
+
+- **No IO beyond a terminal.** `stdout` and `stdin` exist; the
+  filesystem, the network and the clock (0x30-0x34, 0x37) are reserved.
+- **No modules.** The prelude is prepended textually, which works for
+  one library and will not scale to two (Q50).
+- **Axioms 5 and 6 live in Python, not in the language.** Provenance is
+  queryable via `core/lineage.py` and populations via
+  `core/populations.py`, but the Meta and Evolution operator families
+  (16 slots) are entirely unimplemented — so `why`, `explain`,
+  `lineage-query`, `defpop` and `evolve` cannot be *written* in LOVA.
+  Stage 3's only human interface, `(explain program)`, is among them.
+- **No lists of lists.** `cons` takes an `Int`, which keeps
+  `head : List -> Int` sound but rules out trees and nested structure
+  (Q42). Strings work because a string is a flat list of codepoints.
+- **No modules beyond textual inclusion** — see above.
+- **First-order functions only.** A function cannot be passed to a
+  function, and partial application is not statically checked (Q35).
+- **Generation-time type safety is operator-level, not name-level.**
+  `valid_next` cannot consult scope — name ids live in literal payloads
+  the generation state machine never sees — so a misused reference is a
+  compile error rather than being unrepresentable. Same boundary as
+  `unbound-ref` (Exp 08).
 
 ## Reading order
 

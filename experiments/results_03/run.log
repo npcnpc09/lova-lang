@@ -24,9 +24,49 @@ Runtime: LOVA M1 / generator: LOVA M2
   OK   pb18  triple_gcd                    3/3
   OK   pb19  seq_last_is_p                 3/3
   OK   pb20  surprise_deviation            3/3
+  OK   pb21  p_tau_sigma                   3/3
+  OK   pb22  sigma_gcd_pa_pb               3/3
+  OK   pb23  triple_tau                    3/3
+  OK   pb24  mobius_gcd_sigma_tau          3/3
+  OK   pb25  p_p_tau                       3/3
+  OK   pb26  merge_ptau_sigmagcd           3/3
+  OK   pb27  gcd_sigma_tau_of_p            3/3
+  OK   pb28  tau_merge_sigmas              3/3
+  OK   pb29  sigma_p_gcd                   3/3
+  OK   pb30  sigma_tau_plus_p_mu           3/3
+  OK   pb31  conserve_p                    3/3
+  OK   pb32  conserve_tau                  3/3
+  OK   pb33  conserve_gcd                  3/3
+  OK   pb34  conserve_p_plus_tau           3/3
+  OK   pb35  conserve_sigma_gcd            3/3
+  OK   pb36  conserve_mobius               3/3
+  OK   pb37  conserve_p_of_tau             3/3
+  OK   pb38  conserve_let_tau_sigma        3/3
+  OK   pb39  let_outside_conserve_gcd      3/3
+  OK   pb40  merge_two_conserves           3/3
+  OK   pb41  surprise_k_p                  3/3
+  OK   pb42  surprise_k_tau                3/3
+  OK   pb43  surprise_p_p                  3/3
+  OK   pb44  surprise_perfect_test         3/3
+  OK   pb45  is_p_of_n_equal_k             3/3
+  OK   pb46  are_coprime                   3/3
+  OK   pb47  is_sigma_of_n_equal_k         3/3
+  OK   pb48  surprise_tau_sigma_swap       3/3
+  OK   pb49  is_squarefree                 3/3
+  OK   pb50  surprise_p_diff_via_let       3/3
+  OK   pb51  let_p_plus_tau                3/3
+  OK   pb52  let_bound_to_expr_gcd         3/3
+  OK   pb53  let_gcd_sigma_tau             3/3
+  OK   pb54  let_p_plus_tau_of_p           3/3
+  OK   pb55  nested_lets                   3/3
+  OK   pb56  nested_lets_binary            3/3
+  OK   pb57  let_double_sigma              3/3
+  OK   pb58  let_gcd_of_sigmas             3/3
+  OK   pb59  let_p_plus_sigma              3/3
+  OK   pb60  let_p_of_sum                  3/3
 
-  total: 60/60 test cases passed
-  tasks fully solved: 20/20
+  total: 180/180 test cases passed
+  tasks fully solved: 60/60
 
 ============================================================================
   Baseline U -- unguided constrained-random (100 samples / task)
@@ -44,15 +84,55 @@ Runtime: LOVA M1 / generator: LOVA M2
   pb11  p_p                             0/100  (  0.0%)
   pb12  tau_of_gcd                      0/100  (  0.0%)
   pb13  sigma_gcd_plus_tau              0/100  (  0.0%)
-  pb14  mobius_of_p                     1/100  (  1.0%)
+  pb14  mobius_of_p                     0/100  (  0.0%)
   pb15  sigma_plus_mobius               0/100  (  0.0%)
   pb16  let_bound_tau_plus_sigma        0/100  (  0.0%)
   pb17  p_of_gcd                        0/100  (  0.0%)
   pb18  triple_gcd                      0/100  (  0.0%)
   pb19  seq_last_is_p                   0/100  (  0.0%)
   pb20  surprise_deviation              0/100  (  0.0%)
+  pb21  p_tau_sigma                     0/100  (  0.0%)
+  pb22  sigma_gcd_pa_pb                 0/100  (  0.0%)
+  pb23  triple_tau                      0/100  (  0.0%)
+  pb24  mobius_gcd_sigma_tau            0/100  (  0.0%)
+  pb25  p_p_tau                         0/100  (  0.0%)
+  pb26  merge_ptau_sigmagcd             0/100  (  0.0%)
+  pb27  gcd_sigma_tau_of_p              0/100  (  0.0%)
+  pb28  tau_merge_sigmas                0/100  (  0.0%)
+  pb29  sigma_p_gcd                     0/100  (  0.0%)
+  pb30  sigma_tau_plus_p_mu             0/100  (  0.0%)
+  pb31  conserve_p                      0/100  (  0.0%)
+  pb32  conserve_tau                    0/100  (  0.0%)
+  pb33  conserve_gcd                    0/100  (  0.0%)
+  pb34  conserve_p_plus_tau             0/100  (  0.0%)
+  pb35  conserve_sigma_gcd              0/100  (  0.0%)
+  pb36  conserve_mobius                 0/100  (  0.0%)
+  pb37  conserve_p_of_tau               0/100  (  0.0%)
+  pb38  conserve_let_tau_sigma          0/100  (  0.0%)
+  pb39  let_outside_conserve_gcd        0/100  (  0.0%)
+  pb40  merge_two_conserves             0/100  (  0.0%)
+  pb41  surprise_k_p                    0/100  (  0.0%)
+  pb42  surprise_k_tau                  0/100  (  0.0%)
+  pb43  surprise_p_p                    0/100  (  0.0%)
+  pb44  surprise_perfect_test           0/100  (  0.0%)
+  pb45  is_p_of_n_equal_k               0/100  (  0.0%)
+  pb46  are_coprime                     0/100  (  0.0%)
+  pb47  is_sigma_of_n_equal_k           0/100  (  0.0%)
+  pb48  surprise_tau_sigma_swap         0/100  (  0.0%)
+  pb49  is_squarefree                   0/100  (  0.0%)
+  pb50  surprise_p_diff_via_let         0/100  (  0.0%)
+  pb51  let_p_plus_tau                  0/100  (  0.0%)
+  pb52  let_bound_to_expr_gcd           0/100  (  0.0%)
+  pb53  let_gcd_sigma_tau               0/100  (  0.0%)
+  pb54  let_p_plus_tau_of_p             0/100  (  0.0%)
+  pb55  nested_lets                     0/100  (  0.0%)
+  pb56  nested_lets_binary              0/100  (  0.0%)
+  pb57  let_double_sigma                0/100  (  0.0%)
+  pb58  let_gcd_of_sigmas               0/100  (  0.0%)
+  pb59  let_p_plus_sigma                0/100  (  0.0%)
+  pb60  let_p_of_sum                    0/100  (  0.0%)
 
-  total: 1/2000 (0.05%)   wall: 1.4s
+  total: 0/6000 (0.00%)   wall: 12.2s
 
 ============================================================================
   Baseline C -- Claude-as-oracle (solutions written from prompts)
@@ -77,24 +157,72 @@ Runtime: LOVA M1 / generator: LOVA M2
   OK   pb18  triple_gcd                    3/3  (!=ref)
   OK   pb19  seq_last_is_p                 3/3  (=ref)
   OK   pb20  surprise_deviation            3/3  (=ref)
+  OK   pb21  p_tau_sigma                   3/3  (=ref)
+  OK   pb22  sigma_gcd_pa_pb               3/3  (=ref)
+  OK   pb23  triple_tau                    3/3  (=ref)
+  OK   pb24  mobius_gcd_sigma_tau          3/3  (=ref)
+  OK   pb25  p_p_tau                       3/3  (=ref)
+  OK   pb26  merge_ptau_sigmagcd           3/3  (=ref)
+  OK   pb27  gcd_sigma_tau_of_p            3/3  (=ref)
+  OK   pb28  tau_merge_sigmas              3/3  (=ref)
+  OK   pb29  sigma_p_gcd                   3/3  (=ref)
+  OK   pb30  sigma_tau_plus_p_mu           3/3  (=ref)
+  OK   pb31  conserve_p                    3/3  (=ref)
+  OK   pb32  conserve_tau                  3/3  (=ref)
+  OK   pb33  conserve_gcd                  3/3  (=ref)
+  OK   pb34  conserve_p_plus_tau           3/3  (=ref)
+  OK   pb35  conserve_sigma_gcd            3/3  (=ref)
+  OK   pb36  conserve_mobius               3/3  (=ref)
+  OK   pb37  conserve_p_of_tau             3/3  (=ref)
+  OK   pb38  conserve_let_tau_sigma        3/3  (!=ref)
+  OK   pb39  let_outside_conserve_gcd      3/3  (=ref)
+  OK   pb40  merge_two_conserves           3/3  (=ref)
+  OK   pb41  surprise_k_p                  3/3  (=ref)
+  OK   pb42  surprise_k_tau                3/3  (=ref)
+  OK   pb43  surprise_p_p                  3/3  (=ref)
+  OK   pb44  surprise_perfect_test         3/3  (!=ref)
+  OK   pb45  is_p_of_n_equal_k             3/3  (=ref)
+  OK   pb46  are_coprime                   3/3  (=ref)
+  OK   pb47  is_sigma_of_n_equal_k         3/3  (=ref)
+  OK   pb48  surprise_tau_sigma_swap       3/3  (=ref)
+  OK   pb49  is_squarefree                 3/3  (=ref)
+  OK   pb50  surprise_p_diff_via_let       3/3  (=ref)
+  OK   pb51  let_p_plus_tau                3/3  (=ref)
+  OK   pb52  let_bound_to_expr_gcd         3/3  (=ref)
+  OK   pb53  let_gcd_sigma_tau             3/3  (=ref)
+  OK   pb54  let_p_plus_tau_of_p           3/3  (=ref)
+  OK   pb55  nested_lets                   3/3  (=ref)
+  OK   pb56  nested_lets_binary            3/3  (=ref)
+  OK   pb57  let_double_sigma              3/3  (=ref)
+  OK   pb58  let_gcd_of_sigmas             3/3  (=ref)
+  OK   pb59  let_p_plus_sigma              3/3  (=ref)
+  OK   pb60  let_p_of_sum                  3/3  (=ref)
 
-  total: 60/60 test cases passed
-  tasks fully solved: 20/20
+  total: 180/180 test cases passed
+  tasks fully solved: 60/60
 
 ============================================================================
-  SUMMARY -- three baselines, 20 tasks
+  SUMMARY -- three baselines, 60 tasks
 ============================================================================
 
   fully-solved tasks (all tests pass):
-    Reference    : 20 / 20
-    Unguided rnd : ~  1 / 2000 sample-tasks (across 100 seeds each)
-    Claude       : 20 / 20
+    Reference    : 60 / 60
+    Unguided rnd : ~  0 / 6000 sample-tasks (across 100 seeds each)
+    Claude       : 60 / 60
 
   per-test-case pass rate:
-    Reference    : 60/60 (100.0%)
-    Claude       : 60/60 (100.0%)
+    Reference    : 180/180 (100.0%)
+    Claude       : 180/180 (100.0%)
 
   verdict: STRONG WIN on capability-gap quantification
     -> Claude can write LOVA from prompts at ~100% pass rate
     -> Unguided random is essentially useless (~0% task coverage)
-    -> The gap is 100¡Á -- motivates fine-tuning smaller models
+    -> The gap is the whole range -- motivates fine-tuning
+
+  Caveat, and it is load-bearing (Exp 13, F3):
+  LOVABench's tasks were authored *in* the language, and the
+  v2 prompts state the formula outright -- "Compute
+  p(tau(sigma(n)))".  So the Claude baseline measures
+  transcription into s-expressions, not program synthesis.
+  Quote it as evidence that the surface is writable, not
+  that an LLM can program in LOVA.

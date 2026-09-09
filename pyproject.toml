@@ -23,6 +23,9 @@ classifiers = [
 # stdlib-only by design — Axiom 8's "small core" applies to dependencies too.
 dependencies = []
 
+[project.scripts]
+lova = "core.cli:main"
+
 [project.optional-dependencies]
 # tiktoken is used only by experiments/experiment_11_token_density.py to
 # measure LLM-token counts against a GPT-4-class tokenizer (cl100k_base).

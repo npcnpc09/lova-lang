@@ -23,8 +23,12 @@ Three-stage roadmap:
    bootstrap the language, generate training corpora, build tooling,
    and validate the design empirically. **Where we start.**
 2. **Stage 2 — AI-primary LOVA.** AI is the dominant code author;
-   humans review exceptionally. Text surface becomes terse / APL-dense.
-   LLM fine-tuned on LOVA corpus.
+   humans review exceptionally. **The surface exists** as of Exp 14
+   (`core/surface2.py`): the text projection of the byte encoding, one
+   character per byte, no delimiters — measured at 1.13× Python on
+   algorithmic code and 5.38× sympy-Python on LOVABench, lossless
+   2150/2150. The fine-tuned model is still M8, and whether a model can
+   *emit* this surface is untested (Q47).
 3. **Stage 3 — Pure-AI LOVA.** No text. Programs are integer
    sequences. Human access only through `(explain program)` on-demand
    projection. **The north star.**
@@ -97,7 +101,7 @@ vocabulary. Key transferred concepts:
 | PFS `PartitionedFile<n>` | Program representation |
 | Conservation `sum(n) ≡ budget` | Type system + runtime check |
 | Δ-security (conservation + plasticity) | Effect type enforcement |
-| Mock theta (φ₃, ψ₇) driver | Token-family timing primitives |
+| Mock theta (φ₃, ψ₇) driver | *(not realised — the 0x0B / 0x0C slots reserved for it were reallocated to `mul` / `mod` in M9, unimplemented)* |
 | Surprise (per-theory, Exp 78) | Debug / mutation signal |
 | Evolution engine (dedup, clone, mutate) | `defpop` / variant dispatch |
 | Lineage (uid/parent/root, Exp 55) | Program provenance chain |
@@ -115,6 +119,12 @@ full argument behind each.
 3. **Type-constrained generation.** For any partial program, the set of
    well-typed next tokens is computable. AI generation traverses this
    space only. Ill-typed programs are not representable.
+   *Precision (Exp 12, F4):* this holds at the **operator** level.
+   Anything depending on a *name* — an unbound reference, or a
+   reference to a function-valued binding used in an integer slot —
+   is caught by the compiler, not by generation, because name ids
+   live in `LIT_INT` payloads that the generation state machine never
+   sees. Quote the axiom with that qualifier.
 4. **Conservation is a type, not a runtime afterthought.** Every
    function declares its effect / budget / surprise bounds in its
    signature. Violations are type errors at declaration-site and
@@ -147,28 +157,70 @@ positionally by the preceding operator's signature — no explicit type
 annotations).
 
 ```
-0x00-0x07   Structural            partition / merge / heat / inherit
-0x08-0x0F   Numerical primitives  p, τ, σ, φ₃, ψ₇, η, gcd, mobius
-0x10-0x17   Conservation          budget-decl / conserve / Δ-check / respawn
-0x18-0x1F   Surprise / watch      surprise / watch / when-anomaly / threshold
+0x00-0x07   Structural            partition / merge / cons / head / tail
+0x08-0x0F   Numerical primitives  p, τ, σ, mul, mod, div, gcd, mobius
+0x10-0x17   Conservation          budget-decl / conserve / nil / Δ-check
+0x18-0x1F   Surprise / watch      surprise / nil? / threshold / deviation
 0x20-0x27   Evolution             defpop / variant / evolve / select / mutate
 0x28-0x2F   Composition           seq / parallel / if-surprise / loop-until
+                                  lambda / apply / let / ref
 0x30-0x37   Effects / IO          external-boundary / net-send / net-recv
 0x38-0x3F   Meta / lineage        lineage-query / why / trace / explain
 ```
 
-Full token spec to be written in `spec/tokens.md` as design progresses.
+**Slot budget.** 31 of 64 implemented, 33 reserved — but of those 33,
+24 belong to the Evolution / Effects-IO / Meta families, each of which
+carries an axiom, leaving **8 genuinely free slots**.
+`spec/token-budget.md` is the standing ledger: what was spent, what
+remains, and what is still awaiting a decision. Read it before
+proposing any new operator.
+
+`spec/tokens.md` is the authoritative table and is **generated** from
+`core/tokens.py` by `spec/generate_tokens_md.py`. Rerun that script
+after touching the table; do not hand-edit the Markdown.
+
+Reallocated slots, all of them placeholders that carried a name and an
+arity for nine milestones and never an implementation:
+
+| Byte | Was | Now | When |
+|---|---|---|---|
+| 0x0B / 0x0C | `φ₃` / `ψ₇` (mock theta) | `mul` / `mod` | M9 |
+| 0x04 / 0x05 / 0x06 | `heat-inc` / `heat-get` / `inherit` | `cons` / `head` / `tail` | M10 |
+| 0x0D | `η` (Dedekind eta) | `div` | M10 |
+| 0x15 | `sum-invariant` | `nil` | M10 |
+| 0x19 | `watch` | `nil?` | M10 |
+
+The DNA OS lineage for the *architecture* is unaffected; these slots
+changed hands, and the core is still exactly 64 operators.
+
+**Surface spelling is not free real estate but it is free density.**
+Exp 13 measured operator *names* at 51% of the Stage-1 LLM-token cost
+and found that one-token spellings (`if`, `dev`, `loop`, `def`, ...)
+close 30% of the algorithmic density gap against Python for zero
+slots — three times what two new operators were worth. `lt`, `sub`,
+`gt`, `(list ...)` and `"strings"` are therefore **macros**, not
+operators: they expand into the core (Constraint 6) and cost nothing.
+Prefer a macro over a slot unless the node count matters.
 
 **Stage 1 text surface** is a Lisp-like s-expression syntax that maps
 1:1 to token sequences. Example:
 
 ```lova
-(defn square [n] (n ⊗ n))
+(defn square [n] (⊗ n n))
+(square 7)
 ```
 
-compiles to a short integer sequence, e.g. `[0x20, 0x01, 0x00, ...]`.
-The text form is a pretty-printer over the integer form, not the canonical
-representation.
+is Stage-1 sugar. It desugars to core tokens only —
+
+```lova
+(let 0 (lambda 1 (mul (ref 1) (ref 1))) (apply (ref 0) 7))
+```
+
+— and compiles to a short integer sequence. The text form is a
+pretty-printer over the integer form, not the canonical
+representation; identifiers are interned to integer name ids at parse
+time and printed back as integers, because the integer is the
+program.
 
 ## File layout
 
@@ -198,18 +250,23 @@ lova/
 
 ## How to run / test
 
-Early-stage. No public entry point yet. Once `core/` has a minimal
-encoder + runtime:
+The `lova` command line is the entry point (`core/cli.py`).
 
 ```bash
 cd /path/to/lova
 export PYTHONPATH="$PWD"
 
-# REPL (Stage-1 text surface)
-python -m core.repl
+# Run a program
+python -m core.cli run apps/is_prime.lova 1999
 
-# Execute an integer-sequence program directly
-python -m core.runtime --program 0x20,0x01,0x00,...
+# REPL, with lib/prelude.lova loaded
+python -m core.cli repl
+
+# Project into the Stage-2 surface, bytes, or one integer
+python -m core.cli emit apps/coprime.lova 14 15 --form stage2
+
+# Static analysis without running it
+python -m core.cli analyze apps/collatz.lova 27
 
 # Run an experiment
 python experiments/experiment_01_hello_lova.py
@@ -312,7 +369,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-04-24 — post-M6 Day 3, M6 complete)
+## Current state (2026-09-09 — post-M13)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -343,6 +400,8 @@ experiment details.
   L2 enriched anomalies, L3 static_analyze).
 - **Exp 07** (Claude-vs-Claude): pass@1 20/20 LOVA vs 19/20 Python;
   density 39.2×; error-class subset property empirically demonstrated.
+  *(v1 slice. Superseded by the 60-task re-run at M13: 60/60 vs 59/60,
+  25.8×. The error-class result is unchanged.)*
 - **M6 Day 1** (compiler): core/compiler with three static passes —
   scope-check, type-check, constant-fold. `CompileError.anomaly` shares
   L2 schema with runtime traps (uniform AI error handler).
@@ -370,18 +429,106 @@ experiment details.
   `corpus/token_telemetry.json` (19 KB). Context divergence surfaces
   (LIT-in-CONSERVE **3%** vs global 65%). **Weighted sampler +20 pp
   over uniform** (96% vs 76% pass-without-trap, N=50).
+- **M9** (abstraction and iteration): `LAMBDA` / `APPLY` / `LOOP_UNTIL`
+  implemented, `LET` upgraded to a letrec, `mul` / `mod` on the
+  reclaimed 0x0B / 0x0C, `deviation` / `threshold` giving ordering,
+  `Fn` and `Value` types, `DepthTrap` / `StepTrap` ceilings, and
+  Stage-1 sugar (`defn`, call syntax, bare-name references). Zero new
+  tokens. Numbered 9 because M7 (MCP) and M8 (fine-tuning) were
+  already named below; M9 landed first because both depend on it.
+- **Exp 12** (abstraction): **44/44 algorithmic cases pass, 0/10 were
+  representable before M9**; μ-recursive basis exhibited; 5/5 runaway
+  shapes trapped with the full L2 schema. **NEGATIVE result on
+  density** — see below.
+- **Exp 13** (token budget): re-derived the table before spending the
+  rest of it. Density is **30% spelling / 9% operators / 61%
+  s-expression syntax**, so a table change was the wrong instrument —
+  and the benchmark cannot testify about the table, because its tasks
+  were selected for what LOVA could already express. Proposal in
+  `spec/token-budget.md`; **Axiom 8 revision proposed and NOT applied**
+  (needs owner approval).
+- **M10** (data): 6 of 14 free slots spent — `cons` / `head` / `tail` /
+  `nil` / `nil?` and `div`. One cons cell buys pairs, lists **and**
+  strings-as-codepoint-lists, so `"abc"` is sugar at zero slots. New
+  `List` type; `apply` arguments widened to `Value`. `lt` / `sub` /
+  `gt` / `(list ...)` shipped as macros rather than slots, on Exp 13's
+  own evidence. `quote` / `eval` held pending a decision.
+- **Fixed in M10**: `constrained_random` could fail to terminate — no
+  Fn-producing operator is "terminating", making generation a critical
+  branching process in an `Fn` slot. Replaced by a
+  minimum-completion-cost bias, which strictly decreases remaining
+  work. Related: four runtime arithmetic sites trusted their slot type
+  and could receive a closure, because `APPLY` declares `Int` while a
+  partial application evaluates to a callable (Q35). All now coerce.
 
-**19 / 64 operators runtime-implemented**; 45 reserved. See
-`spec/tokens.md` for the complete table.
+**M13** made the error model uniform and reachable. Twenty-two runtime
+faults — division by zero, the head of an empty list, an unbound
+reference — raised bare `ValueError`s with no `kind`, so Exp 08's "one
+handler for every fault" held for two of four classes; `DomainTrap`
+(a `ValueError` subclass, so nothing broke) closes that. `when-anomaly`
+(0x1A) lets a program catch its own anomaly and branch on its code,
+which Axiom 7 always implied. `StepTrap` alone is uncatchable: a
+termination guarantee a program can mask is not one. **34 / 64
+operators**, seven free slots left.
 
-**Code statistics:** ~7600 Python LOC (core + tests + corpus + experiments + apps),
-122 unit tests passing, 11 experiments (pb11 has a v1 pilot + v2 re-run),
-2 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
+**M12** closed two debts with no new tokens: a chain of `LET`s shares
+one environment frame, so a group of `def`s is **mutually recursive**
+(Q34) — and `drop-unused` had to become a fixpoint over the group,
+because with mutual recursion a binding can be reachable only from an
+earlier sibling's *value*. And `valid_next` caught up with the type
+checker (Q52): `if` / `let` / `apply` fit any slot because their result
+type follows their operands, and `ref` fits any slot because its type
+is its binding's — which the generation state machine cannot see. A
+`map`-shaped program is now generatable, where before **no generated
+program could have that shape at all**.
+
+**M11** made the language usable: `stdout` / `stdin` on the IO
+family's own reserved slots, logic macros at zero slots, a standard
+library written in LOVA (`lib/prelude.lova`, free because of the new
+`drop-unused` compiler pass — 474 nodes to 1 when unused), and a command
+line (`python -m core.cli run|repl|emit|analyze`) so a `.lova` file can
+be invoked without a hand-written Python driver. It also fixed a real
+type-system defect: `if-surprise` forced its branches to `Int`, which
+made every list-returning conditional — `map`, `filter`, `reverse` —
+unrepresentable. `if` / `let` / `seq` / `apply` now take their result
+type from their operands.
+
+**Exp 14** built the Stage-2 surface and closed Q37, the largest open
+item: parentheses were 25% of the Stage-1 token cost and were never
+necessary, because the byte encoding has no delimiters. Density on
+algorithmic code went 0.66× → **1.13×** (past the 0.76× ceiling Exp 13
+proved the token table could not beat) and on LOVABench 2.00× →
+**5.38×** vs sympy-Python. Exp 11's Stage-2 *projection* understated
+density by 70%; node count is a poor proxy in both directions.
+
+**34 / 64 operators runtime-implemented**; 30 reserved, of which only 7
+are genuinely free (see the slot-budget note above). See
+`spec/tokens.md` for the complete table (generated) and
+`spec/token-budget.md` for the ledger.
+
+**Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
+354 unit tests passing, 14 experiments (pb11 has a v1 pilot + v2 re-run),
+5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 
+**All 14 experiments run** as of 2026-09-09. Exp 03 and Exp 07 had
+been dead for four months (solution tables covering 20 tasks against a
+60-task corpus, Q30); they were extended and de-duplicated — Exp 07 now
+imports Exp 03's table rather than keeping a copy of it, which is what
+let them drift apart in the first place.
+
+Headline moved with the fix: **pass@1 LOVA 60/60 vs Python 59/60**
+(180/180 vs 177/180 test cases), raw byte density **25.8×** where the
+20-task slice said 39.2×. The one Python failure is still pb20, the
+same keyword-argument weakness. Quote the correctness number with Exp
+13's F3 attached: the prompts state the formula, so the baseline
+measures transcription, not synthesis.
+
 **Launch-ready numbers:**
-- **Correctness** (Exp 07, LOVABench v1): LOVA 20/20 vs Python 19/20 pass@1, same tasks/LLM.
-- **Byte density** (Exp 07): 39.2× raw, ~15-20× vs sympy-Python.
+- **Expressiveness** (Exp 12): 44/44 cases across ten recursion- or
+  iteration-requiring tasks; 0/10 were representable before M9.
+- **Correctness** (Exp 07, LOVABench v2): LOVA 60/60 vs Python 59/60 pass@1, same tasks/LLM — but see the transcription caveat above.
+- **Byte density** (Exp 07, v2): 25.8× raw (39.2× on the narrower v1 slice).
 - **LLM-token density** (Exp 11, tiktoken cl100k_base):
   - **Aggregate across LOVABench v2 (60 tasks, 5 categories):**
     - Stage 1 text surface: **2.0× fewer tokens than sympy-Python (50% savings)**,
@@ -392,6 +539,18 @@ experiment details.
     conserve 2.3×, surprise 1.4×, let-heavy 1.4×.
   - v1 slice preserved (2.5×/13.3×) as historical reference; v2 aggregate
     is the honest broader number.
+- **Density, honestly** (Exp 14): quote the surface, not a single
+  number. Stage 2 is **5.38× vs sympy-Python on LOVABench** and
+  **1.13× vs Python on algorithmic tasks**; Stage 1 is 2.00× and 0.66×
+  respectively. The old 8.5× was Stage-1-vs-pure-Python on
+  number-theory tasks — a real number answering a question nobody asked.
+- **Density does not generalise at Stage 1** (Exp 12): on ten algorithmic tasks
+  where neither language has a built-in shortcut, Stage-1 LOVA costs
+  **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2
+  projection does not rescue it (0.65×). Bytes stay mildly positive
+  (1.19×). The 8.5× above measures the number-theory built-ins, not
+  the language. Quote both or quote neither; `journal/experiment_12.md`
+  has the mechanism.
 
 ## Next milestones (proposed)
 
@@ -418,6 +577,23 @@ tagging for delta-repair), Q26 (task-level pass signal), Q27
 (principled termination weighting), Q28 (incremental telemetry
 merge), Q29 (richer conditioning — grandparent / sibling-type).
 
+**M10 — data** (complete; see `spec/token-budget.md`)
+One cons cell, `div`, and the zero-slot surface levers. Open decisions
+it leaves: placement of `nil` / `nil?` (they sit in the wrong families
+because Structural was full), `quote` / `eval`, and the Axiom 8
+revision. New questions: Q42 (`List<T>` for nested structure), Q43
+(unknown lambda parameter types), Q44 (should `valid_next` expose
+completion cost so any sampler can see which choices terminate), Q45
+(should `partition` now return a real pair).
+
+**M9 — abstraction and iteration** (complete; see Exp 12)
+Landed ahead of M7/M8 because both depend on it. Follow-ups it
+raised: ~~Q30~~ (fixed at M13), Q31 (does the number-theory family owe
+slots to `div` / `<`?), Q32 (terser Stage-1 surface), Q33 (LOVABench
+v3 with an algorithmic category), Q34 (mutual recursion), Q35
+(arity-indexed `Fn<n>`), Q36 (re-run Exp 03/10 — `constrained_random`
+now emits lambdas, so their distributions are stale).
+
 **M7 — MCP server / external integration** (≈ 1-2 weeks)
 1. `lova-mcp` Python package exposing `lova/execute`,
    `lova/valid_next`, `lova/static_analyze` as MCP tools.
@@ -426,6 +602,10 @@ merge), Q29 (richer conditioning — grandparent / sibling-type).
    Claude Code) can call directly.
 
 **M8 — Fine-tuning corpus + real-LLM benchmark** (≈ 1 month + GPU)
+0. **Prerequisite from Exp 12:** every LOVABench task predates M9, so
+   a corpus derived from them teaches a sublanguage of straight-line
+   arithmetic. Add an algorithmic category first (Q33) or the
+   fine-tune measures the wrong language.
 1. Synthetic corpus generator: 10k+ `(prompt, program)` pairs derived
    from `constrained_random` + task-template expansion.
 2. Fine-tune a 7B-70B open model (Qwen3, Llama4) on the corpus.

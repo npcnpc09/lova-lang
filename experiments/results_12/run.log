@@ -1,0 +1,110 @@
+LOVA M9 -- abstraction and iteration (Experiment 12)
+
+==============================================================================
+  1. Expressiveness -- ten tasks that need recursion or iteration
+==============================================================================
+  task                      cases       M9   pre-M9  note
+  --------------------------------------------------------------------------
+  factorial                     5  5/5           no  primitive recursion
+  fibonacci                     5  5/5           no  tree recursion
+  is-prime                      7  7/7           no  loop with early exit
+  collatz-steps                 4  4/4           no  accumulator via currying
+  sum-to                        4  4/4           no  linear recursion
+  power-of-two                  4  4/4           no  exponentiation
+  gcd-euclid                    4  4/4           no  two-argument recursion (Euclid, not the gcd built-in)
+  count-divisors                4  4/4           no  counting loop (reimplements the tau built-in)
+  multiply-by-adding            3  3/3           no  defines multiplication from addition
+  divide-by-subtracting         4  4/4           no  defines division from subtraction -- the core has no `div`
+  --------------------------------------------------------------------------
+  M9:      44/44 cases pass
+  pre-M9:  0/10 tasks even representable
+
+==============================================================================
+  2. Universality -- primitive recursion and the mu-operator
+==============================================================================
+  The mu-recursive functions are the primitive recursive ones
+  closed under unbounded minimisation.  LOVA now has each
+  ingredient; here is one of each, run.
+
+  zero test    (if-surprise n THEN ELSE)     -> 222, 111   (0 takes ELSE, 5 takes THEN)
+  successor    (merge n 1)                   -> 42
+  predecessor  (merge n -1)                  -> 42
+  primitive recursion  fact(12)             -> 479001600 (matches)
+
+  minimisation (mu-operator) via loop-until:
+    mu x. [ x*x >= n ]   -- least x whose square reaches n
+    n=0      mu -> 0    expected 0    ok
+    n=1      mu -> 1    expected 1    ok
+    n=2      mu -> 2    expected 2    ok
+    n=9      mu -> 3    expected 3    ok
+    n=10     mu -> 4    expected 4    ok
+    n=50     mu -> 8    expected 8    ok
+    n=1000   mu -> 32   expected 32   ok
+    with max_call_depth=4: mu(10000) -> 100 (iteration does not consume call frames)
+
+  Ingredients present: zero test, successor, predecessor,
+  composition, primitive recursion, unbounded minimisation.
+  That is the standard mu-recursive basis.  Stated as an
+  observation about the operator set, not as a proof.
+
+==============================================================================
+  3. Ceilings -- non-termination as a structured anomaly
+==============================================================================
+  Every shape below fails to terminate.  A hang or a Python
+  traceback would be a substrate bug; what an AI caller needs
+  is the same anomaly schema it already handles.
+
+  unguarded self-recursion                         DepthTrap  recursion-depth-exceeded
+                                                              hint: the recursion has no reachable base case, or needs more than...
+  recursion whose base case is unreachable         DepthTrap  recursion-depth-exceeded
+                                                              hint: the recursion has no reachable base case, or needs more than...
+  mutual-shaped recursion through one name         DepthTrap  recursion-depth-exceeded
+                                                              hint: the recursion has no reachable base case, or needs more than...
+  loop-until with a predicate that never fires     StepTrap   step-limit-exceeded
+                                                              hint: the program does not terminate within the substrate step cei...
+  loop-until whose step never approaches the predicate StepTrap   step-limit-exceeded
+                                                              hint: the program does not terminate within the substrate step cei...
+
+  trapped:           5/5
+  full L2 schema:    5/5
+  every trap is a BudgetTrap subclass, so one handler covers
+  budget overrun, call depth and step ceiling alike.
+
+==============================================================================
+  4. Density on algorithmic tasks (no built-in shortcut on either side)
+==============================================================================
+  task                      LOVA B   Py B  B ratio  S1 tok  S2 est  Py tok   S1/Py   S2/Py
+  ------------------------------------------------------------------------------------
+  factorial                     44     57    1.30x      29      32      22   0.76x   0.69x
+  fibonacci                     60     63    1.05x      43      44      26   0.60x   0.59x
+  is-prime                     105    152    1.45x      84      78      56   0.67x   0.72x
+  collatz-steps                 95    118    1.24x      70      70      51   0.73x   0.73x
+  sum-to                        44     61    1.39x      32      32      24   0.75x   0.75x
+  power-of-two                  43     57    1.33x      33      31      25   0.76x   0.81x
+  gcd-euclid                    52     53    1.02x      28      38      22   0.79x   0.58x
+  count-divisors                91     77    0.85x      68      67      31   0.46x   0.46x
+  multiply-by-adding            55     69    1.25x      36      40      28   0.78x   0.70x
+  divide-by-subtracting         65     68    1.05x      48      48      27   0.56x   0.56x
+  ------------------------------------------------------------------------------------
+  aggregate bytes:      LOVA 654  vs  Python 775   -> 1.19x
+  aggregate LLM tokens: Stage-1 471  Stage-2 est 480  vs  Python 312
+                        Stage-1/Python 0.66x    Stage-2/Python 0.65x
+
+  Read this against the README's 8.5x / 3.2x, which come from
+  number-theory tasks where a one-byte LOVA built-in stands in
+  for a sympy call.  Here neither side has a shortcut and both
+  have to write the algorithm out, so this is the ratio that
+  survives the obvious objection to the headline number.
+
+==============================================================================
+  Experiment 12 -- summary
+==============================================================================
+  expressiveness:  44/44 cases pass under M9; 0/10 tasks were representable before it
+  universality:    mu-operator 7/7, primitive recursion ok
+  ceilings:        5/5 runaway shapes trapped, 5/5 with the full L2 schema
+  density:         1.19x bytes, Stage-1 0.66x / Stage-2 0.65x LLM tokens vs Python on algorithmic tasks
+
+  NEGATIVE RESULT: on tasks with no built-in shortcut the
+  Stage-1 text surface costs MORE LLM tokens than Python.
+  See journal/experiment_12.md -- this is the honest
+  boundary of the density claim, and it is load-bearing.

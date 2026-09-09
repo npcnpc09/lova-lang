@@ -1,0 +1,87 @@
+LOVA Experiment 14 -- the Stage-2 surface, built and measured
+
+==============================================================================
+  1. Losslessness -- a projection that loses information is not one
+==============================================================================
+  round-trips checked:  2150 (60 bench + 10 algorithmic + 5 apps + 1000 generated, x2 for the digram)
+  failures:             0
+  evaluated after the round-trip: 10/10 identical
+
+==============================================================================
+  2. Density on algorithmic tasks (no built-in shortcut on either side)
+==============================================================================
+  task                        S1    S2  S2+ref    Py
+  ----------------------------------------------------
+  factorial                   29    25      19    22
+  fibonacci                   43    35      27    26
+  is-prime                    84    60      43    56
+  collatz-steps               70    56      39    51
+  sum-to                      32    26      20    24
+  power-of-two                33    25      20    25
+  gcd-euclid                  28    29      21    22
+  count-divisors              68    54      39    31
+  multiply-by-adding          36    32      23    28
+  divide-by-subtracting       48    37      26    27
+  ----------------------------------------------------
+  TOTAL                      471   379     277   312
+
+  surface                                    tokens   vs Python
+  --------------------------------------------------------------
+  Stage 1 (s-expressions)                       471       0.66x
+  Stage 1 + best possible table change          409       0.76x   (Exp 13)
+  Stage 2 (one char per byte)                   379       0.82x
+  Stage 2 + reference digram                    277       1.13x
+
+  **LOVA is denser than Python on algorithmic code for the
+    first time.**  Exp 12 measured 0.66x and Exp 13 showed the
+    token table could not get past 0.76x; the surface did.
+
+==============================================================================
+  3. LOVABench v2 -- the projection Exp 11 made, against the thing
+==============================================================================
+  measure                                    tokens
+  --------------------------------------------------
+  Stage 1 (measured)                            866
+  Stage 2 estimate (Exp 11 projection)          546
+  Stage 2 (measured, one char per byte)         366
+  Stage 2 (measured, + reference digram)        322
+  Python, pure                                 7370
+  Python, sympy                                1732
+
+  ratio                                      vs sympy   vs pure
+  --------------------------------------------------------------
+  Stage 1                                       2.00x     8.51x
+  Stage 2 estimate (Exp 11)                     3.17x    13.50x
+  Stage 2 measured                              5.38x    22.89x
+
+  Exp 11 projected 546 tokens where the built surface needs 322:
+  it overestimated the token count by 70%, which means it *understated*
+  Stage 2's density by that much.  Node count is a poor proxy in
+  both directions -- Exp 12 found it erring the other way on
+  algorithmic programs.
+
+==============================================================================
+  4. Where the remaining tokens go
+==============================================================================
+  class             tokens   share
+  ----------------------------------
+  operators            132    48%
+  literals              77    28%
+  references            63    23%
+  separators             5     2%
+  ----------------------------------
+  TOTAL                277
+
+  Parentheses are gone entirely -- they were 25% of Stage 1.
+  What is left is the program: an operator per node and a
+  literal per constant.  Further compression means naming more
+  frequent subtrees, which fits the surface to the corpus that
+  motivated it (Q46), or a fine-tuned vocabulary, which is M8.
+
+==============================================================================
+  Experiment 14 -- summary
+==============================================================================
+  losslessness:   2150/2150 round-trips exact
+  algorithmic:    Stage 1 0.66x -> Stage 2 1.13x vs Python (471 -> 277 tokens)
+  LOVABench v2:   Stage 2 measured 5.38x vs sympy, 22.89x vs pure Python
+                  (Exp 11 projected 3.17x / 13.50x)

@@ -47,7 +47,9 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from core.conservation import BudgetTrap, DeltaTrap
-from core.generator import GenState, constrained_random, encode_lit
+from core.generator import (
+    GenState, cheapest_to_finish, constrained_random, encode_lit,
+)
 from core.observability import valid_next_with_stats
 from core.runtime import evaluate
 from core.surface import parse
@@ -173,15 +175,11 @@ def _sample_uniform(rng: random.Random, max_depth: int = 3) -> bytes:
     while not state.is_complete():
         valid = list(state.valid_next())
         if depth > max_depth:
-            # Past the soft depth limit: prefer END (closes variadic) over
-            # LIT_INT (extends variadic).  Falling through to LIT only if
-            # END isn't valid in this slot.
-            if END in valid:
-                valid = [END]
-            else:
-                term = [t for t in valid if t == LIT_INT]
-                if term:
-                    valid = term
+            # Past the soft depth limit, restrict to the choices that
+            # finish soonest.  This used to be "prefer END, else LIT_INT",
+            # which is not a termination rule: neither is valid in an Fn
+            # slot, so the filter did nothing exactly where it mattered.
+            valid = cheapest_to_finish(state, valid)
         token = rng.choice(valid)
         out.append(token)
         if token == LIT_INT:
@@ -203,17 +201,10 @@ def _sample_weighted(
     while not state.is_complete():
         choices = valid_next_with_stats(state, telemetry=db)
         if depth > max_depth:
-            # Past depth limit: force termination.  Prefer END when it
-            # can close a variadic slot (greedy pass-rate scoring alone
-            # lets LIT_INT edge out END forever, refilling a seq slot
-            # indefinitely).  Otherwise pick LIT_INT to fill int slots.
-            end_choice = [c for c in choices if c.token == END]
-            if end_choice:
-                choices = end_choice
-            else:
-                term = [c for c in choices if c.token == LIT_INT]
-                if term:
-                    choices = term
+            # Same termination control as the uniform sampler, so the
+            # comparison measures the *weighting* and nothing else.
+            allowed = set(cheapest_to_finish(state, [c.token for c in choices]))
+            choices = [c for c in choices if c.token in allowed]
         # Score: prefer context rate if available and n>=3, else global.
         def score(c) -> float:
             if c.prior_sample_count_ctx >= 3 and c.prior_pass_rate_ctx is not None:

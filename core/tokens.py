@@ -24,18 +24,18 @@ END             = 0x00   # list terminator for variadic ops
 LIT_INT         = 0x01   # integer literal (length-prefixed big-endian follows)
 PARTITION       = 0x02   # n → (a, b) with a+b=n, heat-directed split
 MERGE           = 0x03   # a, b → a+b
-HEAT_INC        = 0x04
-HEAT_GET        = 0x05
-INHERIT         = 0x06
+CONS            = 0x04   # (cons x xs)  (M10: was the heat-inc placeholder)
+HEAD            = 0x05   # (head xs)    (M10: was the heat-get placeholder)
+TAIL            = 0x06   # (tail xs)    (M10: was the inherit placeholder)
 IDENTITY        = 0x07
 
 # Family 0x08-0x0F  Number theory
 P               = 0x08   # partition number p(n)
 TAU             = 0x09   # divisor count τ(n)
 SIGMA           = 0x0A   # divisor sum σ(n)
-PHI3            = 0x0B   # mock theta φ₃ (placeholder)
-PSI7            = 0x0C   # mock theta ψ₇ (placeholder)
-ETA             = 0x0D   # Dedekind η (placeholder)
+MUL             = 0x0B   # a × b        (M9: was the mock-theta φ₃ placeholder)
+MOD             = 0x0C   # a mod b       (M9: was the mock-theta ψ₇ placeholder)
+DIV             = 0x0D   # a // b       (M10: was the Dedekind-η placeholder)
 GCD             = 0x0E
 MOBIUS          = 0x0F
 
@@ -45,14 +45,14 @@ CONSERVE        = 0x11   # (conserve invariant body) — verify invariant holds
 DELTA_CHECK     = 0x12
 RESPAWN         = 0x13
 BUDGET_REMAINING = 0x14
-SUM_INVARIANT   = 0x15
+NIL             = 0x15   # the empty list (M10: was sum-invariant)
 PRESERVE        = 0x16
 VIOLATE         = 0x17   # (violate)  — synthetic "break conservation" op, testing only
 
 # Family 0x18-0x1F  Surprise / watch
 SURPRISE        = 0x18   # (surprise predicted actual) — returns |p-a|, emits trace
-WATCH           = 0x19
-WHEN_ANOMALY    = 0x1A
+IS_NIL          = 0x19   # (nil? xs)    (M10: was the watch placeholder)
+WHEN_ANOMALY    = 0x1A   # (when-anomaly body handler) -- M13
 THRESHOLD       = 0x1B
 PREDICT         = 0x1C
 TRACE_SURPRISE  = 0x1D
@@ -85,8 +85,8 @@ NET_SEND        = 0x31
 NET_RECV        = 0x32
 FS_READ         = 0x33
 FS_WRITE        = 0x34
-STDOUT          = 0x35
-STDIN           = 0x36
+STDOUT          = 0x35   # (stdout v)  -- write; M11
+STDIN           = 0x36   # (stdin)     -- read a line; M11
 CLOCK           = 0x37
 
 # Family 0x38-0x3F  Meta / lineage
@@ -111,17 +111,17 @@ SIGNATURES = {
                    "payload": "varint"},
     PARTITION:    {"name": "partition",     "arity": 1, "family": "struct"},
     MERGE:        {"name": "merge",         "arity": 2, "family": "struct"},
-    HEAT_INC:     {"name": "heat-inc",      "arity": 1, "family": "struct"},
-    HEAT_GET:     {"name": "heat-get",      "arity": 1, "family": "struct"},
-    INHERIT:      {"name": "inherit",       "arity": 2, "family": "struct"},
+    CONS:         {"name": "cons",          "arity": 2, "family": "struct"},
+    HEAD:         {"name": "head",          "arity": 1, "family": "struct"},
+    TAIL:         {"name": "tail",          "arity": 1, "family": "struct"},
     IDENTITY:     {"name": "identity",      "arity": 1, "family": "struct"},
     # Number theory
     P:            {"name": "p",             "arity": 1, "family": "nt"},
     TAU:          {"name": "tau",           "arity": 1, "family": "nt"},
     SIGMA:        {"name": "sigma",         "arity": 1, "family": "nt"},
-    PHI3:         {"name": "phi3",          "arity": 2, "family": "nt"},
-    PSI7:         {"name": "psi7",          "arity": 2, "family": "nt"},
-    ETA:          {"name": "eta",           "arity": 1, "family": "nt"},
+    MUL:          {"name": "mul",           "arity": 2, "family": "nt"},
+    MOD:          {"name": "mod",           "arity": 2, "family": "nt"},
+    DIV:          {"name": "div",           "arity": 2, "family": "nt"},
     GCD:          {"name": "gcd",           "arity": 2, "family": "nt"},
     MOBIUS:       {"name": "mobius",        "arity": 1, "family": "nt"},
     # Conservation
@@ -130,12 +130,12 @@ SIGNATURES = {
     DELTA_CHECK:  {"name": "delta-check",   "arity": 1, "family": "cons"},
     RESPAWN:      {"name": "respawn",       "arity": 1, "family": "cons"},
     BUDGET_REMAINING: {"name": "budget-remaining", "arity": 0, "family": "cons"},
-    SUM_INVARIANT: {"name": "sum-invariant", "arity": 0, "family": "cons"},
+    NIL:          {"name": "nil",           "arity": 0, "family": "cons"},
     PRESERVE:     {"name": "preserve",      "arity": 2, "family": "cons"},
     VIOLATE:      {"name": "violate",       "arity": 1, "family": "cons"},
     # Surprise
     SURPRISE:     {"name": "surprise",      "arity": 2, "family": "surp"},
-    WATCH:        {"name": "watch",         "arity": 1, "family": "surp"},
+    IS_NIL:       {"name": "nil?",          "arity": 1, "family": "surp"},
     WHEN_ANOMALY: {"name": "when-anomaly",  "arity": 2, "family": "surp"},
     THRESHOLD:    {"name": "threshold",     "arity": 1, "family": "surp"},
     PREDICT:      {"name": "predict",       "arity": 1, "family": "surp"},
@@ -190,7 +190,7 @@ assert len(SIGNATURES) == 64, f"Token table must have exactly 64 entries, found 
 # treats them as unreachable and never emits them.  As milestones land,
 # operators get type info here and become generation-reachable.
 
-from core.types import INT, LITERAL_INT  # noqa: E402
+from core.types import FN, INT, LIST, LITERAL_INT, VALUE  # noqa: E402
 
 _TYPE_INFO = {
     # Literals
@@ -199,24 +199,83 @@ _TYPE_INFO = {
     PARTITION:      {"in_types": [INT], "out_type": INT},
     MERGE:          {"in_types": [INT, INT], "out_type": INT},
     IDENTITY:       {"in_types": [INT], "out_type": INT},
+    # Lists (M10).  Elements are Int, not Value -- see core.types.LIST for
+    # why that keeps `head` sound rather than merely permissive.
+    NIL:            {"in_types": [], "out_type": LIST},
+    CONS:           {"in_types": [INT, LIST], "out_type": LIST},
+    HEAD:           {"in_types": [LIST], "out_type": INT},
+    TAIL:           {"in_types": [LIST], "out_type": LIST},
+    IS_NIL:         {"in_types": [LIST], "out_type": INT},
     # Number theory (M1 subset)
     P:              {"in_types": [INT], "out_type": INT},
     TAU:            {"in_types": [INT], "out_type": INT},
     SIGMA:          {"in_types": [INT], "out_type": INT},
     GCD:            {"in_types": [INT, INT], "out_type": INT},
     MOBIUS:         {"in_types": [INT], "out_type": INT},
+    MUL:            {"in_types": [INT, INT], "out_type": INT},
+    MOD:            {"in_types": [INT, INT], "out_type": INT},
+    DIV:            {"in_types": [INT, INT], "out_type": INT},
     # Conservation (M1 subset)
     BUDGET:         {"in_types": [LITERAL_INT, INT], "out_type": INT},
     CONSERVE:       {"in_types": [INT, INT], "out_type": INT},
     VIOLATE:        {"in_types": [INT], "out_type": INT},
-    # Surprise (M1 subset)
+    # Surprise (M1 subset + M9 comparison pair)
     SURPRISE:       {"in_types": [INT, INT], "out_type": INT},
     TRACE_SURPRISE: {"in_types": [INT], "out_type": INT},
+    # DEVIATION is the signed sibling of SURPRISE (which returns |a-b|);
+    # THRESHOLD is the sign test.  Together they give ordering:
+    #   (a < b)  ==  (threshold (deviation b a))
+    DEVIATION:      {"in_types": [INT, INT], "out_type": INT},
+    THRESHOLD:      {"in_types": [INT], "out_type": INT},
     # Composition (M1 subset)
     SEQ:            {"in_types": None, "variadic_type": INT, "out_type": INT},
-    LET:            {"in_types": [LITERAL_INT, INT, INT], "out_type": INT},
+    # LET's value slot is the language's only ``Value`` slot: a binding
+    # may hold an integer or a function, and this is what lets
+    # ``(let f (lambda ...) ...)`` — and therefore recursion — type.
+    LET:            {"in_types": [LITERAL_INT, VALUE, INT], "out_type": INT},
     REF:            {"in_types": [LITERAL_INT], "out_type": INT},
     IF_SURPRISE:    {"in_types": [INT, INT, INT], "out_type": INT},
+    # Error handling (M13).  ``(when-anomaly body handler)``: evaluate
+    # `body`; if it traps, call `handler` with the anomaly's integer code
+    # and return that instead.  The handler is an ``Fn`` because a
+    # handler that is told nothing can only guess -- and Axiom 7 says the
+    # anomaly is the signal.  Codes live in ``core.conservation``.
+    #
+    # The result type follows the body, so a guarded expression can stand
+    # wherever the unguarded one could.
+    WHEN_ANOMALY:   {"in_types": [VALUE, FN], "out_type": INT},
+    # Abstraction (M9).  Lambdas are unary; multi-argument functions are
+    # curried, so ``(lambda a (lambda b body))`` has type Fn and returns
+    # an Fn.  APPLY is variadic with a *typed head*: the first slot must
+    # be an Fn, every following slot an Int, and the call is applied
+    # left-associatively (one argument at a time).
+    # A lambda body is a ``Value``, not an ``Int``: currying means the
+    # body of the outer lambda in ``(lambda a (lambda b ...))`` is
+    # itself a function.
+    LAMBDA:         {"in_types": [LITERAL_INT, VALUE], "out_type": FN},
+    # An argument is any value: an Int, a List, or another function.
+    # Typing the tail slots Int instead would make every list-processing
+    # function unrepresentable, which is most of the point of having
+    # lists.
+    APPLY:          {"in_types": None, "head_types": [FN],
+                     "variadic_type": VALUE, "out_type": INT},
+    # LOOP_UNTIL is a combinator, not a statement: it takes a predicate
+    # Fn and a step Fn and returns the Fn that iterates step until pred
+    # is non-zero.  Arity 2 as declared; the seed arrives via APPLY.
+    LOOP_UNTIL:     {"in_types": [FN, FN], "out_type": FN},
+    # Effects / IO (M11).  The first operators in the language with a
+    # side effect on the world rather than on the runtime's own state.
+    #
+    # `stdout` takes a Value because it writes both shapes: an integer
+    # goes out as its decimal digits, a list as the text of its
+    # codepoints.  It returns the number of codepoints written, which is
+    # an Int, so a write can sit anywhere an Int can.
+    #
+    # `stdin` is the only non-deterministic operator in the language;
+    # `static_analyze` reports that, and every claim about
+    # reproducibility elsewhere is conditioned on its absence.
+    STDOUT:         {"in_types": [VALUE], "out_type": INT},
+    STDIN:          {"in_types": [], "out_type": LIST},
     # END is a structural sentinel — no out_type; the generator
     # handles it specially as a variadic terminator.
 }
@@ -226,6 +285,33 @@ for _tok, _extra in _TYPE_INFO.items():
 
 # Tokens currently reachable by type-directed generation.
 TYPED_TOKENS = frozenset(_TYPE_INFO.keys())
+
+# Operators whose result type is their operands' rather than their own.
+#
+# ``(if c a b)`` is whatever its branches are, ``(let n v body)``
+# whatever ``body`` is, ``(apply f ...)`` whatever ``f`` returns.  Their
+# declared ``out_type`` above is a placeholder that both the compiler and
+# the generation state machine must look past, or a conditional could
+# never return a list -- which is to say `map`, `filter` and `reverse`
+# would be neither writable nor generatable.
+#
+# ``SEQ`` is transparent in the compiler but deliberately *not* here: a
+# variadic may be empty, and `(seq)` evaluates to 0, so its result type
+# is not determined by the slot it sits in.  The compiler checks that
+# case separately.
+RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY})
+
+# ``REF`` is the other operator whose result type is not its declared
+# one: it is whatever the binding holds.  The compiler resolves that
+# from its scope-aware type environment; the generation state machine
+# cannot, because name ids live in LIT_INT payloads it never inspects
+# (Exp 12, F4).  So a reference is admitted wherever a value is wanted,
+# which is what lets a generated program call a bound function --
+# `(apply (ref f) x)` -- and therefore have the shape of `map`.
+#
+# The two sets are kept apart because the reasons differ: one is a
+# typing rule, the other is a limit on what the state machine can see.
+RESULT_NOT_STATIC = RESULT_FOLLOWS_OPERANDS | {REF}
 
 # Symbol (interned name) → token byte.  Used by the surface parser.
 NAME_TO_TOKEN = {sig["name"]: tok for tok, sig in SIGNATURES.items()}
@@ -237,13 +323,43 @@ ALIASES = {
     "⊖": "partition",
     "τ": "tau",
     "σ": "sigma",
-    "φ₃": "phi3",
-    "ψ₇": "psi7",
-    "η": "eta",
+    "⊗": "mul",
     "μ": "mobius",
     "λ": "lambda",
     "?":  "surprise",
 }
+
+# Short spellings, chosen so that each is a **single LLM token** under
+# GPT-4-class vocabularies (measured with tiktoken cl100k_base).
+#
+# This is not cosmetic.  Exp 13 decomposed the Stage-1 token cost of the
+# algorithmic corpus and found 51% of it goes to operator names, against
+# 25% for parentheses: `if-surprise` costs three LLM tokens, `deviation`
+# two.  Rewriting ten programs to these spellings closed **30% of the
+# density gap against Python for zero token-table slots** — three times
+# what the two candidate new primitives were worth.  If AI is the
+# first-class reader (Axiom 2), the generating model's tokenizer is part
+# of the interface, and operator spelling is a substrate concern rather
+# than a human convenience.
+#
+# The canonical names stay canonical: ``pretty`` still prints them, and
+# ``spec/tokens.md`` still names them.  These are additional accepted
+# spellings, not renames.
+SHORT_ALIASES = {
+    "if":   "if-surprise",       # 3 LLM tokens -> 1
+    "dev":  "deviation",         # 2 -> 1
+    "tr":   "trace-surprise",    # 3 -> 1
+    "loop": "loop-until",        # 3 -> 1
+    "keep": "conserve",          # 2 -> 1
+    "dist": "surprise",          # 2 -> 1
+    "mu":   "mobius",            # 2 -> 1
+    "def":  "defn",              # 2 -> 1  (surface form, not an operator)
+}
+
+# What the surface parser accepts.  ``ALIASES`` alone drives the
+# Unicode pretty-printer, so the two are kept separate: adding a short
+# ASCII spelling must not change what ``pretty(unicode=True)`` emits.
+SURFACE_ALIASES = {**ALIASES, **SHORT_ALIASES}
 
 
 # --- AST ---------------------------------------------------------------------

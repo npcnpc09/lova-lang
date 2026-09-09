@@ -1,0 +1,104 @@
+;;; prelude.lova  --  LOVA's standard library
+;;;
+;;; Written in LOVA, not in Python.  Nothing here is a builtin: every
+;;; definition below expands to the same 64 operators a user program
+;;; has, which is the test of whether the core is actually adequate.
+;;;
+;;; Costs nothing to include.  The compiler's `drop-unused` pass
+;;; removes any binding the program never mentions, so a program that
+;;; calls none of this compiles to exactly what it would have without
+;;; the prelude -- 18 nodes to 1 in the pass's own self-test.  Use
+;;; `--no-prelude` to see the difference.
+;;;
+;;; Order is free.  Since M12 a chain of `def`s shares one environment
+;;; frame, so any definition may call any other regardless of position,
+;;; and mutual recursion works.  The order below is for a reader, not
+;;; for the compiler.  Helpers that need an accumulator take it as a
+;;; second curried parameter, the same shape every recursive LOVA
+;;; program uses.
+
+;; --- lists ----------------------------------------------------------
+
+(def len [xs]
+  (if (nil? xs) 0 (merge 1 (len (tail xs)))))
+
+(def rev-onto [xs acc]
+  (if (nil? xs) acc (rev-onto (tail xs) (cons (head xs) acc))))
+
+(def reverse [xs]
+  (rev-onto xs (nil)))
+
+(def append [xs ys]
+  (rev-onto (rev-onto xs (nil)) ys))
+
+(def nth [xs k]
+  (if (nil? xs)
+    0                                   ; past the end reads as zero
+    (if k (nth (tail xs) (sub k 1)) (head xs))))
+
+(def last [xs]
+  (if (nil? xs) 0 (if (nil? (tail xs)) (head xs) (last (tail xs)))))
+
+(def sum [xs]
+  (if (nil? xs) 0 (merge (head xs) (sum (tail xs)))))
+
+(def product [xs]
+  (if (nil? xs) 1 (mul (head xs) (product (tail xs)))))
+
+(def contains [xs v]
+  (if (nil? xs) 0 (if (eq (head xs) v) 1 (contains (tail xs) v))))
+
+(def same [a b]
+  (cond
+    (nil? a) (nil? b)
+    (nil? b) 0
+    (ne (head a) (head b)) 0
+    (same (tail a) (tail b))))
+
+;; --- higher order ---------------------------------------------------
+;;
+;; `f` here is an ordinary parameter holding a function.  It type-checks
+;; because a parameter's type is unknown to the checker (journal Q43),
+;; and it runs because `apply` takes any value as an argument.
+
+(def map [f xs]
+  (if (nil? xs) (nil) (cons (f (head xs)) (map f (tail xs)))))
+
+(def filter [f xs]
+  (cond
+    (nil? xs) (nil)
+    (f (head xs)) (cons (head xs) (filter f (tail xs)))
+    (filter f (tail xs))))
+
+(def fold [f acc xs]
+  (if (nil? xs) acc (fold f (f acc (head xs)) (tail xs))))
+
+;; --- construction ---------------------------------------------------
+
+(def range [a b]
+  (if (lt a b) (cons a (range (merge a 1) b)) (nil)))
+
+(def repeat [x n]
+  (if n (cons x (repeat x (sub n 1))) (nil)))
+
+;; --- integers -------------------------------------------------------
+
+(def even [n] (not (mod n 2)))
+
+(def odd [n] (mod n 2))
+
+(def pow [b e]
+  (if e (mul b (pow b (sub e 1))) 1))
+
+(def gcd2 [a b]
+  (if b (gcd2 b (mod a b)) a))
+
+(def digits [n]
+  (if (lt n 10)
+    (cons n (nil))
+    (append (digits (div n 10)) (cons (mod n 10) (nil)))))
+
+;; --- output ---------------------------------------------------------
+
+(def println [v]
+  (seq (stdout v) (stdout "\n")))

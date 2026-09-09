@@ -1,6 +1,6 @@
-"""Experiment 03 -- LOVABench v1: reference / random / Claude baselines.
+"""Experiment 03 -- LOVABench: reference / random / Claude baselines.
 
-Three baselines, 20 tasks, quantified:
+Three baselines over all 60 v2 tasks, quantified:
 
   R) **Reference**: each task's ``template`` field IS the hand-written
      reference solution.  Expected 20/20.  This measures that the
@@ -85,6 +85,73 @@ CLAUDE_SOLUTIONS = {
     "pb18": "(gcd {a} (gcd {b} {c}))",
     "pb19": "(seq (p 3) (p 4) (p {n}))",
     "pb20": "(surprise {p} (p {n}))",
+
+    # --- v2 extension, written 2026-09-09 (M13) to close Q30 -----------
+    #
+    # The v1 twenty above were written in April against LOVABench v1.
+    # The corpus grew to sixty in May and these two experiments were
+    # never extended, so both had been dead for four months while the
+    # README quoted their headline number.  The forty below close that.
+    #
+    # Same protocol as the originals: written from each task's `prompt`
+    # and the language spec, without reading `tasks.py`'s `template`.
+    #
+    # Read the result with Exp 13's F3 in mind.  These prompts state the
+    # formula -- "Compute p(tau(sigma(n)))" -- so what this baseline
+    # measures on the v2 tasks is *transcription into s-expressions*,
+    # not program synthesis.  That is a fair test of whether the surface
+    # is writable and an unfair one to quote as "an LLM can program in
+    # LOVA".
+
+    # deep composition (pb21-pb30)
+    "pb21": "(p (tau (sigma {n})))",
+    "pb22": "(sigma (gcd (p {a}) (p {b})))",
+    "pb23": "(tau (tau (tau {n})))",
+    "pb24": "(mobius (gcd (sigma {a}) (tau {b})))",
+    "pb25": "(p (p (tau {n})))",
+    "pb26": "(merge (p (tau {a})) (sigma (gcd {a} {b})))",
+    "pb27": "(gcd (sigma (p {n})) (tau (p {n})))",
+    "pb28": "(tau (merge (sigma {a}) (sigma {b})))",
+    "pb29": "(sigma (p (gcd {a} {b})))",
+    "pb30": "(merge (sigma (tau {n})) (p (mobius {n})))",
+
+    # conserve-heavy (pb31-pb40)
+    "pb31": "(conserve {k} (p {n}))",
+    "pb32": "(conserve {k} (tau {n}))",
+    "pb33": "(conserve {k} (gcd {a} {b}))",
+    "pb34": "(conserve {k} (merge (p {n}) (tau {n})))",
+    "pb35": "(conserve {k} (sigma (gcd {a} {b})))",
+    "pb36": "(conserve {k} (mobius {n}))",
+    "pb37": "(conserve {k} (p (tau {n})))",
+    "pb38": "(let 0 {n} (conserve {k} (merge (tau (ref 0)) (sigma (ref 0)))))",
+    "pb39": "(let 0 {a} (conserve {k} (gcd (ref 0) {b})))",
+    "pb40": "(merge (conserve {k1} (p {n})) (conserve {k2} (tau {n})))",
+
+    # surprise-based (pb41-pb50)
+    "pb41": "(surprise {k} (p {n}))",
+    "pb42": "(surprise {k} (tau {n}))",
+    "pb43": "(surprise (p {n}) (p {m}))",
+    # |sigma(n) - 2n|: the perfect-number test, written as a prediction
+    "pb44": "(surprise (merge {n} {n}) (sigma {n}))",
+    "pb45": "(if-surprise (surprise {k} (p {n})) 0 1)",
+    "pb46": "(if-surprise (surprise 1 (gcd {a} {b})) 0 1)",
+    "pb47": "(if-surprise (surprise {k} (sigma {n})) 0 1)",
+    "pb48": "(surprise (tau (sigma {n})) (sigma (tau {n})))",
+    # squarefree: non-zero surprise from 0 takes the THEN branch
+    "pb49": "(if-surprise (surprise 0 (mobius {n})) 1 0)",
+    "pb50": "(let 0 {a} (let 1 {b} (surprise (p (ref 0)) (p (ref 1)))))",
+
+    # let-heavy (pb51-pb60)
+    "pb51": "(let 0 {n} (merge (p (ref 0)) (tau (ref 0))))",
+    "pb52": "(let 0 (gcd {a} {b}) (merge (p (ref 0)) (tau (ref 0))))",
+    "pb53": "(let 0 {n} (gcd (sigma (ref 0)) (tau (ref 0))))",
+    "pb54": "(let 0 (p {n}) (merge (ref 0) (tau (ref 0))))",
+    "pb55": "(let 0 {n} (let 1 (tau (ref 0)) (merge (ref 0) (ref 1))))",
+    "pb56": "(let 0 {a} (let 1 {b} (gcd (sigma (ref 0)) (tau (ref 1)))))",
+    "pb57": "(let 0 (sigma {n}) (merge (ref 0) (ref 0)))",
+    "pb58": "(let 0 (sigma {a}) (let 1 (sigma {b}) (gcd (ref 0) (ref 1))))",
+    "pb59": "(let 0 {n} (merge (p (ref 0)) (sigma (ref 0))))",
+    "pb60": "(let 0 (merge {a} {b}) (p (ref 0)))",
 }
 
 assert set(CLAUDE_SOLUTIONS) == {t.id for t in TASKS}, (
@@ -192,7 +259,7 @@ def baseline_claude():
 # --- summary ----------------------------------------------------------------
 
 def summary(ref, unguided, claude):
-    _hr("SUMMARY -- three baselines, 20 tasks")
+    _hr(f"SUMMARY -- three baselines, {len(TASKS)} tasks")
 
     ref_full   = sum(1 for r in ref.values() if r.all_passed)
     claude_full = sum(1 for r in claude.values() if r.all_passed)
@@ -208,9 +275,9 @@ def summary(ref, unguided, claude):
 
     print()
     print("  fully-solved tasks (all tests pass):")
-    print(f"    Reference    : {ref_full:2d} / 20")
-    print(f"    Unguided rnd : ~{unguided_total:3d} / 2000 sample-tasks (across 100 seeds each)")
-    print(f"    Claude       : {claude_full:2d} / 20")
+    print(f"    Reference    : {ref_full:2d} / {len(TASKS)}")
+    print(f"    Unguided rnd : ~{unguided_total:3d} / {len(TASKS) * 100:4d} sample-tasks (across 100 seeds each)")
+    print(f"    Claude       : {claude_full:2d} / {len(TASKS)}")
     print()
     print("  per-test-case pass rate:")
     print(f"    Reference    : {ref_pass}/{total_tests} ({ref_pass/total_tests*100:5.1f}%)")
@@ -220,7 +287,15 @@ def summary(ref, unguided, claude):
         print("  verdict: STRONG WIN on capability-gap quantification")
         print("    -> Claude can write LOVA from prompts at ~100% pass rate")
         print("    -> Unguided random is essentially useless (~0% task coverage)")
-        print("    -> The gap is 100× -- motivates fine-tuning smaller models")
+        print("    -> The gap is the whole range -- motivates fine-tuning")
+        print()
+        print("  Caveat, and it is load-bearing (Exp 13, F3):")
+        print("  LOVABench's tasks were authored *in* the language, and the")
+        print("  v2 prompts state the formula outright -- \"Compute")
+        print("  p(tau(sigma(n)))\".  So the Claude baseline measures")
+        print("  transcription into s-expressions, not program synthesis.")
+        print("  Quote it as evidence that the surface is writable, not")
+        print("  that an LLM can program in LOVA.")
     elif claude_full >= 15:
         print("  verdict: PARTIAL -- LLM baseline promising, check failures")
     else:

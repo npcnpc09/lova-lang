@@ -24,6 +24,46 @@
    pb18       OK          65       OK          11    5.9x  
    pb19       OK         455       OK          14   32.5x  
    pb20      FAIL        448       OK           8   56.0x  py:type(TypeError: solve() got an un)
+   pb21       OK         496       OK           6   82.7x  
+   pb22       OK         466       OK          10   46.6x  
+   pb23       OK          95       OK           6   15.8x  
+   pb24       OK         432       OK          10   43.2x  
+   pb25       OK         432       OK           6   72.0x  
+   pb26       OK         530       OK          14   37.9x  
+   pb27       OK         536       OK          11   48.7x  
+   pb28       OK         163       OK          10   16.3x  
+   pb29       OK         463       OK           9   51.4x  
+   pb30       OK         750       OK          11   68.2x  
+   pb31       OK         390       OK           8   48.8x  
+   pb32       OK         109       OK           8   13.6x  
+   pb33       OK          76       OK          11    6.9x  
+   pb34       OK         455       OK          13   35.0x  
+   pb35       OK         143       OK          12   11.9x  
+   pb36       OK         296       OK           8   37.0x  
+   pb37       OK         453       OK           9   50.3x  
+   pb38       OK         183       OK          22    8.3x  
+   pb39       OK          81       OK          19    4.3x  
+   pb40       OK         491       OK          17   28.9x  
+   pb41       OK         375       OK           8   46.9x  
+   pb42       OK          94       OK           8   11.8x  
+   pb43       OK         378       OK           9   42.0x  
+   pb44       OK          98       OK          12    8.2x  
+   pb45       OK         383       OK          15   25.5x  
+   pb46       OK          67       OK          18    3.7x  
+   pb47       OK         106       OK          15    7.1x  
+   pb48       OK         171       OK          11   15.5x  
+   pb49       OK         287       OK          15   19.1x  
+   pb50       OK         395       OK          25   15.8x  
+   pb51       OK         440       OK          18   24.4x  
+   pb52       OK         470       OK          22   21.4x  
+   pb53       OK         189       OK          18   10.5x  
+   pb54       OK         440       OK          18   24.4x  
+   pb55       OK         101       OK          25    4.0x  
+   pb56       OK         196       OK          25    7.8x  
+   pb57       OK         100       OK          17    5.9x  
+   pb58       OK         140       OK          25    5.6x  
+   pb59       OK         444       OK          18   24.7x  
+   pb60       OK         379       OK          16   23.7x  
 
 ================================================================================
   Part 2 -- error actionability (intentional LLM mistakes)
@@ -66,10 +106,10 @@
   Part 3 -- code density (bytes per task, Python UTF-8 vs LOVA integer)
 ================================================================================
 
-  total bytes (20 tasks):
-    Python (UTF-8 source):   6081  (mean   304 / task)
-    LOVA (integer):        155  (mean     8 / task)
-    density ratio:         39.2x  (LOVA denser)
+  total bytes (60 tasks):
+    Python (UTF-8 source):  18374  (mean   306 / task)
+    LOVA (integer):        713  (mean    12 / task)
+    density ratio:         25.8x  (LOVA denser)
 
   note: LOVA density advantage grows with task complexity.
   M2 operator tokens are 1 byte; Python imports + function
@@ -79,14 +119,14 @@
   SUMMARY
 ================================================================================
 
-  tasks fully solved   Python: 19/20      LOVA: 20/20
-  test cases passed    Python: 57/60     LOVA: 60/60 
+  tasks fully solved   Python: 59/60      LOVA: 60/60
+  test cases passed    Python: 177/180    LOVA: 180/180
 
-  error-kind distribution (Python, over 20 solutions):
+  error-kind distribution (Python, over 60 solutions):
     type              1
 
-  error-kind distribution (LOVA, over 20 solutions):
-    (no errors -- 20/20 passed)
+  error-kind distribution (LOVA, over 60 solutions):
+    (no errors -- 60/60 passed)
 
   Structural claim (independent of pass rate):
     Python error CLASSES reachable: {syntax, name, type, import,

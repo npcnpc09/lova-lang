@@ -5,16 +5,64 @@ end-to-end.  It evaluates a decoded ``Node`` tree recursively,
 maintaining a variable environment, a budget stack (Axiom 4), and a
 surprise trace (Axiom 7).
 
-Operators implemented in Milestone 1:
+Operators implemented:
 
 - LIT_INT, MERGE, PARTITION (heat-free, simple 2-split)
-- P, TAU, SIGMA, GCD, MOBIUS  (number-theory primitives)
-- BUDGET, CONSERVE, VIOLATE   (conservation layer)
-- SURPRISE, TRACE_SURPRISE    (the debugger primitive)
-- SEQ, LET, REF, IF_SURPRISE, LAMBDA, APPLY  (minimal composition)
+- NIL, CONS, HEAD, TAIL, IS_NIL          (lists -- and therefore pairs,
+  and therefore strings as codepoint lists)
+- STDOUT, STDIN                          (the effects boundary)
+- WHEN_ANOMALY                           (in-language error handling)
+- P, TAU, SIGMA, GCD, MOBIUS, MUL, MOD, DIV  (number-theory primitives)
+- BUDGET, CONSERVE, VIOLATE              (conservation layer)
+- SURPRISE, TRACE_SURPRISE, DEVIATION, THRESHOLD  (the debugger
+  primitive plus its signed / sign-test siblings, which together give
+  ordering: ``a < b`` is ``(threshold (deviation b a))``)
+- SEQ, LET, REF, IF_SURPRISE, LAMBDA, APPLY, LOOP_UNTIL  (composition
+  and abstraction)
 
 Everything else in the 64-token table is reserved for later milestones
 and raises ``NotImplementedError`` with a pointer to the relevant family.
+
+**M12 — mutual recursion.**  A chain of ``LET``s shares one
+environment frame, so a group of ``def``s can refer to each other in
+any order.  Costs no token and changes no program that already worked:
+before this, a forward reference was an ``unbound-ref`` *compile*
+error, so the set of programs that used to compile is untouched and
+only widens -- the same shape the letrec change took in M9.
+
+**M10 — data.**  One cons cell (``nil`` / ``cons`` / ``head`` / ``tail``
+/ ``nil?``) buys pairs, lists and strings at once, and ends the era in
+which the only LOVA value was a scalar integer.  ``div`` lands at the
+same time: division was previously O(a/b) repeated subtraction burning
+call depth to do arithmetic.
+
+**M9 — abstraction and iteration.** Before M9 a LOVA program was a
+fixed-depth expression over built-ins: no user-defined functions, no
+recursion, no loops.  M9 makes the substrate computationally
+universal:
+
+- ``LAMBDA`` is unary — ``(lambda p body)``.  Multi-argument functions
+  are curried: ``(lambda a (lambda b body))``.  This is exactly the
+  arity-2 slot the token table already declared, so the 64-token
+  budget is untouched (Axiom 8).
+- ``APPLY`` is variadic with a typed head — ``(apply f a b)`` applies
+  ``f`` one argument at a time, left-associatively.
+- ``LET`` is a **letrec**: the bound name is visible inside its own
+  value.  This is what makes recursion expressible.  The change is
+  backward-compatible — before M9 a self-reference was an
+  ``unbound-ref`` compile error, so no previously-valid program
+  changes meaning.
+- ``LOOP_UNTIL`` is a *combinator*, not a statement: ``(loop-until
+  pred step)`` returns the function that iterates ``step`` until
+  ``pred`` reports non-zero.  It runs iteratively, so it gives
+  unbounded iteration without consuming call depth.
+
+Non-termination is now reachable, so the substrate grows two
+always-on ceilings (Axiom 7 — no silent failures, and no hangs
+either): ``MAX_CALL_DEPTH`` raises ``DepthTrap`` and ``MAX_STEPS``
+raises ``StepTrap``.  Both subclass ``BudgetTrap`` and carry the same
+L2 anomaly schema as every other trap, so an AI consumer's single
+error handler covers them.
 
 The runtime is intentionally simple — no JIT, no evolutionary dispatch.
 Those arrive in Milestone 2+.
@@ -22,15 +70,21 @@ Those arrive in Milestone 2+.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from math import gcd as _gcd
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.conservation import Budget, BudgetTrap, DeltaTrap, SurpriseTrace
+from core.conservation import (
+    ANOMALY_CODES, Budget, BudgetTrap, DeltaTrap, DepthTrap, DomainTrap,
+    StepTrap, SurpriseTrace, anomaly_code,
+)
 from core.tokens import (
-    APPLY, BUDGET, CONSERVE, GCD, IDENTITY, IF_SURPRISE, LAMBDA, LET, LIT_INT,
-    MERGE, MOBIUS, Node, P, PARTITION, REF, SEQ, SIGMA, SIGNATURES, SURPRISE,
-    TAU, TRACE_SURPRISE, VIOLATE,
+    APPLY, BUDGET, CONS, CONSERVE, DEVIATION, DIV, GCD, HEAD, IDENTITY,
+    IF_SURPRISE, IS_NIL, LAMBDA, LET, LIT_INT, LOOP_UNTIL, MERGE, MOBIUS,
+    MOD, MUL, NIL, Node, P, PARTITION, REF, SEQ, SIGMA, SIGNATURES,
+    STDIN, STDOUT, SURPRISE, TAIL, TAU, THRESHOLD, TRACE_SURPRISE, VIOLATE,
+    WHEN_ANOMALY,
 )
 
 
@@ -44,13 +98,42 @@ from core.tokens import (
 # legitimate results.
 MAX_NT_INPUT = 2_000
 
+# Result-magnitude guard for MUL.  Number-theory primitives are bounded
+# by MAX_NT_INPUT on their *input*; multiplication is bounded on its
+# *output*, because `(mul x x)` nested k deep squares k times and would
+# otherwise let a random program allocate a gigabyte-wide integer.
+MAX_INT_BITS = 4_096
+
+# Substrate ceilings for the M9 abstraction layer.  A program that
+# recurses without a base case, or loops without a reachable
+# termination condition, must produce a structured anomaly rather than
+# a Python traceback or a hang.  Both are overridable per-Runtime so
+# tests (and budget-conscious hosts) can tighten them.
+MAX_CALL_DEPTH = 200
+MAX_STEPS = 1_000_000
+
+# Python frames consumed per LOVA call frame — the evaluator nests
+# roughly a dozen Python frames per user-level call, so the interpreter
+# needs headroom above CPython's default 1000 to reach MAX_CALL_DEPTH.
+# ``evaluate`` raises the limit for the duration of a run and restores
+# it afterwards; a RecursionError that slips through anyway is
+# converted to a DepthTrap so the failure stays inside LOVA's error
+# model.
+_PY_FRAMES_PER_CALL = 14
+_PY_RECURSION_HEADROOM = 1_000
+
 
 def partition_number(n: int) -> int:
     """p(n) — number of partitions of n.  Euler's pentagonal recurrence."""
     if n < 0:
         return 0
     if n > MAX_NT_INPUT:
-        raise ValueError(f"partition_number input {n} exceeds MAX_NT_INPUT={MAX_NT_INPUT}")
+        raise DomainTrap(
+            "domain-error",
+            f"partition_number input {n} exceeds MAX_NT_INPUT={MAX_NT_INPUT}",
+            {"operator": "partition_number", "input": n, "limit": MAX_NT_INPUT},
+            f"reduce the argument below {MAX_NT_INPUT}",
+        )
     if n == 0:
         return 1
     table = [0] * (n + 1)
@@ -74,7 +157,12 @@ def tau(n: int) -> int:
     if n <= 0:
         return 0
     if n > MAX_NT_INPUT:
-        raise ValueError(f"tau input {n} exceeds MAX_NT_INPUT={MAX_NT_INPUT}")
+        raise DomainTrap(
+            "domain-error",
+            f"tau input {n} exceeds MAX_NT_INPUT={MAX_NT_INPUT}",
+            {"operator": "tau", "input": n, "limit": MAX_NT_INPUT},
+            f"reduce the argument below {MAX_NT_INPUT}",
+        )
     count = 0
     d = 1
     while d * d <= n:
@@ -88,7 +176,12 @@ def sigma(n: int) -> int:
     if n <= 0:
         return 0
     if n > MAX_NT_INPUT:
-        raise ValueError(f"sigma input {n} exceeds MAX_NT_INPUT={MAX_NT_INPUT}")
+        raise DomainTrap(
+            "domain-error",
+            f"sigma input {n} exceeds MAX_NT_INPUT={MAX_NT_INPUT}",
+            {"operator": "sigma", "input": n, "limit": MAX_NT_INPUT},
+            f"reduce the argument below {MAX_NT_INPUT}",
+        )
     total = 0
     d = 1
     while d * d <= n:
@@ -106,7 +199,12 @@ def mobius(n: int) -> int:
     if n <= 0:
         return 0
     if n > MAX_NT_INPUT:
-        raise ValueError(f"mobius input {n} exceeds MAX_NT_INPUT={MAX_NT_INPUT}")
+        raise DomainTrap(
+            "domain-error",
+            f"mobius input {n} exceeds MAX_NT_INPUT={MAX_NT_INPUT}",
+            {"operator": "mobius", "input": n, "limit": MAX_NT_INPUT},
+            f"reduce the argument below {MAX_NT_INPUT}",
+        )
     if n == 1:
         return 1
     m = n
@@ -125,13 +223,223 @@ def mobius(n: int) -> int:
     return 1 if prime_count % 2 == 0 else -1
 
 
+# --- values ------------------------------------------------------------------
+#
+# Before M9 every LOVA value was an ``int``.  Abstraction adds exactly
+# one more shape: a callable.  ``Value = int | Closure | LoopFn``.
+# The type system (``core.types.FN``) keeps the two apart statically;
+# these classes are how they differ at run time.
+
+
+@dataclass
+class Closure:
+    """A unary function value — ``(lambda param body)`` plus its scope.
+
+    ``env`` is held **by reference**, not copied.  That is what makes
+    ``LET`` a letrec: the LET handler installs the binding into the
+    same dict the closure captured, after the closure has been built,
+    so a self-reference inside ``body`` resolves when the function is
+    finally applied.
+    """
+
+    param: int
+    body: Node
+    env: Dict[int, Any]
+    name: Optional[int] = None   # binding name, when known (debug only)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        tag = f" name={self.name}" if self.name is not None else ""
+        return f"<closure param={self.param}{tag}>"
+
+
+class _Nil:
+    """The empty list.  A singleton, so ``value is NIL_VALUE`` is the test."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return "()"
+
+
+NIL_VALUE = _Nil()
+
+
+@dataclass(frozen=True)
+class Cons:
+    """A cons cell -- ``(cons x xs)``.
+
+    A linked cell rather than a Python tuple, so ``tail`` is O(1).  With
+    tuple slicing a loop over a list of n elements would cost O(n^2),
+    which for strings-as-codepoint-lists is the difference between
+    usable and not.
+    """
+
+    head: Any
+    tail: Any            # Cons or NIL_VALUE
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        items, rest = [], self
+        while isinstance(rest, Cons):
+            items.append(repr(rest.head))
+            rest = rest.tail
+        return "(" + " ".join(items) + ")"
+
+
+class Scope(dict):
+    """An environment frame opened by ``LET``.
+
+    A plain dict would do, except that the runtime needs to tell a frame
+    it may *extend* from one it may not.  A chain of ``LET``s -- which is
+    exactly what a group of ``def``s desugars to -- shares one frame, so
+    that a closure built for the first binding can see the last.  That
+    is what makes mutual recursion work; see the LET handler.
+    """
+
+    __slots__ = ()
+
+
+def is_list_value(v: Any) -> bool:
+    """True iff ``v`` is a LOVA list (type ``List``)."""
+    return v is NIL_VALUE or isinstance(v, Cons)
+
+
+def list_from(values) -> Any:
+    """Build a LOVA list from a Python iterable, right to left."""
+    out = NIL_VALUE
+    for value in reversed(list(values)):
+        out = Cons(head=value, tail=out)
+    return out
+
+
+def list_to_python(value: Any) -> list:
+    """Unpack a LOVA list into a Python list.  Raises on a non-list."""
+    out = []
+    rest = value
+    while isinstance(rest, Cons):
+        out.append(rest.head)
+        rest = rest.tail
+    if rest is not NIL_VALUE:
+        raise DomainTrap(
+            "type-violation", f"not a list: {value!r}",
+            {"expected": "List"},
+            "only `nil`, `cons` and `tail` produce list values",
+        )
+    return out
+
+
+def _as_text(v: Any, ctx: str) -> str:
+    """Render a value for output.
+
+    An integer writes as its decimal digits; a list writes as the text of
+    its codepoints, which is what makes ``"abc"`` -- a list of codepoints
+    -- print as ``abc``.  A function has no textual form and says so.
+    """
+    if isinstance(v, int) and not isinstance(v, bool):
+        return str(v)
+    if is_list_value(v):
+        codes = list_to_python(v)
+        out = []
+        for code in codes:
+            if not isinstance(code, int) or not 0 <= code <= 0x10FFFF:
+                raise DomainTrap(
+                    "domain-error",
+                    f"{ctx}: {code!r} is not a codepoint; a list is written "
+                    "as text, so every element must be one",
+                    {"operator": ctx, "element": code},
+                    "write a list whose elements are all valid codepoints",
+                )
+            out.append(chr(code))
+        return "".join(out)
+    raise DomainTrap(
+        "type-violation",
+        f"{ctx}: cannot write a function value ({v!r}); write an integer "
+        "or a list of codepoints",
+        {"operator": ctx, "got": "Fn"},
+        "write an integer or a list of codepoints",
+    )
+
+
+def _as_list(v: Any, ctx: str) -> Any:
+    """Coerce a runtime value to List, or fail loudly."""
+    if is_list_value(v):
+        return v
+    raise DomainTrap(
+        "type-violation",
+        f"{ctx}: expected a List, got {v!r}; only `nil`, `cons` and `tail` "
+        "produce list values",
+        {"operator": ctx, "expected": "List"},
+        "use `nil`, `cons` or `tail` to produce a list",
+    )
+
+
+@dataclass
+class LoopFn:
+    """The function produced by ``(loop-until pred step)``.
+
+    Applying it to a seed iterates ``step`` until ``pred`` returns
+    non-zero, then yields the accumulated value.  The iteration is a
+    Python ``while`` loop, not recursion, so a loop of a million
+    rounds costs one call frame — unbounded iteration without
+    consuming MAX_CALL_DEPTH.  ``MAX_STEPS`` is what stops it if the
+    predicate is never satisfied.
+    """
+
+    pred: Any
+    step: Any
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return "<loop-until>"
+
+
+def is_callable_value(v: Any) -> bool:
+    """True iff ``v`` is a LOVA function value (type ``Fn``)."""
+    return isinstance(v, (Closure, LoopFn))
+
+
+def _as_int(v: Any, ctx: str) -> int:
+    """Coerce a runtime value to Int, or fail loudly.
+
+    Well-typed programs *mostly* never hit the error path: ``Fn`` and
+    ``List`` are disjoint from ``Int``, so neither ``valid_next`` nor the
+    compiler's type-check pass will place one in an integer slot.  Two
+    holes remain, and both are why every arithmetic site in this module
+    routes through here rather than trusting its slot type:
+
+    - ``APPLY`` declares ``Int`` but a *partially* applied function
+      evaluates to a callable, because ``Fn`` does not track curried
+      arity (journal Q35).  A generated ``(violate (apply f))`` is
+      well-typed and yields a closure.
+    - hand-built and mutated trees bypass both checks entirely.
+    """
+    if isinstance(v, bool):  # defensive: bool is an int subclass
+        return int(v)
+    if isinstance(v, int):
+        return v
+    if is_list_value(v):
+        raise DomainTrap(
+            "type-violation",
+            f"{ctx}: expected an Int, got a list ({v!r}); use `head` to take "
+            "an element out of it",
+            {"operator": ctx, "expected": "Int", "got": "List"},
+            "use `head` to take an element out of the list",
+        )
+    raise DomainTrap(
+        "type-violation",
+        f"{ctx}: expected an Int, got a function value ({v!r}); "
+        "a function can only appear in the head slot of `apply` or in a "
+        "slot typed Fn",
+        {"operator": ctx, "expected": "Int", "got": "Fn"},
+        "apply the function to get an integer, or use it in an Fn slot",
+    )
+
+
 # --- runtime state -----------------------------------------------------------
 
 @dataclass
 class Runtime:
     """Evaluator state carried through a program run."""
 
-    env: Dict[int, int] = field(default_factory=dict)
+    env: Dict[int, Any] = field(default_factory=dict)
     budget_stack: List[Budget] = field(default_factory=list)
     surprise: SurpriseTrace = field(default_factory=SurpriseTrace)
     # lineage tracking placeholder; populated by ``core.lineage``.
@@ -139,27 +447,108 @@ class Runtime:
     # Stack of nodes currently being evaluated — used to enrich trap
     # anomalies with positional info (L2 observability).
     node_stack: List[Any] = field(default_factory=list)
+    # M9 — abstraction ceilings.  ``call_depth`` counts LOVA-level
+    # function applications currently on the stack; ``steps`` counts
+    # every evaluated node in the run.  Both ceilings are always on,
+    # independent of whether the program declares a BUDGET.
+    call_depth: int = 0
+    steps: int = 0
+    # True while evaluating the *body* of a LET, and only there.  A LET
+    # that finds it set is directly nested in another's body, so the two
+    # belong to one binding group and share a frame.  Anything else --
+    # a LET in an argument position, a LET inside a lambda body -- finds
+    # it cleared and opens its own frame.
+    let_chain: bool = False
+    max_call_depth: int = MAX_CALL_DEPTH
+    max_steps: int = MAX_STEPS
+    # M11 -- IO.  Output is always collected here so a caller can inspect
+    # what a program wrote; ``out_stream`` additionally forwards it, which
+    # is what the CLI and the REPL set.  Input is a queue of lines rather
+    # than a live handle, so a test, an experiment or a generated program
+    # can never block on a terminal: an empty queue is end-of-input, and
+    # ``stdin`` yields the empty list.
+    # Anomalies a `when-anomaly` handled.  A caught fault is not an
+    # invisible one: this is what an agent reads to find out what the
+    # program recovered from.
+    caught: List[Any] = field(default_factory=list)
+    output: List[str] = field(default_factory=list)
+    out_stream: Any = None
+    input_lines: List[str] = field(default_factory=list)
+    input_source: Any = None
+
+    def write(self, text: str) -> None:
+        """Emit ``text``, recording it and forwarding it if asked."""
+        self.output.append(text)
+        if self.out_stream is not None:
+            self.out_stream.write(text)
+
+    def read_line(self) -> Optional[str]:
+        """The next input line, or None at end of input.
+
+        Queued lines first, then ``input_source`` if one is set -- which
+        is how the CLI attaches a terminal without letting a test or a
+        generated program ever block on one.
+        """
+        if self.input_lines:
+            return self.input_lines.pop(0)
+        if self.input_source is not None:
+            line = self.input_source()
+            if line:
+                return line.rstrip(chr(10))
+        return None
+
+    def written(self) -> str:
+        """Everything the program has written so far, as one string."""
+        return "".join(self.output)
 
     def charge(self, cost: int = 1) -> None:
         """Decrement the current budget (if any scope is active)."""
         if self.budget_stack:
             self.budget_stack[-1].charge(cost)
 
+    def tick(self, cost: int = 1) -> None:
+        """Count one evaluation step against the substrate step ceiling."""
+        self.steps += cost
+        if self.steps > self.max_steps:
+            raise StepTrap(steps=self.steps, limit=self.max_steps)
+
 
 # --- evaluator ---------------------------------------------------------------
 
-def evaluate(node: Node, rt: Optional[Runtime] = None) -> int:
-    """Evaluate a program tree, returning an integer result.
+def evaluate(node: Node, rt: Optional[Runtime] = None) -> Any:
+    """Evaluate a program tree, returning its value.
+
+    The value is an ``int`` for every program whose top-level type is
+    ``Int`` — which is every program the generator can produce, since
+    ``GenState.fresh()`` starts from an ``Int`` slot.  A top-level
+    ``(lambda ...)`` evaluates to a ``Closure``; that is a legal value,
+    just not an integer one.
 
     If a trap is raised during evaluation, ``_eval`` enriches the
     anomaly with the offending operator, suggested alternatives, and
     a repair hint at the innermost frame; this function just
     propagates the already-enriched trap.  AI consumers can then
     patch the program without parsing a stack trace.
+
+    Recursion (M9) needs more Python stack than CPython's default
+    allows, so the limit is raised for the duration of the run and
+    restored afterwards.  A ``RecursionError`` that escapes anyway is
+    converted into a ``DepthTrap``: exhausting the host interpreter is
+    still a LOVA depth overrun, and it must reach the caller in the
+    same anomaly schema as every other trap.
     """
     if rt is None:
         rt = Runtime()
-    return _eval(node, rt)
+    needed = rt.max_call_depth * _PY_FRAMES_PER_CALL + _PY_RECURSION_HEADROOM
+    previous = sys.getrecursionlimit()
+    if needed > previous:
+        sys.setrecursionlimit(needed)
+    try:
+        return _eval(node, rt)
+    except RecursionError:
+        raise DepthTrap(depth=rt.call_depth, limit=rt.max_call_depth) from None
+    finally:
+        sys.setrecursionlimit(previous)
 
 
 def _enrich_trap(trap, rt: Runtime) -> None:
@@ -221,7 +610,7 @@ def _scan_body_offender(
     body: Node,
     expected: int,
     actual: int,
-    env: Dict[int, int],
+    env: Dict[int, Any],
 ) -> Optional[Dict[str, Any]]:
     """Probe-based body scan for CONSERVE Δ-traps (Q20, M6 Day 2).
 
@@ -237,6 +626,9 @@ def _scan_body_offender(
     Cost: O(n²) for body size n.  Bodies are small (< 50 nodes in
     practice); this runs only on Δ-trap, not on every eval.
     """
+    if not isinstance(expected, int) or not isinstance(actual, int):
+        # Defensive: the scanner reasons about numeric deviations only.
+        return None
     deviation = actual - expected
     if deviation == 0:
         return None
@@ -253,13 +645,19 @@ def _scan_body_offender(
     walk(body, (), 0)
 
     def _probe(tree: Node) -> Optional[int]:
-        """Evaluate `tree` with a fresh, side-effect-isolated runtime."""
+        """Evaluate `tree` with a fresh, side-effect-isolated runtime.
+
+        Returns None for anything that is not an integer — a probe that
+        yields a closure tells us nothing about closing a numeric
+        deviation, and the arithmetic below would fail on it.
+        """
         rt_probe = Runtime()
         rt_probe.env = dict(env)
         try:
-            return _eval(tree, rt_probe)
+            value = _eval(tree, rt_probe)
         except Exception:
             return None
+        return value if isinstance(value, int) else None
 
     # Cache each subnode's in-situ value (its output when evaluated with env).
     node_values: Dict[Tuple[int, ...], int] = {}
@@ -363,7 +761,55 @@ def _scan_body_offender(
     return None
 
 
-def _eval(node: Node, rt: Runtime) -> int:
+def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
+    """Apply a LOVA function value to one argument.
+
+    Closures consume a call frame (and so are bounded by
+    ``max_call_depth``); ``LoopFn`` iterates in Python and consumes
+    none, which is what makes an unbounded loop expressible without an
+    unbounded stack.
+    """
+    if isinstance(fn, LoopFn):
+        value = argument
+        while True:
+            rt.tick()
+            verdict = _as_int(_call(fn.pred, value, rt), "loop-until predicate")
+            if verdict != 0:
+                return value
+            value = _call(fn.step, value, rt)
+
+    if not isinstance(fn, Closure):
+        raise DomainTrap(
+            "type-violation",
+            f"apply: head slot is not a function (got {fn!r}); only "
+            "`lambda` and `loop-until` produce callable values",
+            {"operator": "apply", "expected": "Fn"},
+            "apply a `lambda` or a `loop-until`, or a name bound to one",
+        )
+
+    rt.call_depth += 1
+    if rt.call_depth > rt.max_call_depth:
+        depth = rt.call_depth
+        rt.call_depth -= 1
+        raise DepthTrap(depth=depth, limit=rt.max_call_depth)
+    # A call frame is a plain dict, not a Scope: a LET inside the body
+    # must not extend it, or a binding would outlive the expression that
+    # introduced it.
+    scope: Dict[int, Any] = dict(fn.env)
+    scope[fn.param] = argument
+    saved_env = rt.env
+    saved_chain = rt.let_chain
+    rt.let_chain = False
+    rt.env = scope
+    try:
+        return _eval(fn.body, rt)
+    finally:
+        rt.env = saved_env
+        rt.let_chain = saved_chain
+        rt.call_depth -= 1
+
+
+def _eval(node: Node, rt: Runtime) -> Any:
     rt.node_stack.append(node)
     try:
         try:
@@ -379,11 +825,19 @@ def _eval(node: Node, rt: Runtime) -> int:
         rt.node_stack.pop()
 
 
-def _eval_body(node: Node, rt: Runtime) -> int:
+def _eval_body(node: Node, rt: Runtime) -> Any:
     op = node.op
+    # Consume the "directly inside a LET body" flag: it is true for at
+    # most the one node that follows a LET, and false for everything else.
+    chained = rt.let_chain
+    rt.let_chain = False
     # Every op costs one unit against the active budget (if any).  This is
     # the crudest possible cost model; it is enough for Milestone 1.
     rt.charge(1)
+    # ...and one step against the always-on substrate ceiling (M9).  A
+    # BUDGET scope is what a *program* declares about itself; this is
+    # what the substrate guarantees regardless.
+    rt.tick()
 
     if op == LIT_INT:
         return int(node.args[0])
@@ -393,12 +847,12 @@ def _eval_body(node: Node, rt: Runtime) -> int:
         return _eval(node.args[0], rt)
 
     if op == MERGE:
-        a = _eval(node.args[0], rt)
-        b = _eval(node.args[1], rt)
+        a = _as_int(_eval(node.args[0], rt), "merge")
+        b = _as_int(_eval(node.args[1], rt), "merge")
         return a + b
 
     if op == PARTITION:
-        n = _eval(node.args[0], rt)
+        n = _as_int(_eval(node.args[0], rt), "partition")
         # Milestone 1: return the first non-trivial 2-split, not a tuple.
         # Stage 1 uses a convention: partition is represented as the pair
         # (⌊n/2⌋, n - ⌊n/2⌋); we emit only ⌊n/2⌋ for integer-scalar return.
@@ -407,21 +861,139 @@ def _eval_body(node: Node, rt: Runtime) -> int:
 
     # --- number theory --------------------------------------------------
     if op == P:
-        return partition_number(_eval(node.args[0], rt))
+        return partition_number(_as_int(_eval(node.args[0], rt), "p"))
     if op == TAU:
-        return tau(_eval(node.args[0], rt))
+        return tau(_as_int(_eval(node.args[0], rt), "tau"))
     if op == SIGMA:
-        return sigma(_eval(node.args[0], rt))
+        return sigma(_as_int(_eval(node.args[0], rt), "sigma"))
     if op == GCD:
-        a = _eval(node.args[0], rt)
-        b = _eval(node.args[1], rt)
+        a = _as_int(_eval(node.args[0], rt), "gcd")
+        b = _as_int(_eval(node.args[1], rt), "gcd")
         return _gcd(a, b)
     if op == MOBIUS:
-        return mobius(_eval(node.args[0], rt))
+        return mobius(_as_int(_eval(node.args[0], rt), "mobius"))
+
+    if op == MUL:
+        a = _as_int(_eval(node.args[0], rt), "mul")
+        b = _as_int(_eval(node.args[1], rt), "mul")
+        # Guard the *output*: nested squaring is the cheapest way for a
+        # generated program to ask for an unbounded allocation.
+        if a.bit_length() + b.bit_length() > MAX_INT_BITS:
+            raise DomainTrap(
+                "domain-error",
+                f"mul result would exceed MAX_INT_BITS={MAX_INT_BITS} "
+                f"({a.bit_length()} + {b.bit_length()} bits)",
+                {"operator": "mul", "limit": MAX_INT_BITS},
+                "multiply smaller numbers",
+            )
+        return a * b
+
+    if op == DIV:
+        a = _as_int(_eval(node.args[0], rt), "div")
+        b = _as_int(_eval(node.args[1], rt), "div")
+        if b == 0:
+            # No silent failures (Constraint 5).
+            raise DomainTrap(
+                "domain-error", "div: division by zero",
+                {"operator": "div"},
+                "guard the divisor with `(if d (div a d) fallback)`",
+            )
+        return a // b      # floored, matching `mod`'s sign convention
+
+    if op == MOD:
+        a = _as_int(_eval(node.args[0], rt), "mod")
+        b = _as_int(_eval(node.args[1], rt), "mod")
+        if b == 0:
+            # No silent failures (Constraint 5): a zero divisor is a
+            # domain error, not a quietly-returned zero.
+            raise DomainTrap(
+                "domain-error", "mod: division by zero",
+                {"operator": "mod"},
+                "guard the divisor with `(if d (mod a d) fallback)`",
+            )
+        return a % b   # floored, sign follows the divisor (Python semantics)
+
+    # --- lists (M10) ----------------------------------------------------
+    if op == NIL:
+        return NIL_VALUE
+
+    if op == CONS:
+        element = _as_int(_eval(node.args[0], rt), "cons")
+        rest = _as_list(_eval(node.args[1], rt), "cons")
+        return Cons(head=element, tail=rest)
+
+    if op == HEAD:
+        target = _as_list(_eval(node.args[0], rt), "head")
+        if target is NIL_VALUE:
+            raise DomainTrap(
+                "domain-error",
+                "head: the list is empty; guard with `nil?` before taking a "
+                "head",
+                {"operator": "head"},
+                "guard with `(if (nil? xs) fallback (head xs))`",
+            )
+        return target.head
+
+    if op == TAIL:
+        target = _as_list(_eval(node.args[0], rt), "tail")
+        if target is NIL_VALUE:
+            raise DomainTrap(
+                "domain-error",
+                "tail: the list is empty; guard with `nil?` before taking a "
+                "tail",
+                {"operator": "tail"},
+                "guard with `(if (nil? xs) fallback (tail xs))`",
+            )
+        return target.tail
+
+    if op == IS_NIL:
+        target = _as_list(_eval(node.args[0], rt), "nil?")
+        return 1 if target is NIL_VALUE else 0
+
+    # --- error handling (M13) --------------------------------------------
+    if op == WHEN_ANOMALY:
+        # Evaluate the body; on a trap, hand the handler the anomaly's
+        # code and return what it produces.
+        #
+        # `StepTrap` is deliberately *not* caught.  The step ceiling is
+        # the substrate's guarantee that a program terminates, and a
+        # guarantee a program can mask is not a guarantee.  Every other
+        # fault -- budget, depth, conservation, domain, type, unbound
+        # reference -- is a condition a program may reasonably expect and
+        # recover from.
+        try:
+            return _eval(node.args[0], rt)
+        except StepTrap:
+            raise
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
+            anomaly = getattr(trap, "anomaly", None)
+            if anomaly is None:                      # not one of ours
+                raise
+            code = anomaly_code(anomaly)
+            rt.caught.append(anomaly)
+            # A handled anomaly is still an observation (Axiom 7): the
+            # trace records it, so an AI reading the run afterwards sees
+            # what the program swallowed.
+            rt.surprise.emit(0, code, ctx="when-anomaly")
+            handler = _eval(node.args[1], rt)
+            return _call(handler, code, rt)
+
+    # --- effects / IO (M11) ----------------------------------------------
+    if op == STDOUT:
+        value = _eval(node.args[0], rt)
+        text = _as_text(value, "stdout")
+        rt.write(text)
+        return len(text)
+
+    if op == STDIN:
+        line = rt.read_line()
+        if line is None:
+            return NIL_VALUE          # end of input, not an error
+        return list_from([ord(ch) for ch in line])
 
     # --- conservation ---------------------------------------------------
     if op == BUDGET:
-        limit = _eval(node.args[0], rt)
+        limit = _as_int(_eval(node.args[0], rt), "budget")
         b = Budget(limit=limit)
         rt.budget_stack.append(b)
         try:
@@ -435,8 +1007,13 @@ def _eval_body(node: Node, rt: Runtime) -> int:
         # The body is expected to compute something whose result equals
         # the first argument's value; otherwise Δ-trap.  This is a toy
         # semantic to show the *mechanism* — proper invariants in M2+.
-        expected = _eval(node.args[0], rt)
-        actual = _eval(node.args[1], rt)
+        # Both slots are typed Int, but a partially-applied function
+        # evaluates to a callable while still declaring Int (the `Fn` type
+        # does not track curried arity -- journal Q35).  Coerce here so a
+        # generated `(conserve k (apply (loop-until ...)))` reports the
+        # type violation instead of failing inside the body scanner.
+        expected = _as_int(_eval(node.args[0], rt), "conserve")
+        actual = _as_int(_eval(node.args[1], rt), "conserve")
         if expected != actual:
             body_offender = _scan_body_offender(
                 node.args[1], expected, actual, dict(rt.env)
@@ -477,18 +1054,34 @@ def _eval_body(node: Node, rt: Runtime) -> int:
         # Synthetic "break conservation" — returns first arg's value
         # plus one, so wrapping with CONSERVE always triggers Δ-trap.
         # For testing only.
-        return _eval(node.args[0], rt) + 1
+        return _as_int(_eval(node.args[0], rt), "violate") + 1
 
     # --- surprise -------------------------------------------------------
     if op == SURPRISE:
-        predicted = _eval(node.args[0], rt)
-        actual = _eval(node.args[1], rt)
+        predicted = _as_int(_eval(node.args[0], rt), "surprise")
+        actual = _as_int(_eval(node.args[1], rt), "surprise")
         return rt.surprise.emit(predicted, actual, ctx="surprise")
 
     if op == TRACE_SURPRISE:
-        val = _eval(node.args[0], rt)
+        val = _as_int(_eval(node.args[0], rt), "trace-surprise")
         rt.surprise.emit(0, val, ctx="trace-surprise")
         return val
+
+    if op == DEVIATION:
+        # The signed sibling of SURPRISE (which returns |a - b|).  Sign
+        # is the whole point: it is what makes ordering expressible.
+        # Emits no surprise event — this is a pure comparison, not an
+        # observation about a prediction.
+        a = _as_int(_eval(node.args[0], rt), "deviation")
+        b = _as_int(_eval(node.args[1], rt), "deviation")
+        return a - b
+
+    if op == THRESHOLD:
+        # Sign test: did the value cross zero from below?
+        #   (a < b)  ==  (threshold (deviation b a))
+        #   (a > b)  ==  (threshold (deviation a b))
+        x = _as_int(_eval(node.args[0], rt), "threshold")
+        return 1 if x > 0 else 0
 
     # --- composition ----------------------------------------------------
     if op == SEQ:
@@ -499,40 +1092,129 @@ def _eval_body(node: Node, rt: Runtime) -> int:
 
     if op == LET:
         # (let name value body) — ``name`` must be a LIT_INT symbol id.
+        #
+        # M9: this is a **letrec**.  A fresh scope dict is created for
+        # the binding and installed *before* the value is evaluated, so
+        # any closure built while evaluating the value captures that
+        # same dict by reference.  The binding is written into it after
+        # the value exists, which is precisely late enough for a lambda
+        # (whose body runs only at apply time) and precisely early
+        # enough for the self-reference to resolve.
+        #
+        # Backward-compatible: before M9 a self-reference in the value
+        # slot was an `unbound-ref` compile error, so no program that
+        # used to be valid changes meaning.
         if node.args[0].op != LIT_INT:
-            raise ValueError("LET: name slot must be a literal integer id")
+            raise DomainTrap(
+                "malformed", "LET: name slot must be a literal integer id",
+                {"operator": "let", "slot": 0},
+                "put a literal integer in LET's first slot",
+            )
         name_id = int(node.args[0].args[0])
-        value = _eval(node.args[1], rt)
-        saved = rt.env.get(name_id)
-        rt.env[name_id] = value
+
+        # A LET directly in another LET's body joins that binding group
+        # and writes into the same frame.  Since a closure captures the
+        # frame by reference, the first function in a group of `def`s
+        # sees the last one -- which is mutual recursion, at the cost of
+        # no new token and no change to any program that already worked.
+        #
+        # Shadowing keeps its own frame: re-binding a name that the group
+        # already holds would otherwise reach back and change what an
+        # earlier closure sees.
+        extend = (chained and isinstance(rt.env, Scope)
+                  and name_id not in rt.env)
+        saved_env = rt.env
+        if extend:
+            scope = rt.env
+        else:
+            scope = Scope(rt.env)
+            rt.env = scope
         try:
+            value = _eval(node.args[1], rt)
+            if isinstance(value, Closure) and value.name is None:
+                value.name = name_id
+            scope[name_id] = value
+            rt.let_chain = True          # the body may continue the group
             return _eval(node.args[2], rt)
         finally:
-            if saved is None:
-                rt.env.pop(name_id, None)
-            else:
-                rt.env[name_id] = saved
+            rt.let_chain = False
+            if not extend:
+                rt.env = saved_env
 
     if op == REF:
         if node.args[0].op != LIT_INT:
-            raise ValueError("REF: name slot must be a literal integer id")
+            raise DomainTrap(
+                "malformed", "REF: name slot must be a literal integer id",
+                {"operator": "ref", "slot": 0},
+                "put a literal integer in REF's slot",
+            )
         name_id = int(node.args[0].args[0])
         if name_id not in rt.env:
-            raise ValueError(f"unbound ref: {name_id}")
+            raise DomainTrap(
+                "unbound-ref", f"unbound ref: {name_id}",
+                {"name_id": name_id, "bound_names": sorted(rt.env)},
+                "bind the name with a `let`, or reference one that is bound",
+            )
         return rt.env[name_id]
 
     if op == IF_SURPRISE:
         # (if-surprise surprise-expr then else)
         # Milestone 1 predicate: non-zero surprise triggers the ``then`` branch.
-        s = _eval(node.args[0], rt)
+        s = _as_int(_eval(node.args[0], rt), "if-surprise")
         branch = node.args[1] if s != 0 else node.args[2]
         return _eval(branch, rt)
 
-    # --- explicitly deferred --------------------------------------------
-    if op in (LAMBDA, APPLY):
-        raise NotImplementedError(
-            "LAMBDA / APPLY — Milestone 2 (first-class closures)."
+    # --- abstraction (M9) ------------------------------------------------
+    if op == LAMBDA:
+        # (lambda param body) — unary.  Multi-argument functions are
+        # curried: (lambda a (lambda b body)).  The environment is
+        # captured by reference so an enclosing LET can complete a
+        # recursive binding after the closure is built.
+        if node.args[0].op != LIT_INT:
+            raise DomainTrap(
+                "malformed", "LAMBDA: param slot must be a literal integer id",
+                {"operator": "lambda", "slot": 0},
+                "put a literal integer in LAMBDA's first slot",
+            )
+        return Closure(
+            param=int(node.args[0].args[0]),
+            body=node.args[1],
+            env=rt.env,
         )
+
+    if op == APPLY:
+        # (apply f a b ...) — left-associative currying.  Zero
+        # arguments is legal and simply yields the function itself,
+        # which keeps `(apply f)` from being a special case in the
+        # generator.
+        if not node.args:
+            raise DomainTrap(
+                "malformed", "APPLY: missing function in head slot",
+                {"operator": "apply"},
+                "give `apply` a function to call",
+            )
+        fn = _eval(node.args[0], rt)
+        for arg_node in node.args[1:]:
+            argument = _eval(arg_node, rt)
+            fn = _call(fn, argument, rt)
+        return fn
+
+    if op == LOOP_UNTIL:
+        # (loop-until pred step) — a combinator.  Returns the function
+        # that, applied to a seed, iterates `step` until `pred` is
+        # non-zero.  The seed arrives through APPLY, which is why this
+        # fits the declared arity of 2.
+        pred = _eval(node.args[0], rt)
+        step = _eval(node.args[1], rt)
+        if not is_callable_value(pred) or not is_callable_value(step):
+            raise DomainTrap(
+                "type-violation",
+                "LOOP_UNTIL: both slots must be functions (type Fn); got "
+                f"pred={pred!r}, step={step!r}",
+                {"operator": "loop-until", "expected": "Fn"},
+                "pass two lambdas: a predicate and a step",
+            )
+        return LoopFn(pred=pred, step=step)
 
     # --- everything else ------------------------------------------------
     sig = SIGNATURES.get(op, {"name": "unknown", "family": "?"})
