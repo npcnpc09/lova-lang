@@ -666,9 +666,15 @@ def _self_test() -> None:
         slot = Slot(expected_type=slot_type)
         costs = {t: token_completion_cost(t, slot)
                  for t in GenState.fresh(slot_type).valid_next()}
-        assert min(costs, key=lambda t: (costs[t], t)) == escape, (
-            f"{slot_type}: cheapest closer is not {SIGNATURES[escape]['name']}"
+        # Cheapest, possibly tied: in an Fn slot `(eval (quote 5))` costs
+        # the same three tokens as a lambda.  It is well-typed and traps
+        # at run time, which is Q65's territory, not this check's.
+        assert costs[escape] == min(costs.values()), (
+            f"{slot_type}: {SIGNATURES[escape]['name']} is not a cheapest closer"
         )
+        if slot_type == _FN:
+            from core.tokens import REF as _REF0
+            assert _REF0 not in costs, "ref must not be offered with nothing bound"
     from core.tokens import REF as _REF
     with_fn = (GenState.fresh(INT).step(LET).step(LIT_INT, 0)
                .step(LAMBDA).step(LIT_INT, 1).step(LIT_INT, 5))   # (let 0 (lambda 1 5) _)
