@@ -49,8 +49,8 @@ semantics.
 
 ## What's actually implemented
 
-- **64-token core ISA** (8 families × 8), 1 byte per operator — 31 operators
-  have runtime semantics, 33 are reserved (`spec/tokens.md`, generated
+- **64-token core ISA** (8 families × 8), 1 byte per operator — 46 operators
+  have runtime semantics, 18 are reserved (`spec/tokens.md`, generated
   from the table by `spec/generate_tokens_md.py`)
 - **Data** — one cons cell (`nil` / `cons` / `head` / `tail` / `nil?`)
   gives pairs, lists, and strings as codepoint lists, so `"abc"` is
@@ -72,6 +72,12 @@ semantics.
   same structured anomaly, and `(when-anomaly body handler)` hands a
   program the anomaly's code so it can recover. The substrate's
   termination ceiling is the one thing a program cannot mask
+- **Programs as values** — `quote` / `eval`, and the whole Meta family:
+  `(explain p)` renders a program as text, `(hash p)` gives its integer,
+  `(why p)` / `(lineage-query p)` / `(ancestor-of a b)` ask where it
+  came from, `(clone p)` / `(mutate p 30)` derive one and record how.
+  Axiom 5 is now true inside the language, and Stage 3's `explain`
+  exists
 - **Abstraction** — unary closures with currying, `letrec`, and a loop
   combinator, so recursion and unbounded iteration are expressible.
   Two always-on ceilings (`MAX_CALL_DEPTH`, `MAX_STEPS`) turn
@@ -118,7 +124,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (354 tests, stdlib unittest only)
+# run the test suite (398 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -247,7 +253,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         354 unit tests, stdlib only
+tests/         398 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
@@ -258,12 +264,9 @@ Stated plainly, because the list is short and the omissions are large:
   filesystem, the network and the clock (0x30-0x34, 0x37) are reserved.
 - **No modules.** The prelude is prepended textually, which works for
   one library and will not scale to two (Q50).
-- **Axioms 5 and 6 live in Python, not in the language.** Provenance is
-  queryable via `core/lineage.py` and populations via
-  `core/populations.py`, but the Meta and Evolution operator families
-  (16 slots) are entirely unimplemented — so `why`, `explain`,
-  `lineage-query`, `defpop` and `evolve` cannot be *written* in LOVA.
-  Stage 3's only human interface, `(explain program)`, is among them.
+- **Populations still live in Python.** `clone` and `mutate` are
+  operators now, but `defpop` / `evolve` / `select` need a population as
+  a value, and the only collection is a list of integers (Q58).
 - **No lists of lists.** `cons` takes an `Int`, which keeps
   `head : List -> Int` sound but rules out trees and nested structure
   (Q42). Strings work because a string is a flat list of codepoints.

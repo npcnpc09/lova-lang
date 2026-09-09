@@ -306,6 +306,21 @@ range was already committed to an axiom. **Seven free slots remain**:
 the other twenty-two runtime faults the same anomaly schema — cost no
 slot at all, being a Python-level class rather than an operator.
 
+### M14 spent two free slots and activated the Meta family
+
+| Byte | Was | Now | Type |
+|---|---|---|---|
+| 0x29 | `par` (free) | `quote` | `Value -> Program` |
+| 0x1C | `predict` (free) | `eval` | `Program -> (follows)` |
+| 0x38-0x3F | Meta, reserved | `lineage-query` `why` `trace` `explain` `hash` `uid` `ancestor-of` `generation` | activated as named |
+| 0x24, 0x25 | `mutate`, `clone` (Evolution, reserved) | activated as named | `Program -> Program` |
+
+`quote` / `eval` were the two lines this document flagged as "the one
+thing justified by an axiom rather than a number", and they were the
+prerequisite for the whole Meta family: no program value, nothing to
+explain. **Five free slots remain**: 0x12 `delta-check`, 0x13 `respawn`,
+0x14 `budget-remaining`, 0x16 `preserve`, 0x1E `normal-range`.
+
 ### Still unspent, still needing a decision
 
 | Candidate | Slots | Status |

@@ -32,9 +32,11 @@
   (rev-onto (rev-onto xs (nil)) ys))
 
 (def nth [xs k]
-  (if (nil? xs)
-    0                                   ; past the end reads as zero
-    (if k (nth (tail xs) (sub k 1)) (head xs))))
+  (if k (nth (tail xs) (sub k 1)) (head xs)))
+;; Past the end, `head` or `tail` of the empty list raises the same
+;; domain-error every other out-of-range access does.  A silent zero
+;; here would have been the one place the standard library broke
+;; Constraint 5 -- and it did, until it was caught in the M13 audit.
 
 (def last [xs]
   (if (nil? xs) 0 (if (nil? (tail xs)) (head xs) (last (tail xs)))))

@@ -55,8 +55,12 @@ proposed feature has no ancestor trajectory, it is suspicious.
 ## What this project IS
 
 - A language whose **core representation** is a typed integer sequence
-- A substrate where **every program is a `PartitionedFile<n>`** — an
-  integer with heat, lineage, and conservation metadata
+- A substrate where **every program is an integer** that carries
+  lineage and conservation metadata — and, since M14, can be held,
+  hashed, explained, run, cloned and mutated *by another program*
+  (`quote` / `eval` and the Meta family). "Heat" was part of this
+  sentence from M1 to M14 and never had an implementation; it was
+  ruled a dead concept at M14 and its slots hold `cons`/`head`/`tail`.
 - A type system where **generation is constrained to well-typed
   successors** (zero syntax/type errors reachable by valid generation)
 - An execution model where **functions are populations of variants**
@@ -369,7 +373,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M13)
+## Current state (2026-09-09 — post-M14)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -380,8 +384,8 @@ experiment details.
 | 2. No human-readability as goal | ✅ | design decision |
 | 3. Type-constrained generation | ✅ | 02 (100% vs 0% well-formed) |
 | 4. Conservation as type | ✅ | 01 (Budget/Delta trap) |
-| 5. Lineage intrinsic | ✅ | 04 (Wright-Fisher coalescence) |
-| 6. Populations over individuals | ⚠️ partial | 05 (mechanism OK, 30% convergence) |
+| 5. Lineage intrinsic | ✅ in the language (M14) | 04; `uid`/`why`/`lineage-query` are operators |
+| 6. Populations over individuals | ⚠️ partial | 05; `clone`/`mutate` are operators, populations are still Python (Q58) |
 | 7. Surprise as debugger | ✅ | 01 + 06 (structured anomaly) |
 | 8. Small core, dense tokens | ✅ | 64 tokens × 1 byte |
 | 9. No PnL objective | ✅ | design decision |
@@ -461,6 +465,17 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M14** put programs into the language as values. `quote` / `eval` on
+two free slots; the **Meta family 8/8** on the slots the table named
+for it — `explain` is Stage 3's human interface, reached from inside
+for the first time; `hash` produces Exp 01's integer from a LOVA
+program; `uid` / `generation` / `ancestor-of` / `lineage-query` / `why`
+make Axiom 5 true *in the language*, not only in `core/lineage.py`.
+`clone` and `mutate` start Axiom 6; the rest of Evolution waits on a
+population value (Q58). **46 / 64 operators, five free slots.** Three
+owner-delegated rulings recorded in the journal: heat is dead, the
+Axiom 3 qualifier stays, `nth` is loud.
+
 **M13** made the error model uniform and reachable. Twenty-two runtime
 faults — division by zero, the head of an empty list, an unbound
 reference — raised bare `ValueError`s with no `kind`, so Exp 08's "one
@@ -501,13 +516,13 @@ proved the token table could not beat) and on LOVABench 2.00× →
 **5.38×** vs sympy-Python. Exp 11's Stage-2 *projection* understated
 density by 70%; node count is a poor proxy in both directions.
 
-**34 / 64 operators runtime-implemented**; 30 reserved, of which only 7
+**46 / 64 operators runtime-implemented**; 18 reserved, of which only 5
 are genuinely free (see the slot-budget note above). See
 `spec/tokens.md` for the complete table (generated) and
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-354 unit tests passing, 14 experiments (pb11 has a v1 pilot + v2 re-run),
+398 unit tests passing, 14 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

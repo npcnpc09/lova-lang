@@ -15,7 +15,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  34 of the 64 tokens are implemented.
+  46 of the 64 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -67,7 +67,7 @@ Legend:
 | 0x19 | `nil?` | 1 | List | Int | - | **impl** |
 | 0x1A | `when-anomaly` | 2 | Value, Fn | Int | {handle-anomaly} | **impl** |
 | 0x1B | `threshold` | 1 | Int | Int | - | **impl** |
-| 0x1C | `predict` | 1 | - | - | - | Reserved |
+| 0x1C | `eval` | 1 | Program | Int | {eval, unbounded-cost} | **impl** |
 | 0x1D | `trace-surprise` | 1 | Int | Int | {write-surprise-trace} | **impl** |
 | 0x1E | `normal-range` | 2 | - | - | - | Reserved |
 | 0x1F | `deviation` | 2 | Int, Int | Int | - | **impl** |
@@ -80,8 +80,8 @@ Legend:
 | 0x21 | `variant` | 2 | - | - | - | Reserved |
 | 0x22 | `evolve` | 1 | - | - | - | Reserved |
 | 0x23 | `select` | 2 | - | - | - | Reserved |
-| 0x24 | `mutate` | 2 | - | - | - | Reserved |
-| 0x25 | `clone` | 1 | - | - | - | Reserved |
+| 0x24 | `mutate` | 2 | Program, Int | Program | {write-lineage} | **impl** |
+| 0x25 | `clone` | 1 | Program | Program | {write-lineage} | **impl** |
 | 0x26 | `fitness` | 1 | - | - | - | Reserved |
 | 0x27 | `retire` | 1 | - | - | - | Reserved |
 
@@ -90,7 +90,7 @@ Legend:
 | Byte | Name | Arity | In types | Out type | Effects | Status |
 |---|---|---|---|---|---|---|
 | 0x28 | `seq` | variadic | Int* | Int | - | **impl** |
-| 0x29 | `par` | variadic | - | - | - | Reserved |
+| 0x29 | `quote` | 1 | Value | Program | - | **impl** |
 | 0x2A | `if-surprise` | 3 | Int, Int, Int | Int | {read-surprise} | **impl** |
 | 0x2B | `loop-until` | 2 | Fn, Fn | Fn | {unbounded-cost} | **impl** |
 | 0x2C | `lambda` | 2 | LiteralInt, Value | Fn | - | **impl** |
@@ -115,14 +115,14 @@ Legend:
 
 | Byte | Name | Arity | In types | Out type | Effects | Status |
 |---|---|---|---|---|---|---|
-| 0x38 | `lineage-query` | 1 | - | - | - | Reserved |
-| 0x39 | `why` | 1 | - | - | - | Reserved |
-| 0x3A | `trace` | 1 | - | - | - | Reserved |
-| 0x3B | `explain` | 1 | - | - | - | Reserved |
-| 0x3C | `hash` | 1 | - | - | - | Reserved |
-| 0x3D | `uid` | 0 | - | - | - | Reserved |
-| 0x3E | `ancestor-of` | 2 | - | - | - | Reserved |
-| 0x3F | `generation` | 1 | - | - | - | Reserved |
+| 0x38 | `lineage-query` | 1 | Program | List | {read-lineage} | **impl** |
+| 0x39 | `why` | 1 | Program | List | {read-lineage} | **impl** |
+| 0x3A | `trace` | 1 | Program | List | {unbounded-cost} | **impl** |
+| 0x3B | `explain` | 1 | Program | List | - | **impl** |
+| 0x3C | `hash` | 1 | Program | Int | - | **impl** |
+| 0x3D | `uid` | 1 | Program | Int | {read-lineage} | **impl** |
+| 0x3E | `ancestor-of` | 2 | Program, Program | Int | {read-lineage} | **impl** |
+| 0x3F | `generation` | 1 | Program | Int | {read-lineage} | **impl** |
 
 ## Slot conventions
 
@@ -252,4 +252,4 @@ the identifier was a convenience for whoever typed it.
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  34/64 operators implemented.
+  46/64 operators implemented.

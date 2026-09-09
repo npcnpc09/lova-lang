@@ -89,6 +89,21 @@ Int`` makes it *sound*, whereas ``List -> Value`` would type-check
 list of integers already covers strings and every present use.
 """
 
+PROGRAM = Type("Program")
+"""A program as a value (M14).
+
+Axiom 1 says a program *is* an integer.  Until M14 the language could
+not touch that integer: nothing produced a program as a value, so
+``(explain program)`` -- Stage 3's only human interface -- and every
+lineage query were unreachable from inside LOVA.  ``quote`` produces
+one, ``eval`` runs one, and the Meta and Evolution families operate on
+them.
+
+Disjoint from ``Int``, ``List`` and ``Fn``: a program is not a number
+(``hash`` gives you its number), not text (``explain`` gives you its
+text), and not callable (``eval`` runs it).
+"""
+
 VALUE = Type("Value")
 """The top type — anything a name can be bound to (M9).
 
@@ -114,6 +129,7 @@ _SUBTYPE_PAIRS = frozenset({
     (INT, VALUE),
     (FN, VALUE),
     (LIST, VALUE),
+    (PROGRAM, VALUE),
 })
 
 
@@ -142,8 +158,10 @@ def _self_test() -> None:
     assert not is_subtype(INT, FN)
     assert not is_subtype(LITERAL_INT, FN)
     # Value is the top type: everything flows into it, nothing out of it.
-    for t in (INT, LITERAL_INT, FN, VALUE, LIST):
+    for t in (INT, LITERAL_INT, FN, VALUE, LIST, PROGRAM):
         assert is_subtype(t, VALUE), t
+    for other in (INT, LIST, FN):
+        assert not is_subtype(PROGRAM, other) and not is_subtype(other, PROGRAM)
     # List is incomparable with Int and Fn.
     assert not is_subtype(LIST, INT) and not is_subtype(INT, LIST)
     assert not is_subtype(LIST, FN) and not is_subtype(FN, LIST)

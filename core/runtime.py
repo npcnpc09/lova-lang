@@ -12,6 +12,10 @@ Operators implemented:
   and therefore strings as codepoint lists)
 - STDOUT, STDIN                          (the effects boundary)
 - WHEN_ANOMALY                           (in-language error handling)
+- QUOTE, EVAL                            (programs as values)
+- EXPLAIN, HASH, UID, GENERATION, ANCESTOR_OF, LINEAGE_QUERY, WHY, TRACE
+                                         (Axiom 5, in the language)
+- CLONE, MUTATE                          (Axiom 6, beginning)
 - P, TAU, SIGMA, GCD, MOBIUS, MUL, MOD, DIV  (number-theory primitives)
 - BUDGET, CONSERVE, VIOLATE              (conservation layer)
 - SURPRISE, TRACE_SURPRISE, DEVIATION, THRESHOLD  (the debugger
@@ -85,7 +89,10 @@ from core.tokens import (
     MOD, MUL, NIL, Node, P, PARTITION, REF, SEQ, SIGMA, SIGNATURES,
     STDIN, STDOUT, SURPRISE, TAIL, TAU, THRESHOLD, TRACE_SURPRISE, VIOLATE,
     WHEN_ANOMALY,
+    ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
+    MUTATE, QUOTE, TRACE, UID, WHY, encode,
 )
+from core.lineage import LineageStore, _deep_copy_node
 
 
 # --- number theory helpers ---------------------------------------------------
@@ -332,10 +339,18 @@ def _as_text(v: Any, ctx: str) -> str:
 
     An integer writes as its decimal digits; a list writes as the text of
     its codepoints, which is what makes ``"abc"`` -- a list of codepoints
-    -- print as ``abc``.  A function has no textual form and says so.
+    -- print as ``abc``.  A function has no textual form and says so; a
+    program has one, but asking for it is what `explain` is for.
     """
     if isinstance(v, int) and not isinstance(v, bool):
         return str(v)
+    if is_program_value(v):
+        raise DomainTrap(
+            "type-violation",
+            f"{ctx}: cannot write a program directly; `explain` renders it",
+            {"operator": ctx, "got": "Program"},
+            "write `(explain p)` instead of `p`",
+        )
     if is_list_value(v):
         codes = list_to_python(v)
         out = []
@@ -357,6 +372,31 @@ def _as_text(v: Any, ctx: str) -> str:
         {"operator": ctx, "got": "Fn"},
         "write an integer or a list of codepoints",
     )
+
+
+def is_program_value(v: Any) -> bool:
+    """True iff ``v`` is a program (type ``Program``): a bare AST node."""
+    return isinstance(v, Node)
+
+
+def _as_program(v: Any, ctx: str) -> Node:
+    if isinstance(v, Node):
+        return v
+    raise DomainTrap(
+        "type-violation",
+        f"{ctx}: expected a Program, got {v!r}; `quote` produces one",
+        {"operator": ctx, "expected": "Program"},
+        "wrap the expression in `quote`, or pass a program produced by "
+        "`clone` or `mutate`",
+    )
+
+
+def _ensure_registered(program: Node, rt: "Runtime") -> int:
+    """A program's lineage uid, registering it as a root on first need."""
+    uid = getattr(program, "uid", None)
+    if uid is None:
+        uid = rt.lineage.register_root(program, notes="quoted")
+    return uid
 
 
 def _as_list(v: Any, ctx: str) -> Any:
@@ -415,6 +455,14 @@ def _as_int(v: Any, ctx: str) -> int:
         return int(v)
     if isinstance(v, int):
         return v
+    if is_program_value(v):
+        raise DomainTrap(
+            "type-violation",
+            f"{ctx}: expected an Int, got a program; `hash` gives its "
+            "integer, `eval` gives its result",
+            {"operator": ctx, "expected": "Int", "got": "Program"},
+            "use `hash` for the program's integer or `eval` for its value",
+        )
     if is_list_value(v):
         raise DomainTrap(
             "type-violation",
@@ -442,8 +490,10 @@ class Runtime:
     env: Dict[int, Any] = field(default_factory=dict)
     budget_stack: List[Budget] = field(default_factory=list)
     surprise: SurpriseTrace = field(default_factory=SurpriseTrace)
-    # lineage tracking placeholder; populated by ``core.lineage``.
-    lineage: List[Any] = field(default_factory=list)
+    # Provenance for every program value this run creates or derives
+    # (M14).  Was a placeholder list from M1 to M13 while Axiom 5 lived
+    # in core/lineage.py; now the Meta operators query it from inside.
+    lineage: LineageStore = field(default_factory=LineageStore)
     # Stack of nodes currently being evaluated — used to enrich trap
     # anomalies with positional info (L2 observability).
     node_stack: List[Any] = field(default_factory=list)
@@ -949,6 +999,110 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
     if op == IS_NIL:
         target = _as_list(_eval(node.args[0], rt), "nil?")
         return 1 if target is NIL_VALUE else 0
+
+    # --- programs as values (M14) ------------------------------------------
+    if op == QUOTE:
+        # The operand is not evaluated.  It is copied, so that registering
+        # or mutating the value never reaches back into the program that
+        # contains the quote.
+        return _deep_copy_node(node.args[0])
+
+    if op == EVAL:
+        # Run a program value in the current environment.  Its steps and
+        # budget charge to this run like any other node's, because it is
+        # this run.
+        program = _as_program(_eval(node.args[0], rt), "eval")
+        return _eval(program, rt)
+
+    # --- meta / lineage (M14) -- Axiom 5 ------------------------------------
+    if op == EXPLAIN:
+        # Stage 3's human interface: a program, rendered as text -- which
+        # in LOVA is a list of codepoints.  This is the Stage-1 surface
+        # reached from *inside* the language for the first time.
+        from core.surface import pretty
+        program = _as_program(_eval(node.args[0], rt), "explain")
+        return list_from([ord(ch) for ch in pretty(program)])
+
+    if op == HASH:
+        # Axiom 1, taken literally: the program *is* this integer.
+        program = _as_program(_eval(node.args[0], rt), "hash")
+        return int.from_bytes(encode(program), "big")
+
+    if op == UID:
+        program = _as_program(_eval(node.args[0], rt), "uid")
+        return getattr(program, "uid", None) or 0
+
+    if op == GENERATION:
+        program = _as_program(_eval(node.args[0], rt), "generation")
+        uid = getattr(program, "uid", None)
+        return rt.lineage.record(uid).generation if uid else 0
+
+    if op == ANCESTOR_OF:
+        a = _as_program(_eval(node.args[0], rt), "ancestor-of")
+        b = _as_program(_eval(node.args[1], rt), "ancestor-of")
+        ua, ub = getattr(a, "uid", None), getattr(b, "uid", None)
+        if not ua or not ub:
+            return 0
+        return 1 if rt.lineage.is_ancestor_of(ua, ub) else 0
+
+    if op == LINEAGE_QUERY:
+        # self -> parent -> ... -> root, as uids.  Empty for an
+        # unregistered program: it has no history yet.
+        program = _as_program(_eval(node.args[0], rt), "lineage-query")
+        uid = getattr(program, "uid", None)
+        if not uid:
+            return NIL_VALUE
+        return list_from([rec.uid for rec in rt.lineage.ancestors(uid)])
+
+    if op == WHY:
+        # Why does this program exist?  Its mutation kind and notes, as
+        # text.  The question Axiom 5 promised the language could answer.
+        program = _as_program(_eval(node.args[0], rt), "why")
+        uid = getattr(program, "uid", None)
+        if not uid:
+            text = "unregistered"
+        else:
+            rec = rt.lineage.record(uid)
+            text = f"{rec.mutation_kind} {rec.notes}".strip()
+        return list_from([ord(ch) for ch in text])
+
+    if op == TRACE:
+        # Run a program in a sandbox and return its surprise trace -- the
+        # deviations, in order.  Introspection over Axiom 7's signal.
+        # The sandbox inherits what is left of this run's ceilings, so a
+        # loop of traces cannot slip past MAX_STEPS.
+        program = _as_program(_eval(node.args[0], rt), "trace")
+        inner = Runtime(
+            env=dict(rt.env), lineage=rt.lineage,
+            max_steps=max(1, rt.max_steps - rt.steps),
+            max_call_depth=max(1, rt.max_call_depth - rt.call_depth),
+        )
+        try:
+            _eval(program, inner)
+        finally:
+            rt.steps += inner.steps
+        return list_from([event["deviation"] for event in inner.surprise.events])
+
+    # --- evolution (M14, first two) -- Axiom 6 ----------------------------------
+    if op == CLONE:
+        program = _as_program(_eval(node.args[0], rt), "clone")
+        _ensure_registered(program, rt)
+        return rt.lineage.clone(program)
+
+    if op == MUTATE:
+        # (mutate program percent): strength as a percentage, because the
+        # language has no fractions.  Deterministic for a given store
+        # seed, so a mutation is reproducible from the run that made it.
+        program = _as_program(_eval(node.args[0], rt), "mutate")
+        percent = _as_int(_eval(node.args[1], rt), "mutate")
+        if not 0 <= percent <= 100:
+            raise DomainTrap(
+                "domain-error", f"mutate: strength {percent} is not a percentage",
+                {"operator": "mutate", "strength": percent},
+                "give a strength between 0 and 100",
+            )
+        _ensure_registered(program, rt)
+        return rt.lineage.mutate(program, strength=percent / 100)
 
     # --- error handling (M13) --------------------------------------------
     if op == WHEN_ANOMALY:

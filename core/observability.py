@@ -36,6 +36,8 @@ from core.tokens import (
     PARTITION, IDENTITY, P, MOBIUS, LET, REF, Node,
     APPLY, DEVIATION, LAMBDA, LOOP_UNTIL, MOD, MUL, THRESHOLD,
     CONS, DIV, HEAD, IS_NIL, NIL, TAIL, STDIN, STDOUT, WHEN_ANOMALY,
+    ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
+    MUTATE, QUOTE, TRACE, UID, WHY,
 )
 from core.types import INT, LITERAL_INT, Type, is_subtype
 
@@ -89,6 +91,20 @@ _EFFECTS: dict = {
     # M13 -- handling an anomaly is an effect on the run's trace, and it
     # also means the enclosed cost is not the program's declared cost.
     WHEN_ANOMALY: frozenset({"handle-anomaly"}),
+    # M14 -- programs as values.  Quoting runs nothing; eval and trace
+    # run code the static view cannot see, so their cost is unbounded.
+    QUOTE: frozenset(),
+    EVAL: frozenset({"unbounded-cost", "eval"}),
+    TRACE: frozenset({"unbounded-cost"}),
+    EXPLAIN: frozenset(),
+    HASH: frozenset(),
+    UID: frozenset({"read-lineage"}),
+    GENERATION: frozenset({"read-lineage"}),
+    ANCESTOR_OF: frozenset({"read-lineage"}),
+    LINEAGE_QUERY: frozenset({"read-lineage"}),
+    WHY: frozenset({"read-lineage"}),
+    CLONE: frozenset({"write-lineage"}),
+    MUTATE: frozenset({"write-lineage"}),
     # conservation
     BUDGET: frozenset({"budget-scope"}),
     CONSERVE: frozenset({"conservation-check"}),
@@ -372,7 +388,15 @@ def static_analyze(node: Node) -> StaticAnalysis:
             counts["abstraction"] += 1
         if getattr(n, "uid", None) is not None:
             counts["lineage"] += 1
+        if n.op in (UID, GENERATION, ANCESTOR_OF, LINEAGE_QUERY, WHY,
+                    CLONE, MUTATE):
+            counts["lineage"] += 1
         if n.op == LIT_INT:
+            return
+        if n.op == QUOTE:
+            # Quoted code is data: its effects fire only if something
+            # evaluates it, and `eval` declares that itself.  Same rule
+            # the compiler's drop-unused pass applies.
             return
         for child in n.args:
             if isinstance(child, Node):

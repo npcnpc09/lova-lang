@@ -287,9 +287,15 @@ class TestListTypes(unittest.TestCase):
         self.assertIn(IS_NIL, valid)
 
     def test_list_slot_offers_list_producers_and_nothing_typed_otherwise(self):
-        from core.tokens import MERGE, P, RESULT_NOT_STATIC, STDIN
+        from core.tokens import (
+            EXPLAIN, LINEAGE_QUERY, MERGE, P, RESULT_NOT_STATIC, STDIN, TRACE,
+            WHY,
+        )
         valid = GenState.fresh().step(HEAD).valid_next()
-        producers = frozenset({NIL, CONS, TAIL, STDIN})
+        # Lists come from the cons cell, from input, and -- since M14 --
+        # from every Meta operator that answers in text.
+        producers = frozenset({NIL, CONS, TAIL, STDIN,
+                               EXPLAIN, LINEAGE_QUERY, WHY, TRACE})
         self.assertLessEqual(producers, valid)
         # Plus the operators whose result type the state machine cannot
         # see -- a conditional returning a list is how `map` is shaped.
@@ -342,8 +348,9 @@ class TestSlotBudget(unittest.TestCase):
     """The allocation actually spent, guarded against drift."""
 
     def test_slots_spent_so_far(self):
-        # 25 after M9, +6 data (M10), +2 IO (M11), +1 when-anomaly (M13).
-        self.assertEqual(len(TYPED_TOKENS), 34)
+        # 25 after M9, +6 data (M10), +2 IO (M11), +1 when-anomaly (M13),
+        # +12 for M14: quote/eval, the whole Meta family, clone/mutate.
+        self.assertEqual(len(TYPED_TOKENS), 46)
 
     def test_the_core_is_still_64_operators(self):
         self.assertEqual(len(SIGNATURES), 64)
@@ -355,6 +362,11 @@ class TestSlotBudget(unittest.TestCase):
             # M11 and M13 used slots for what the original table named
             # them, so these are activations rather than reallocations.
             0x35: "stdout", 0x36: "stdin", 0x1A: "when-anomaly",
+            # M14: the two free slots spent, and the Meta family activated.
+            0x29: "quote", 0x1C: "eval",
+            0x3B: "explain", 0x3C: "hash", 0x3D: "uid", 0x3F: "generation",
+            0x3E: "ancestor-of", 0x38: "lineage-query", 0x39: "why",
+            0x3A: "trace", 0x25: "clone", 0x24: "mutate",
         }
         for byte, name in expected.items():
             self.assertEqual(SIGNATURES[byte]["name"], name)

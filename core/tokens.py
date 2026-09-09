@@ -54,7 +54,7 @@ SURPRISE        = 0x18   # (surprise predicted actual) — returns |p-a|, emits 
 IS_NIL          = 0x19   # (nil? xs)    (M10: was the watch placeholder)
 WHEN_ANOMALY    = 0x1A   # (when-anomaly body handler) -- M13
 THRESHOLD       = 0x1B
-PREDICT         = 0x1C
+EVAL            = 0x1C   # (eval program)   -- M14; was the predict placeholder
 TRACE_SURPRISE  = 0x1D
 NORMAL_RANGE    = 0x1E
 DEVIATION       = 0x1F
@@ -71,7 +71,7 @@ RETIRE          = 0x27
 
 # Family 0x28-0x2F  Composition
 SEQ             = 0x28   # variadic sequential composition (terminated by END)
-PAR             = 0x29
+QUOTE           = 0x29   # (quote expr)     -- M14; was the par placeholder
 IF_SURPRISE     = 0x2A
 LOOP_UNTIL      = 0x2B
 LAMBDA          = 0x2C   # (lambda (params...) body) — params is a LIT_INT symbol list
@@ -138,7 +138,7 @@ SIGNATURES = {
     IS_NIL:       {"name": "nil?",          "arity": 1, "family": "surp"},
     WHEN_ANOMALY: {"name": "when-anomaly",  "arity": 2, "family": "surp"},
     THRESHOLD:    {"name": "threshold",     "arity": 1, "family": "surp"},
-    PREDICT:      {"name": "predict",       "arity": 1, "family": "surp"},
+    EVAL:         {"name": "eval",          "arity": 1, "family": "surp"},
     TRACE_SURPRISE: {"name": "trace-surprise", "arity": 1, "family": "surp"},
     NORMAL_RANGE: {"name": "normal-range",  "arity": 2, "family": "surp"},
     DEVIATION:    {"name": "deviation",     "arity": 2, "family": "surp"},
@@ -153,7 +153,7 @@ SIGNATURES = {
     RETIRE:       {"name": "retire",        "arity": 1, "family": "evo"},
     # Composition
     SEQ:          {"name": "seq",           "arity": "variadic", "family": "comp"},
-    PAR:          {"name": "par",           "arity": "variadic", "family": "comp"},
+    QUOTE:        {"name": "quote",         "arity": 1, "family": "comp"},
     IF_SURPRISE:  {"name": "if-surprise",   "arity": 3, "family": "comp"},
     LOOP_UNTIL:   {"name": "loop-until",    "arity": 2, "family": "comp"},
     LAMBDA:       {"name": "lambda",        "arity": 2, "family": "comp"},
@@ -175,7 +175,7 @@ SIGNATURES = {
     TRACE:        {"name": "trace",         "arity": 1, "family": "meta"},
     EXPLAIN:      {"name": "explain",       "arity": 1, "family": "meta"},
     HASH:         {"name": "hash",          "arity": 1, "family": "meta"},
-    UID:          {"name": "uid",           "arity": 0, "family": "meta"},
+    UID:          {"name": "uid",           "arity": 1, "family": "meta"},
     ANCESTOR_OF:  {"name": "ancestor-of",   "arity": 2, "family": "meta"},
     GENERATION:   {"name": "generation",    "arity": 1, "family": "meta"},
 }
@@ -190,7 +190,7 @@ assert len(SIGNATURES) == 64, f"Token table must have exactly 64 entries, found 
 # treats them as unreachable and never emits them.  As milestones land,
 # operators get type info here and become generation-reachable.
 
-from core.types import FN, INT, LIST, LITERAL_INT, VALUE  # noqa: E402
+from core.types import FN, INT, LIST, LITERAL_INT, PROGRAM, VALUE  # noqa: E402
 
 _TYPE_INFO = {
     # Literals
@@ -235,6 +235,29 @@ _TYPE_INFO = {
     LET:            {"in_types": [LITERAL_INT, VALUE, INT], "out_type": INT},
     REF:            {"in_types": [LITERAL_INT], "out_type": INT},
     IF_SURPRISE:    {"in_types": [INT, INT, INT], "out_type": INT},
+    # Programs as values (M14).  `quote` is the constructor: its operand
+    # is a well-formed expression of any type that is *not evaluated*.
+    # `eval` is the eliminator, and its result is whatever the program
+    # produces, so it joins the result-follows-operands set.
+    QUOTE:          {"in_types": [VALUE], "out_type": PROGRAM},
+    EVAL:           {"in_types": [PROGRAM], "out_type": INT},
+    # Meta / lineage (M14) -- Axiom 5, in the language rather than in
+    # core/lineage.py.  Every operator here takes a program value; the
+    # ones that answer in text answer with a codepoint list, which is
+    # what a string is.
+    EXPLAIN:        {"in_types": [PROGRAM], "out_type": LIST},
+    HASH:           {"in_types": [PROGRAM], "out_type": INT},
+    UID:            {"in_types": [PROGRAM], "out_type": INT},
+    GENERATION:     {"in_types": [PROGRAM], "out_type": INT},
+    ANCESTOR_OF:    {"in_types": [PROGRAM, PROGRAM], "out_type": INT},
+    LINEAGE_QUERY:  {"in_types": [PROGRAM], "out_type": LIST},
+    WHY:            {"in_types": [PROGRAM], "out_type": LIST},
+    TRACE:          {"in_types": [PROGRAM], "out_type": LIST},
+    # Evolution (M14, first two) -- Axiom 6 begins to move into the
+    # language.  `mutate` takes its strength as a percentage, because
+    # LOVA has no fractions.
+    CLONE:          {"in_types": [PROGRAM], "out_type": PROGRAM},
+    MUTATE:         {"in_types": [PROGRAM, INT], "out_type": PROGRAM},
     # Error handling (M13).  ``(when-anomaly body handler)``: evaluate
     # `body`; if it traps, call `handler` with the anomaly's integer code
     # and return that instead.  The handler is an ``Fn`` because a
@@ -299,7 +322,7 @@ TYPED_TOKENS = frozenset(_TYPE_INFO.keys())
 # variadic may be empty, and `(seq)` evaluates to 0, so its result type
 # is not determined by the slot it sits in.  The compiler checks that
 # case separately.
-RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY})
+RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL})
 
 # ``REF`` is the other operator whose result type is not its declared
 # one: it is whatever the binding holds.  The compiler resolves that

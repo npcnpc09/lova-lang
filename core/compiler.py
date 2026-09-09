@@ -44,7 +44,7 @@ from core.tokens import (
     IF_SURPRISE, IS_NIL, LAMBDA, LET, LIT_INT, LOOP_UNTIL, MERGE, MOBIUS,
     MOD, MUL, NIL, P, PARTITION, REF, RESULT_FOLLOWS_OPERANDS, SIGMA,
     SIGNATURES, SURPRISE, SEQ, TAIL, TAU, THRESHOLD, TRACE_SURPRISE,
-    VIOLATE, WHEN_ANOMALY, Lit, Node,
+    VIOLATE, WHEN_ANOMALY, QUOTE, Lit, Node,
 )
 from core.types import FN, INT, LIST, LITERAL_INT, VALUE, Type, is_subtype
 
@@ -145,6 +145,11 @@ def _chain_names(node: Node) -> Set[int]:
 def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
     """Walk the tree; every REF must bind to a name in ``env``."""
     if node.op == LIT_INT:
+        return
+    if node.op == QUOTE:
+        # A quoted program is data until something evaluates it, and it
+        # is evaluated in *that* environment.  Its references are
+        # resolved then, by the runtime, with the same structured error.
         return
     if node.op == LET:
         # (let name value body) -- name is a LiteralInt; body sees name bound.
@@ -252,6 +257,14 @@ def _binding_type(node: Node, type_env: Dict[int, Type]) -> Type:
     """
     if node.op == REF and node.args and node.args[0].op == LIT_INT:
         return type_env.get(int(node.args[0].args[0]), INT)  # type: ignore[return-value]
+    if node.op in _RESULT_FOLLOWS_OPERANDS:
+        # A call, a conditional, an eval: what it produces is not written
+        # on the operator.  Recording its declared placeholder (`Int`)
+        # would make every program value that comes out of a function
+        # statically an integer -- `(explain (twice p))` failed to compile
+        # for exactly that reason at M14.  Unknown is honest; a misuse
+        # then fails at run time with a structured error (Q51).
+        return _UNKNOWN  # type: ignore[return-value]
     declared = SIGNATURES[node.op].get("out_type")
     return declared if declared is not None else INT
 
@@ -312,6 +325,11 @@ def _check_transparent(
                         path + (node.op, len(node.args) - 1), type_env)
         return
 
+    if node.op == QUOTE and len(node.args) == 1:
+        # Well-formed, of any type: it is not evaluated here.
+        _type_check(node.args[0], VALUE, path + (node.op, 0), {})
+        return
+
     if node.op == WHEN_ANOMALY and len(node.args) == 2:
         # The guarded expression carries the result type; the handler is
         # a function, and what it returns is its own business (the same
@@ -330,7 +348,12 @@ def _check_transparent(
             _type_check(child, here, path + (node.op, index), type_env)
         return
 
-    raise AssertionError(f"no transparent rule for {SIGNATURES[node.op]['name']}")
+    # Any other result-follows-operands operator: the result is unknown,
+    # the children are what the table declares.  `eval` lands here.
+    sig = SIGNATURES[node.op]
+    for index, (child, in_type) in enumerate(zip(node.args, sig.get("in_types") or ())):
+        if isinstance(child, Node):
+            _type_check(child, in_type, path + (node.op, index), type_env)
 
 
 def _type_check(
@@ -359,6 +382,21 @@ def _type_check(
         # Reserved operator without a type -- M1 runtime can't handle
         # these but compile is about correctness-of-form; let it pass
         # (runtime will raise NotImplementedError).
+        return
+    if node.op == QUOTE:
+        # Produces a Program regardless of what is inside; gate on that,
+        # then check the inside as an expression in its own right.
+        if not is_subtype(out_type, expected):
+            raise CompileError(
+                kind="type-mismatch",
+                detail={"at_operator": "quote", "produces": "Program",
+                        "expected": str(expected)},
+                position_path=path + (node.op,),
+                offending_op=node.op,
+                repair_hint="a quoted program is a Program; `eval` it, "
+                            "`hash` it, or `explain` it to get another type",
+            )
+        _type_check(node.args[0], VALUE, path + (node.op, 0), {})
         return
     if node.op in _RESULT_FOLLOWS_OPERANDS:
         _check_transparent(node, expected, path, type_env)
@@ -436,6 +474,10 @@ def _fold(node: Node) -> Node:
     """Fold pure subtrees with constant arguments to LIT_INT."""
     if node.op == LIT_INT:
         return node
+    if node.op == QUOTE:
+        # Folding inside a quote would change the program that `hash`
+        # and `explain` report -- the value is the tree, not its result.
+        return node
 
     # Recurse first (bottom-up fold)
     new_args: List[Any] = []
@@ -486,8 +528,8 @@ def _subtree_effects(node: Node) -> set:
     from core.observability import _EFFECTS
 
     found = set(_EFFECTS.get(node.op, frozenset()))
-    if node.op == LIT_INT:
-        return found
+    if node.op == LIT_INT or node.op == QUOTE:
+        return found          # quoting runs nothing
     for index, child in enumerate(node.args):
         if not isinstance(child, Node):
             continue
@@ -528,13 +570,16 @@ def _split_chain(node: Node) -> Tuple[List[Tuple[int, Node]], Node]:
 def _drop_unused(node: Node) -> Tuple[Node, int]:
     """Remove bindings nothing in the group reaches.
 
+    A quoted program is left exactly as written (references inside it
+    still count as uses, conservatively, because it may be evaluated).
+
     Liveness is a fixpoint over the whole binding group, not a lookup in
     one body.  With mutual recursion (M12) a binding can be reached only
     from an *earlier* sibling's value -- `ev` calling `od` -- so asking
     "does my body mention me" drops half of every mutually recursive
     pair and produces a program that no longer runs.
     """
-    if node.op == LIT_INT:
+    if node.op == LIT_INT or node.op == QUOTE:
         return node, 0
 
     if node.op == LET and len(node.args) == 3 and node.args[0].op == LIT_INT:

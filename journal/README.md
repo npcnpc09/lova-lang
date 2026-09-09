@@ -241,6 +241,55 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 14 (2026-09-09) — Programs as values; Axiom 5 enters the language
+The design audit at M13 found the honest count was **8/10 axioms in the
+language, 2/10 in Python**: provenance (Axiom 5) was queryable only via
+`core/lineage.py`, populations (Axiom 6) only via `core/populations.py`,
+and Stage 3's sole human interface — `(explain program)` — did not
+exist. All three share a root cause: nothing in LOVA produced a program
+as a value, so nothing in LOVA could operate on one.
+
+**`quote` / `eval`.** Two of the seven free slots (0x29, ex-`par`; 0x1C,
+ex-`predict`). `quote` yields its operand *unevaluated*, as a copy, so
+registering or mutating the value never reaches back into the program
+containing it; `eval` runs one in the current environment, charging the
+run's own budget and ceilings. The compiler treats a quote as opaque —
+no folding (the value is the tree, not its result), no rewriting, no
+scope check (references resolve at eval time, with the same structured
+error) — while still checking that the quoted body is well-formed.
+
+**The Meta family, 8/8, activated for what the table named it.**
+`explain` renders a program as text — **Stage 3's human interface,
+reached from inside the language for the first time.** `hash` returns
+the program's integer: `(hash (quote (merge (p 3) (tau 12))))` is
+**55916975560956379404**, the exact integer Exp 01 quoted as proof of
+Axiom 1, now producible by a LOVA program. `uid`, `generation`,
+`ancestor-of`, `lineage-query` and `why` query the run's `LineageStore`,
+which stopped being a placeholder list. `trace` runs a program in a
+sandbox that inherits what is left of the run's ceilings and returns its
+surprise deviations — introspection over Axiom 7's signal.
+
+**Axiom 6 begins.** `clone` and `mutate` (strength as a percentage;
+deterministic for the store's seed, so a derivation replays). The other
+six Evolution slots need a *population* as a value, and a list holds
+only integers (Q42). Q58.
+
+Implemented operators **34 → 46 of 64**. Five free slots remain.
+
+**Three rulings, owner-delegated ("你自己裁决吧"):**
+- *heat is a dead concept.* The PFS "heat" metaphor had no implementation
+  from M1 to M14 and no program ever needed it; 0x04-0x06 stay
+  `cons`/`head`/`tail`. `CLAUDE.md`'s "every program carries heat"
+  bullet is rewritten to what is true.
+- *The Axiom 3 qualifier stays.* Without it the axiom is false; with it,
+  it is measured. Recorded here because `CLAUDE.md` reserves axiom
+  edits for the owner and this one was made at M9 without asking.
+- *`nth` no longer returns a silent 0 past the end.* It falls through to
+  `head`/`tail`'s domain-error — the standard library's one violation of
+  Constraint 5, closed.
+
+Tests 354 → 398.
+
 ### Milestone 13 (2026-09-09) — The error model, made uniform and reachable
 The last gap on the basic-language list: a LOVA program could not
 respond to its own anomaly. Axiom 7 says surprise is the debugger and
@@ -667,6 +716,24 @@ the corpus grows again.
   (Exp 13 F3), so the 5.38× inherits that circularity. A v3 corpus with
   an algorithmic category (Q33) would measure both regimes on one task
   set.
+
+### Raised by M14
+- **Q58**: `defpop` / `variant` / `evolve` / `select` / `fitness` /
+  `retire` need a population as a value, and the only collection is a
+  list of integers. A list of programs is the natural shape — which is
+  `List<T>` again (Q42). Alternatively a population could be a program
+  value whose root is a `seq` of variants. Which, and does Axiom 6's
+  "dispatch selects per workload" survive either?
+- **Q59**: `eval` runs quoted code in the *caller's* environment, which
+  makes `(quote (ref 0))` mean different things in different places.
+  That is Lisp's `eval` and it is what made `trace` and `explain` easy;
+  it is also dynamic scope by the back door. Should a program value
+  close over its environment at `quote` time instead?
+- **Q60**: `mutate` still draws from `core/lineage.py`'s `_SWAP_GROUPS`,
+  which know only the M1 operators. A mutation of a program using
+  `cons`, `div` or `apply` can only touch its literals. The swap table
+  should be derived from the token table's type signatures, not
+  hand-listed.
 
 ### Raised by M13
 - **Q56**: `when-anomaly` hands the handler a code and nothing else. The
