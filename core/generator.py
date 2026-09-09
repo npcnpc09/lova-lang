@@ -63,8 +63,11 @@ class Slot:
     # bit is set, so a generated program cannot use the world without
     # declaring it: Axiom 3 at the effect level, and the same rule the
     # compiler's capability pass enforces on hand-written trees.  The
-    # role "caps" marks the boundary's own literal slot.
+    # role "caps" marks the boundary's own literal slot; ``enclosed``
+    # says some boundary is already around this position, in which case
+    # a nested one may only narrow (Q70).
     caps: int = 0
+    enclosed: bool = False
 
 
 @dataclass
@@ -161,6 +164,9 @@ class GenState:
                 if names:
                     return rng.choice(names)
             if role == "caps":
+                top = self.stack[-1]
+                if top.enclosed:
+                    return rng.randint(0, 7) & top.caps   # narrow only (Q70)
                 return rng.randint(0, 7)          # any mix of fs-read/fs-write/clock
         return rng.randint(0, small_lit_range - 1)
 
@@ -271,8 +277,14 @@ class GenState:
 
         if token == LIT_INT and top.role == "caps" and new_stack:
             # The boundary's literal names what its body may do; the
-            # body slot is the next one down.
-            new_stack[-1] = replace(new_stack[-1], caps=int(payload or 0))
+            # body slot is the next one down.  Nested, it may only narrow.
+            declared = int(payload or 0)
+            if top.enclosed and declared & ~top.caps:
+                raise ValueError(
+                    f"nested boundary declares {declared:#x} beyond the "
+                    f"enclosing {top.caps:#x}"
+                )
+            new_stack[-1] = replace(new_stack[-1], caps=declared, enclosed=True)
 
         base = len(new_stack)
 
@@ -292,12 +304,15 @@ class GenState:
                     variadic_continuation=True,
                     parent_op=token,
                     caps=top.caps,
+                    enclosed=top.enclosed,
                 )
             )
             for t in reversed(sig.get("head_types", ())):
-                new_stack.append(Slot(expected_type=t, parent_op=token, caps=top.caps))
+                new_stack.append(Slot(expected_type=t, parent_op=token,
+                                      caps=top.caps, enclosed=top.enclosed))
         else:
-            children = [Slot(expected_type=t, parent_op=token, caps=top.caps)
+            children = [Slot(expected_type=t, parent_op=token,
+                             caps=top.caps, enclosed=top.enclosed)
                         for t in _child_types(token, top.expected_type)]
             if token == EXTERNAL_BOUNDARY:
                 children[0].role = "caps"

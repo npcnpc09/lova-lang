@@ -574,7 +574,7 @@ reserved and 4 are genuinely free (see the slot-budget note above). See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-567 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+574 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

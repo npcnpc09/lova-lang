@@ -127,9 +127,27 @@ class TestStaticCheck(unittest.TestCase):
         with self.assertRaises(CompileError):
             compile(parse('(let 0 (lambda 9 (clock)) (boundary "clock" (apply (ref 0) 0)))'))
 
-    def test_an_inner_boundary_replaces_the_outer(self):
+    def test_a_nested_boundary_may_only_narrow(self):
+        # Q70: what a body may do is decided by the boundary around it.
+        compile(parse('(boundary "fs-read clock" (boundary "clock" (clock)))'))
+        with self.assertRaises(CompileError) as ctx:
+            compile(parse('(boundary "clock" (boundary "fs-read" (fs-read "x")))'))
+        detail = ctx.exception.anomaly["detail"]
+        self.assertEqual(detail["excess"], ["fs-read"])
+        self.assertEqual(detail["enclosing"], ["clock"])
+
+    def test_narrowing_narrows(self):
         with self.assertRaises(CompileError):
-            compile(parse('(boundary "clock" (boundary "fs-read" (clock)))'))
+            compile(parse('(boundary "fs-read clock" (boundary "clock" (fs-read "x")))'))
+
+    def test_a_lambda_inside_a_boundary_is_enclosed(self):
+        with self.assertRaises(CompileError):
+            compile(parse('(boundary "clock" (lambda 9 (boundary "fs-read" 1)))'))
+
+    def test_a_top_level_boundary_in_a_function_is_its_own(self):
+        # Not nested: a library function declares for itself, and the
+        # host's grant is the authority across the call.
+        compile(parse('(let 0 (lambda 9 (boundary "fs-read" 1)) (boundary "clock" (apply (ref 0) 0)))'))
 
     def test_an_unused_binding_still_has_to_declare(self):
         # Checked before drop-unused: a program that lies about its
@@ -185,6 +203,22 @@ class TestRuntimeCheck(unittest.TestCase):
         self.assertEqual(ctx.exception.anomaly["kind"], "capability-denied")
         self.assertEqual(
             run('(boundary "clock" (eval (quote (clock))))', granted=4, clock=lambda: 5), 5)
+
+    def test_evaluated_nested_boundaries_narrow_too(self):
+        with self.assertRaises(DomainTrap) as ctx:
+            run('(boundary "clock" (eval (quote (boundary "fs-read" 1))))', granted=7)
+        self.assertEqual(ctx.exception.anomaly["detail"]["excess"], ["fs-read"])
+        self.assertEqual(run('(boundary "clock" (eval (quote (boundary "clock" 1))))', granted=7), 1)
+
+    def test_a_closure_written_inside_stays_enclosed(self):
+        src = ('(apply (boundary "clock" (lambda 9 (eval (quote (boundary "fs-read" 1))))) 0)')
+        with self.assertRaises(DomainTrap):
+            run(src, granted=7)
+
+    def test_a_closure_written_outside_declares_for_itself(self):
+        src = ('(let 0 (lambda 9 (eval (quote (boundary "fs-read" 1)))) '
+               '(boundary "clock" (apply (ref 0) 0)))')
+        self.assertEqual(run(src, granted=7), 1)
 
     def test_read_text_is_checked_at_run_time(self):
         self.assertEqual(
@@ -288,6 +322,18 @@ class TestGeneration(unittest.TestCase):
         self.assertTrue(validates(encode(parse('(boundary "clock" (clock))'))))
         self.assertFalse(validates(encode(parse("(clock)"))))
         self.assertFalse(validates(encode(parse('(boundary "fs-read" (clock))'))))
+
+    def test_a_nested_caps_literal_narrows(self):
+        import random
+        outer = (GenState.fresh(INT).step(EXTERNAL_BOUNDARY).step(LIT_INT, 4)
+                 .step(EXTERNAL_BOUNDARY))
+        self.assertTrue(outer.stack[-1].enclosed)
+        for seed in range(20):
+            self.assertIn(outer.literal_for(random.Random(seed)), (0, 4))
+        with self.assertRaises(ValueError):
+            outer.step(LIT_INT, 1)
+        self.assertFalse(validates(encode(parse('(boundary "clock" (boundary "fs-read" 1))'))))
+        self.assertTrue(validates(encode(parse('(boundary "clock" (boundary "clock" 1))'))))
 
     def test_the_caps_literal_is_a_small_mask(self):
         import random

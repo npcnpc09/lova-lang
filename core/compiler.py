@@ -815,7 +815,8 @@ def _count_nodes(node: Node) -> int:
 # it then.
 
 
-def _capability_check(node: Node, caps: int, path: Tuple[int, ...]) -> None:
+def _capability_check(node: Node, caps: int, path: Tuple[int, ...],
+                      enclosed: bool = False) -> None:
     if node.op == LIT_INT or node.op == QUOTE:
         return
     if node.op in CAPABILITY_OF:
@@ -837,11 +838,31 @@ def _capability_check(node: Node, caps: int, path: Tuple[int, ...]) -> None:
     if (node.op == EXTERNAL_BOUNDARY and len(node.args) == 2
             and isinstance(node.args[0], Node) and node.args[0].op == LIT_INT):
         inner = int(node.args[0].args[0])
-        _capability_check(node.args[1], inner, path + (node.op, 1))
+        excess = inner & ~caps
+        if enclosed and excess:
+            # A nested boundary narrows (Q70).  What a body may do is
+            # decided by the boundary around it, not by a declaration
+            # inside it; the outermost boundary is the one that asks
+            # the host.
+            raise CompileError(
+                kind="capability-denied",
+                detail={"at_operator": "external-boundary",
+                        "declared": capability_names(inner),
+                        "enclosing": capability_names(caps),
+                        "excess": capability_names(excess)},
+                position_path=path + (node.op, 0),
+                offending_op=node.op,
+                repair_hint=(
+                    "a nested boundary may only narrow; declare "
+                    + ", ".join(capability_names(excess))
+                    + " in the enclosing boundary"
+                ),
+            )
+        _capability_check(node.args[1], inner, path + (node.op, 1), True)
         return
     for index, child in enumerate(node.args):
         if isinstance(child, Node):
-            _capability_check(child, caps, path + (node.op, index))
+            _capability_check(child, caps, path + (node.op, index), enclosed)
 
 
 def compile(

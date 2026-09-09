@@ -297,8 +297,11 @@ place it was written, wherever it is applied, and a lambda written
 outside a boundary may not use the world even when applied inside.
 That is the only rule a static pass can enforce, so the runtime keeps
 the same one by capturing the mask in the closure — static and dynamic
-never disagree. An inner boundary replaces the outer rather than
-adding to it (Q70).
+never disagree. An inner boundary may only *narrow* the outer: what a
+body may do is decided by the boundary around it, not by a declaration
+inside it, and the compiler, the runtime and the generator all refuse
+an escalation (Q70, ruled the same day). A function's own top-level
+boundary is its own declaration, gated by the host's grant.
 
 The generator learned the rule too: a slot carries the innermost
 boundary's mask and an effect operator is offered only where its bit
@@ -933,13 +936,12 @@ the corpus grows again.
   the misuse unrepresentable (the M16 move, for arity), at the cost of
   the machine inferring body types as it goes. Is the generator's
   runnable rate (Q65) limited by this?
-- **Q70**: An inner `boundary` *replaces* the outer's mask. That keeps
-  the static rule one line — the innermost declaration is the whole
-  truth — but it means a library function can escalate: a `boundary`
-  inside a lambda declares more than the caller's boundary did, and
-  the host's grant is the only thing stopping it. Intersection (inner
-  ⊆ outer, or it is a compile error) is the capability-safe rule. Is
-  the one-line rule worth the hole?
+- ~~**Q70**~~: *ruled: nested boundaries narrow.* An inner boundary
+  declaring more than the enclosing one is a compile error, a run-time
+  trap for evaluated code, and unrepresentable by generation; a closure
+  carries "enclosed" with its mask. A function written *outside* any
+  boundary still declares for itself — that is a library saying what
+  it needs, and the host's grant is the authority across the call.
 - **Q69**: `net-send` / `net-recv` are the last reserved slots of the
   IO family. A network effect is not a file with a longer name — it
   needs an address, a boundary that names *where*, not only *what* —

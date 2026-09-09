@@ -266,6 +266,7 @@ class Closure:
     # its *definition* declared, wherever it is eventually applied.
     # That is what the compiler checks, so it is what the runtime does.
     caps: int = 0
+    enclosed: bool = False       # written inside some boundary (Q70)
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         tag = f" name={self.name}" if self.name is not None else ""
@@ -636,6 +637,10 @@ class Runtime:
     # operator checks.  ``clock`` may be replaced for a reproducible run.
     granted: int = 0
     caps: int = 0
+    # Inside some boundary, lexically.  A nested boundary may only narrow
+    # (Q70); a closure carries the flag with its mask, so the rule is the
+    # compiler's rule wherever the closure is applied.
+    enclosed: bool = False
     clock: Any = None
 
     def write(self, text: str) -> None:
@@ -981,16 +986,16 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
     scope[fn.param] = argument
     saved_env = rt.env
     saved_chain = rt.let_chain
-    saved_caps = rt.caps
+    saved_caps, saved_enclosed = rt.caps, rt.enclosed
     rt.let_chain = False
     rt.env = scope
-    rt.caps = fn.caps
+    rt.caps, rt.enclosed = fn.caps, fn.enclosed
     try:
         return _eval(fn.body, rt)
     finally:
         rt.env = saved_env
         rt.let_chain = saved_chain
-        rt.caps = saved_caps
+        rt.caps, rt.enclosed = saved_caps, saved_enclosed
         rt.call_depth -= 1
 
 
@@ -1430,6 +1435,21 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
                 "put a literal capability mask in the first slot",
             )
         declared = int(node.args[0].args[0])
+        excess = declared & ~rt.caps
+        if rt.enclosed and excess:
+            # Nested boundaries narrow (Q70).  Reachable only for code
+            # the compiler did not see -- evaluated or read at run time.
+            raise DomainTrap(
+                "capability-denied",
+                f"external-boundary: nested boundary declares "
+                f"{capability_names(excess)} beyond the enclosing "
+                f"{capability_names(rt.caps)}",
+                {"operator": "external-boundary",
+                 "declared": capability_names(declared),
+                 "enclosing": capability_names(rt.caps),
+                 "excess": capability_names(excess)},
+                "a nested boundary may only narrow; declare it in the enclosing one",
+            )
         missing = declared & ~rt.granted
         if missing:
             raise DomainTrap(
@@ -1443,12 +1463,12 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
                 "run with `--allow " + ",".join(capability_names(missing))
                 + "`, or declare less",
             )
-        saved_caps = rt.caps
-        rt.caps = declared
+        saved_caps, saved_enclosed = rt.caps, rt.enclosed
+        rt.caps, rt.enclosed = declared, True
         try:
             return _eval(node.args[1], rt)
         finally:
-            rt.caps = saved_caps
+            rt.caps, rt.enclosed = saved_caps, saved_enclosed
 
     if op == FS_READ:
         _require_capability(rt, FS_READ, "fs-read")
@@ -1677,6 +1697,7 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
             body=node.args[1],
             env=rt.env,
             caps=rt.caps,
+            enclosed=rt.enclosed,
         )
 
     if op == APPLY:

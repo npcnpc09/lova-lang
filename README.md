@@ -142,7 +142,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (567 tests, stdlib unittest only)
+# run the test suite (574 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -273,7 +273,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         567 unit tests, stdlib only
+tests/         574 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
