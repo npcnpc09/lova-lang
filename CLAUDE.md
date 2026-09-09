@@ -490,7 +490,7 @@ count in 73 s. Q73 closed; Q74 (the reserve family), Q75 (speed floor).
 dependency outside the standard library — `lova mcp` starts it,
 `apps/mcp_demo.py` drives it — and `pip install .` builds a wheel that
 ships `core`, `lib/*.lova` and the corpus with a `lova` command
-(version 0.2.0). `lova_valid_next` is Axiom 3 as a service: a host can
+(0.2.0 then; **1.0.0 released 2026-09-10**). `lova_valid_next` is Axiom 3 as a service: a host can
 ask, at every step, which tokens may follow.
 
 **M21** activated the network on the IO family's last two slots:
@@ -703,7 +703,7 @@ now emits lambdas, so their distributions are stale).
    rather than `/` because hosts validate names against
    `[a-zA-Z0-9_-]`.
 2. ✅ `pip install .` builds a wheel with `core`, `lib/*.lova` and the
-   corpus, and a `lova` console script (0.2.0). Publishing to PyPI is
+   corpus, and a `lova` console script (1.0.0 on GitHub Releases). Publishing to PyPI is
    the owner's call.
 3. ✅ `apps/mcp_demo.py` drives the server through its pipes; the
    README carries the host configuration.

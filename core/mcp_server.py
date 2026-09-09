@@ -47,7 +47,7 @@ from core.tokens import END, LIT_INT, SIGNATURES, Node, encode
 from core.types import FN, INT, LIST, POPULATION, PROGRAM, VALUE, Type
 
 PROTOCOL_VERSION = "2024-11-05"
-SERVER_INFO = {"name": "lova", "version": "0.2.0"}
+SERVER_INFO = {"name": "lova", "version": "1.0.0"}
 
 _TOP_TYPES: Dict[str, Type] = {
     "Value": VALUE, "Int": INT, "List": LIST, "Fn": FN,

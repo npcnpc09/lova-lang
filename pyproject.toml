@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lova-lang"
-version = "0.2.0"
+version = "1.0.0"
 description = "LOVA — an AI-native integer-sequence programming language"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 keywords = ["programming-language", "ai-native", "code-generation", "type-directed-generation"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",

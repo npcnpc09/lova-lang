@@ -2,13 +2,19 @@
 
 **An AI-native integer-sequence programming language.**
 
-*Status: early research prototype. 10/10 design axioms have a working
-implementation and an experiment behind them. M9 made the language
-computationally universal — before it, there were no functions,
-recursion or loops. M10 gave it data: one cons cell, so pairs, lists
-and strings. It is still not usable for general-purpose work: no IO,
-no modules, and the Evolution and Meta operator families are entirely
-unimplemented.*
+*Status: **1.0 — the language is complete, and initially usable.**
+All ten design axioms are realised inside the language and measured by
+an experiment. The 64-operator table is spent (63 operators and `END`):
+integers, lists, strings, closures, `letrec`, loops, error handling
+that can catch and raise, programs as values with lineage, populations
+that evolve, file / clock / network IO under declared capability
+boundaries, and a persistent map. There is a compiler with five static
+passes, a type-constrained generator, a standard library written in
+LOVA, modules, a CLI, an MCP server for agents, and 665 tests. It is a
+tree-walking interpreter in Python and it is slow — a 10 000-line word
+count takes 73 s — and it has no floats, no namespaces and no
+concurrency. The "What LOVA still cannot do" section below is kept
+honest.*
 
 ## The one-paragraph pitch
 
