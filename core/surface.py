@@ -368,12 +368,19 @@ def _macro_or(args, syms):
 
 
 def _macro_eq(args, syms):
-    """``(eq a b)`` -- 1 when equal, else 0.  Surprise is the comparator."""
-    return _if(Node(op=SURPRISE, args=[args[0], args[1]]), Lit(0), Lit(1))
+    """``(eq a b)`` -- 1 when equal, else 0.
+
+    `deviation` is the comparator (M22; it was `surprise` from M11):
+    the same test, without recording a surprise event.  A comparison
+    in a loop is not a prediction, and a word count of a thousand lines
+    was recording a hundred thousand events that meant nothing.  Write
+    `surprise` when the observation is the point.
+    """
+    return _if(Node(op=DEVIATION, args=[args[0], args[1]]), Lit(0), Lit(1))
 
 
 def _macro_ne(args, syms):
-    return _if(Node(op=SURPRISE, args=[args[0], args[1]]), Lit(1), Lit(0))
+    return _if(Node(op=DEVIATION, args=[args[0], args[1]]), Lit(1), Lit(0))
 
 
 def _macro_le(args, syms):

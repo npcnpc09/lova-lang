@@ -396,13 +396,13 @@ class TestCLI(unittest.TestCase):
         self.assertIn("empty source", err)
 
     def test_a_trap_reports_its_anomaly_and_exits_non_zero(self):
-        code, _out, err = self._capture(["run", "apps/collatz.lova", "2463"])
+        code, _out, err = self._capture(["run", "apps/collatz.lova", "2463", "--max-depth", "200"])
         self.assertEqual(code, 2)
         self.assertIn("recursion-depth-exceeded", err)
         self.assertIn("repair:", err)
 
     def test_a_long_position_path_is_truncated(self):
-        _code, _out, err = self._capture(["run", "apps/collatz.lova", "2463"])
+        _code, _out, err = self._capture(["run", "apps/collatz.lova", "2463", "--max-depth", "200"])
         self.assertIn("more ...", err)
 
     def test_emit_stage2(self):

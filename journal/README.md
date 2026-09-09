@@ -241,6 +241,71 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 22 (2026-09-10) — A language a real program can stand on
+The gap between "the core is complete" and "usable" was measured
+before it was closed. The probe: a word-frequency program — read a
+file, split it into words, count, sort, print the top n
+(`apps/wordfreq.lova`). Everything it needed was missing or broke.
+
+**Ceilings.** `max_call_depth=200` meant a recursive `len` of a
+300-element list trapped; `max_steps=1_000_000` meant a 200 000-round
+loop trapped after five seconds. The depth default is now 10 000
+(Python's stack was never the limit: the runtime raises its recursion
+limit per run, and 30 000 LOVA frames ran). The CLI and the MCP server
+run real programs and default to 20 000 000 steps; the library default
+stays at 1 000 000, because the generation experiments run thousands
+of random programs and need a tight guard.
+
+**The prelude iterates.** There is no tail-call elimination, so every
+recursive list function cost one frame per element. `iterate` —
+`loop-until` over a `(cons n rest)` or `(cons rest acc)` state, the
+two shapes `cons`'s typed second slot allows — replaces recursion in
+every O(n) function; `(merge 0 (head s))` keeps the result an `Int`
+for the checker, so the M20 shapes survive. New: `take` / `drop` /
+`zip` / `any` / `all` / `sort` / `sort-by` (merge sort, log-depth
+halves, iterative merge) / `split` / `lines` / `words` / `join` /
+`parse-int` / `text-of` / `text-lt` / `inc`, and `lib/assoc.lova`.
+`last` is loud on the empty list now, as `nth` has been since M14.
+
+**`signal` (0x12).** A library that meets bad input had no way to say
+so: LOVA could catch (M13) but not raise. `(signal code)` raises a
+`signalled` anomaly whose handler receives the program's own code;
+codes below 16 are the substrate's kinds and are refused. `parse-int`
+of `"12a"` signals 16. Never returns, so it fits any slot.
+
+**The map, on the last three free slots.** The association list did
+the count in O(keys) per word: **a thousand lines did not finish in
+twenty million steps** (two minutes). A LOVA-side tree would have
+bought ten or twenty times; the interpreter runs ~300 000 steps a
+second, so that is still minutes. `map-put` / `map-get` / `map-pairs`
+(0x13 / 0x14 / 0x16; persistent by dict copy; keys integers or lists;
+`map-get` takes a default, so presence is always testable; the empty
+list is the empty map) do the same thousand lines in **3.4 million
+steps**. That measurement spent the slots, with the owner's yes. The
+table is full: 63 operators and `END`; the reserve position is the
+number-theory family (Q74).
+
+**The interpreter, three times faster.** A profile of the count showed
+the evaluator walking a chain of fifty `if op ==` comparisons to reach
+`ref`, a wrapper call per node, and a call each for the step and
+budget accounting. Table dispatch, one function per node with a
+literal fast path, inlined accounting, direct `Cons` checks in `head`
+/ `tail` / `nil?` / `cons`, slots on `Cons`: **27.7 s → 11.6 s** on a
+thousand lines, step count unchanged. `eq` / `ne` now compare with
+`deviation` rather than `surprise`, which had been recording an event
+per comparison — a hundred thousand for the thousand-line count, all
+meaningless. Where it stands: **10 000 lines, 21.9 million steps, 73
+s** (`--max-steps` raised). The per-node floor is the node stack, the
+accounting and the dispatch, ~3 µs; `_call` copies a ~90-entry
+environment per call (Q75).
+
+Exp 12's ceilings section now pins `max_call_depth=200`, the value it
+was written against; at 10 000 the argument-doubling shape overflows
+the integer-size guard first, which is also a structured stop.
+
+Tests 618 → 665. The README's "initially usable" claim rests on this
+entry and its numbers.
+
 ### Milestone 7 (2026-09-09) — LOVA as a tool for agents
 Named at M6 and delivered after M21, because everything it exposes had
 to exist first. `core/mcp_server.py` speaks the Model Context
@@ -1005,6 +1070,21 @@ the corpus grows again.
   one bit); the host names the places (`--allow net=host:port`,
   `net=:port`). Where is host policy, not program text, so the byte
   sequence stays free of addresses and Stage 3 is untouched.
+- **Q75**: The interpreter runs ~300 000 steps a second after M22's
+  pass; the floor is per-node bookkeeping (~3 µs) and `_call`'s copy of
+  a ~90-entry environment. Frame chains with parent pointers would
+  make a call O(1) and a lookup O(depth); a compile-to-closures or
+  bytecode step would remove the tree walk. Which pays first — and at
+  what point does a *substrate* stop being the reference interpreter?
+- **Q74**: The token table is full — 63 operators and `END` — and
+  every slot was spent on a measurement or an axiom. The reserve
+  position `spec/token-budget.md` has held since Exp 13 is the
+  number-theory family: `p`, `tau`, `sigma`, `mobius` underpin LOVABench
+  and nothing else. When the next operator earns its slot, that is
+  where it comes from; which of them is the first to go?
+- ~~**Q73**~~: *closed by M22, with a measurement.* An association
+  list could not count the words of a thousand lines in twenty million
+  steps; a native map counts them in 3.4 million.
 - **Q72**: The network is datagrams because a datagram is one value
   in, one value out, and a stream needs a handle — a value kind LOVA
   does not have. Neither does a file: `fs-read` reads whole. Is a

@@ -13,7 +13,8 @@ Operators implemented:
 - STDOUT, STDIN                          (the terminal, ambient)
 - EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CLOCK, NET_SEND, NET_RECV
                                          (M19/M21: the world, under a declared boundary)
-- WHEN_ANOMALY                           (in-language error handling)
+- WHEN_ANOMALY, SIGNAL                   (in-language error handling: catch and raise)
+- MAP_PUT, MAP_GET, MAP_PAIRS            (M22: a persistent map, the sixth value kind)
 - QUOTE, EVAL, READ                      (programs as values; text -> program)
 - EXPLAIN, HASH, UID, GENERATION, ANCESTOR_OF, LINEAGE_QUERY, WHY, TRACE
                                          (Axiom 5, in the language)
@@ -87,7 +88,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.conservation import (
     ANOMALY_CODES, Budget, BudgetTrap, DeltaTrap, DepthTrap, DomainTrap,
-    StepTrap, SurpriseTrace, anomaly_code,
+    FIRST_PROGRAM_SIGNAL, StepTrap, SurpriseTrace, anomaly_code,
 )
 from core.tokens import (
     APPLY, BUDGET, CONS, CONSERVE, DEVIATION, DIV, GCD, HEAD, IDENTITY,
@@ -99,7 +100,7 @@ from core.tokens import (
     MUTATE, QUOTE, TRACE, UID, WHY, encode,
     DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
     CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CAPABILITY_OF,
-    capability_names, NET_RECV, NET_SEND,
+    capability_names, NET_RECV, NET_SEND, SIGNAL, MAP_GET, MAP_PAIRS, MAP_PUT,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -125,7 +126,7 @@ MAX_INT_BITS = 4_096
 # termination condition, must produce a structured anomaly rather than
 # a Python traceback or a hang.  Both are overridable per-Runtime so
 # tests (and budget-conscious hosts) can tighten them.
-MAX_CALL_DEPTH = 200
+MAX_CALL_DEPTH = 10_000      # M22: was 200; a 300-element recursive `len` tripped it
 MAX_STEPS = 1_000_000
 
 # Python frames consumed per LOVA call frame — the evaluator nests
@@ -286,7 +287,7 @@ class _Nil:
 NIL_VALUE = _Nil()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Cons:
     """A cons cell -- ``(cons x xs)``.
 
@@ -383,6 +384,13 @@ def _as_text(v: Any, ctx: str) -> str:
             {"operator": ctx, "got": "Program"},
             "write `(explain p)` instead of `p`",
         )
+    if is_map_value(v):
+        raise DomainTrap(
+            "type-violation",
+            f"{ctx}: cannot write a map; write its `map-pairs`",
+            {"operator": ctx, "got": "Map"},
+            "iterate `(map-pairs m)` and write each entry",
+        )
     if is_list_value(v):
         codes = list_to_python(v)
         out = []
@@ -403,6 +411,69 @@ def _as_text(v: Any, ctx: str) -> str:
         "or a list of codepoints",
         {"operator": ctx, "got": "Fn"},
         "write an integer or a list of codepoints",
+    )
+
+
+@dataclass
+class MapValue:
+    """A persistent map (M22): the sixth value kind.
+
+    ``entries`` is keyed by a hashable rendering of the LOVA key and
+    holds the original key with the value, so `map-pairs` gives keys
+    back as they were.  `map-put` copies the dict -- persistence by
+    copying, which is O(n) per put in C and was measured to be fast
+    enough by a factor of a hundred over the alternative.
+    """
+    entries: Dict[Any, Tuple[Any, Any]] = field(default_factory=dict)
+
+
+def is_map_value(v: Any) -> bool:
+    return isinstance(v, MapValue)
+
+
+def _map_key(v: Any, ctx: str) -> Any:
+    """A hashable stand-in for a key: an integer, or a list as a tuple."""
+    if isinstance(v, int) and not isinstance(v, bool):
+        return ("i", v)
+    if is_list_value(v):
+        return ("l", tuple(_map_key(item, ctx) for item in list_to_python(v)))
+    raise DomainTrap(
+        "type-violation",
+        f"{ctx}: a map key is an integer or a list, not {type(v).__name__}",
+        {"operator": ctx, "got": type(v).__name__},
+        "key the map by an integer or by text",
+    )
+
+
+def _as_map(v: Any, ctx: str) -> MapValue:
+    """A Map, or a list of `(list k v)` pairs read as one."""
+    if isinstance(v, MapValue):
+        return v
+    if is_list_value(v):
+        out = MapValue()
+        for entry in list_to_python(v):
+            if not is_list_value(entry):
+                raise DomainTrap(
+                    "type-violation",
+                    f"{ctx}: a map from a list needs `(list key value)` pairs",
+                    {"operator": ctx, "got": type(entry).__name__},
+                    "build the list with `(list (list k v) ...)`",
+                )
+            pair = list_to_python(entry)
+            if len(pair) != 2:
+                raise DomainTrap(
+                    "domain-error",
+                    f"{ctx}: a map entry is a two-element list, got {len(pair)}",
+                    {"operator": ctx, "length": len(pair)},
+                    "give each entry as `(list key value)`",
+                )
+            out.entries[_map_key(pair[0], ctx)] = (pair[0], pair[1])
+        return out
+    raise DomainTrap(
+        "type-violation",
+        f"{ctx}: expected a Map or a list of pairs, got {v!r}",
+        {"operator": ctx, "expected": "Map"},
+        "start from `(nil)` and `map-put` into it",
     )
 
 
@@ -1023,804 +1094,1053 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
 
 
 def _eval(node: Node, rt: Runtime) -> Any:
-    rt.node_stack.append(node)
-    try:
-        try:
-            return _eval_body(node, rt)
-        except (BudgetTrap, DeltaTrap) as trap:
-            # Enrich on first catch (innermost frame), re-raise.  Each
-            # outer frame sees ``_enriched`` sentinel and skips.
-            if not trap.anomaly.get("_enriched"):
-                _enrich_trap(trap, rt)
-                trap.anomaly["_enriched"] = True
-            raise
-    finally:
-        rt.node_stack.pop()
+    """Evaluate one node: the frame, the accounting, the dispatch.
 
-
-def _eval_body(node: Node, rt: Runtime) -> Any:
+    One function rather than a wrapper around a body (M22): it runs
+    once per node, and the extra call was a fifth of the interpreter.
+    A literal cannot trap, so it takes no frame on the node stack --
+    only the accounting every node owes.
+    """
     op = node.op
-    # Consume the "directly inside a LET body" flag: it is true for at
-    # most the one node that follows a LET, and false for everything else.
-    chained = rt.let_chain
-    rt.let_chain = False
-    # Every op costs one unit against the active budget (if any).  This is
-    # the crudest possible cost model; it is enough for Milestone 1.
-    rt.charge(1)
-    # ...and one step against the always-on substrate ceiling (M9).  A
-    # BUDGET scope is what a *program* declares about itself; this is
-    # what the substrate guarantees regardless.
-    rt.tick()
-
     if op == LIT_INT:
+        rt.let_chain = False
+        if rt.budget_stack:
+            rt.budget_stack[-1].charge(1)
+        rt.steps += 1
+        if rt.steps > rt.max_steps:
+            raise StepTrap(steps=rt.steps, limit=rt.max_steps)
         return int(node.args[0])
+    stack = rt.node_stack
+    stack.append(node)
+    try:
+        # Consume the "directly inside a LET body" flag: it is true for
+        # at most the one node that follows a LET.
+        chained = rt.let_chain
+        rt.let_chain = False
+        # Every op costs one unit against the active budget (if any),
+        # and one step against the always-on substrate ceiling (M9).
+        if rt.budget_stack:
+            rt.budget_stack[-1].charge(1)
+        rt.steps += 1
+        if rt.steps > rt.max_steps:
+            raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+        handler = _HANDLERS.get(op)
+        if handler is not None:
+            return handler(node, rt, chained)
+        return _eval_unimplemented(node, rt)
+    except (BudgetTrap, DeltaTrap) as trap:
+        # Enrich on first catch (innermost frame), re-raise.  Each
+        # outer frame sees ``_enriched`` sentinel and skips.
+        if not trap.anomaly.get("_enriched"):
+            _enrich_trap(trap, rt)
+            trap.anomaly["_enriched"] = True
+        raise
+    finally:
+        stack.pop()
 
-    # --- structural -----------------------------------------------------
-    if op == IDENTITY:
-        return _eval(node.args[0], rt)
 
-    if op == MERGE:
-        a = _as_int(_eval(node.args[0], rt), "merge")
-        b = _as_int(_eval(node.args[1], rt), "merge")
-        return a + b
+def _op_LIT_INT(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    return int(node.args[0])
 
-    if op == PARTITION:
-        n = _as_int(_eval(node.args[0], rt), "partition")
-        # Milestone 1: return the first non-trivial 2-split, not a tuple.
-        # Stage 1 uses a convention: partition is represented as the pair
-        # (⌊n/2⌋, n - ⌊n/2⌋); we emit only ⌊n/2⌋ for integer-scalar return.
-        # Subsequent milestones revisit this when we have Pair types.
-        return n // 2
 
-    # --- number theory --------------------------------------------------
-    if op == P:
-        return partition_number(_as_int(_eval(node.args[0], rt), "p"))
-    if op == TAU:
-        return tau(_as_int(_eval(node.args[0], rt), "tau"))
-    if op == SIGMA:
-        return sigma(_as_int(_eval(node.args[0], rt), "sigma"))
-    if op == GCD:
-        a = _as_int(_eval(node.args[0], rt), "gcd")
-        b = _as_int(_eval(node.args[1], rt), "gcd")
-        return _gcd(a, b)
-    if op == MOBIUS:
-        return mobius(_as_int(_eval(node.args[0], rt), "mobius"))
+def _op_IDENTITY(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    return _eval(node.args[0], rt)
 
-    if op == MUL:
-        a = _as_int(_eval(node.args[0], rt), "mul")
-        b = _as_int(_eval(node.args[1], rt), "mul")
-        # Guard the *output*: nested squaring is the cheapest way for a
-        # generated program to ask for an unbounded allocation.
-        if a.bit_length() + b.bit_length() > MAX_INT_BITS:
-            raise DomainTrap(
-                "domain-error",
-                f"mul result would exceed MAX_INT_BITS={MAX_INT_BITS} "
-                f"({a.bit_length()} + {b.bit_length()} bits)",
-                {"operator": "mul", "limit": MAX_INT_BITS},
-                "multiply smaller numbers",
-            )
-        return a * b
 
-    if op == DIV:
-        a = _as_int(_eval(node.args[0], rt), "div")
-        b = _as_int(_eval(node.args[1], rt), "div")
-        if b == 0:
-            # No silent failures (Constraint 5).
-            raise DomainTrap(
-                "domain-error", "div: division by zero",
-                {"operator": "div"},
-                "guard the divisor with `(if d (div a d) fallback)`",
-            )
-        return a // b      # floored, matching `mod`'s sign convention
+def _op_MERGE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    a = _as_int(_eval(node.args[0], rt), "merge")
+    b = _as_int(_eval(node.args[1], rt), "merge")
+    return a + b
 
-    if op == MOD:
-        a = _as_int(_eval(node.args[0], rt), "mod")
-        b = _as_int(_eval(node.args[1], rt), "mod")
-        if b == 0:
-            # No silent failures (Constraint 5): a zero divisor is a
-            # domain error, not a quietly-returned zero.
-            raise DomainTrap(
-                "domain-error", "mod: division by zero",
-                {"operator": "mod"},
-                "guard the divisor with `(if d (mod a d) fallback)`",
-            )
-        return a % b   # floored, sign follows the divisor (Python semantics)
 
-    # --- lists (M10) ----------------------------------------------------
-    if op == NIL:
-        return NIL_VALUE
+def _op_PARTITION(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    n = _as_int(_eval(node.args[0], rt), "partition")
+    # Milestone 1: return the first non-trivial 2-split, not a tuple.
+    # Stage 1 uses a convention: partition is represented as the pair
+    # (⌊n/2⌋, n - ⌊n/2⌋); we emit only ⌊n/2⌋ for integer-scalar return.
+    # Subsequent milestones revisit this when we have Pair types.
+    return n // 2
 
-    if op == CONS:
-        # Any value may be an element (M17): an integer, a list, a
-        # program, a function.  Only the tail has to be a list.
-        element = _eval(node.args[0], rt)
-        rest = _as_list(_eval(node.args[1], rt), "cons")
-        return Cons(head=element, tail=rest)
 
-    if op == HEAD:
-        target = _as_list(_eval(node.args[0], rt), "head")
-        if target is NIL_VALUE:
-            raise DomainTrap(
-                "domain-error",
-                "head: the list is empty; guard with `nil?` before taking a "
-                "head",
-                {"operator": "head"},
-                "guard with `(if (nil? xs) fallback (head xs))`",
-            )
+def _op_P(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    return partition_number(_as_int(_eval(node.args[0], rt), "p"))
+
+
+def _op_TAU(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    return tau(_as_int(_eval(node.args[0], rt), "tau"))
+
+
+def _op_SIGMA(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    return sigma(_as_int(_eval(node.args[0], rt), "sigma"))
+
+
+def _op_GCD(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    a = _as_int(_eval(node.args[0], rt), "gcd")
+    b = _as_int(_eval(node.args[1], rt), "gcd")
+    return _gcd(a, b)
+
+
+def _op_MOBIUS(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    return mobius(_as_int(_eval(node.args[0], rt), "mobius"))
+
+
+def _op_MUL(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    a = _as_int(_eval(node.args[0], rt), "mul")
+    b = _as_int(_eval(node.args[1], rt), "mul")
+    # Guard the *output*: nested squaring is the cheapest way for a
+    # generated program to ask for an unbounded allocation.
+    if a.bit_length() + b.bit_length() > MAX_INT_BITS:
+        raise DomainTrap(
+            "domain-error",
+            f"mul result would exceed MAX_INT_BITS={MAX_INT_BITS} "
+            f"({a.bit_length()} + {b.bit_length()} bits)",
+            {"operator": "mul", "limit": MAX_INT_BITS},
+            "multiply smaller numbers",
+        )
+    return a * b
+
+
+def _op_DIV(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    a = _as_int(_eval(node.args[0], rt), "div")
+    b = _as_int(_eval(node.args[1], rt), "div")
+    if b == 0:
+        # No silent failures (Constraint 5).
+        raise DomainTrap(
+            "domain-error", "div: division by zero",
+            {"operator": "div"},
+            "guard the divisor with `(if d (div a d) fallback)`",
+        )
+    return a // b      # floored, matching `mod`'s sign convention
+
+
+def _op_MOD(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    a = _as_int(_eval(node.args[0], rt), "mod")
+    b = _as_int(_eval(node.args[1], rt), "mod")
+    if b == 0:
+        # No silent failures (Constraint 5): a zero divisor is a
+        # domain error, not a quietly-returned zero.
+        raise DomainTrap(
+            "domain-error", "mod: division by zero",
+            {"operator": "mod"},
+            "guard the divisor with `(if d (mod a d) fallback)`",
+        )
+    return a % b   # floored, sign follows the divisor (Python semantics)
+
+
+def _op_NIL(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    return NIL_VALUE
+
+
+def _op_CONS(node: Node, rt: Runtime, chained: bool) -> Any:
+    # Any value may be an element (M17): an integer, a list, a
+    # program, a function.  Only the tail has to be a list.
+    element = _eval(node.args[0], rt)
+    rest = _eval(node.args[1], rt)
+    if rest is not NIL_VALUE and not isinstance(rest, Cons):
+        rest = _as_list(rest, "cons")          # the structured fault
+    return Cons(element, rest)
+
+
+def _op_HEAD(node: Node, rt: Runtime, chained: bool) -> Any:
+    target = _eval(node.args[0], rt)
+    if isinstance(target, Cons):
         return target.head
+    target = _as_list(target, "head")
+    if target is NIL_VALUE:
+        raise DomainTrap(
+            "domain-error",
+            "head: the list is empty; guard with `nil?` before taking a "
+            "head",
+            {"operator": "head"},
+            "guard with `(if (nil? xs) fallback (head xs))`",
+        )
+    return target.head
 
-    if op == TAIL:
-        target = _as_list(_eval(node.args[0], rt), "tail")
-        if target is NIL_VALUE:
-            raise DomainTrap(
-                "domain-error",
-                "tail: the list is empty; guard with `nil?` before taking a "
-                "tail",
-                {"operator": "tail"},
-                "guard with `(if (nil? xs) fallback (tail xs))`",
-            )
+
+def _op_TAIL(node: Node, rt: Runtime, chained: bool) -> Any:
+    target = _eval(node.args[0], rt)
+    if isinstance(target, Cons):
         return target.tail
-
-    if op == IS_NIL:
-        target = _as_list(_eval(node.args[0], rt), "nil?")
-        return 1 if target is NIL_VALUE else 0
-
-    # --- programs as values (M14) ------------------------------------------
-    if op == QUOTE:
-        # The operand is not evaluated.  It is copied, so that registering
-        # or mutating the value never reaches back into the program that
-        # contains the quote.
-        return _deep_copy_node(node.args[0])
-
-    if op == EVAL:
-        # Run a program value in the current environment.  Its steps and
-        # budget charge to this run like any other node's, because it is
-        # this run.
-        program = _as_program(_eval(node.args[0], rt), "eval")
-        return _eval(program, rt)
-
-    # --- meta / lineage (M14) -- Axiom 5 ------------------------------------
-    if op == EXPLAIN:
-        # Stage 3's human interface: a program, rendered as text -- which
-        # in LOVA is a list of codepoints.  This is the Stage-1 surface
-        # reached from *inside* the language for the first time.
-        from core.surface import pretty
-        program = _as_program(_eval(node.args[0], rt), "explain")
-        return list_from([ord(ch) for ch in pretty(program)])
-
-    if op == READ:
-        # The inverse of `explain`: Stage-1 text, as a codepoint list, to a
-        # program.  The full surface is accepted -- `def`, macros, strings
-        # -- so a program can be authored in the sugar and read back.
-        # A malformed text is a structured fault, not a Python error.
-        from core.surface import parse as parse_text
-        source = _as_text(_eval(node.args[0], rt), "read")
-        try:
-            return parse_text(source)
-        except ValueError as exc:
-            raise DomainTrap(
-                "malformed", f"read: {exc}",
-                {"operator": "read", "source": source[:80]},
-                "give `read` text that `explain` could have produced",
-            ) from None
-
-    if op == HASH:
-        # Axiom 1, taken literally: the program *is* this integer.
-        program = _as_program(_eval(node.args[0], rt), "hash")
-        return int.from_bytes(encode(program), "big")
-
-    if op == UID:
-        program = _as_program(_eval(node.args[0], rt), "uid")
-        return getattr(program, "uid", None) or 0
-
-    if op == GENERATION:
-        program = _as_program(_eval(node.args[0], rt), "generation")
-        uid = getattr(program, "uid", None)
-        return rt.lineage.record(uid).generation if uid else 0
-
-    if op == ANCESTOR_OF:
-        a = _as_program(_eval(node.args[0], rt), "ancestor-of")
-        b = _as_program(_eval(node.args[1], rt), "ancestor-of")
-        ua, ub = getattr(a, "uid", None), getattr(b, "uid", None)
-        if not ua or not ub:
-            return 0
-        return 1 if rt.lineage.is_ancestor_of(ua, ub) else 0
-
-    if op == LINEAGE_QUERY:
-        # self -> parent -> ... -> root, as uids.  Empty for an
-        # unregistered program: it has no history yet.
-        program = _as_program(_eval(node.args[0], rt), "lineage-query")
-        uid = getattr(program, "uid", None)
-        if not uid:
-            return NIL_VALUE
-        return list_from([rec.uid for rec in rt.lineage.ancestors(uid)])
-
-    if op == WHY:
-        # Why does this program exist?  Its mutation kind and notes, as
-        # text.  The question Axiom 5 promised the language could answer.
-        program = _as_program(_eval(node.args[0], rt), "why")
-        uid = getattr(program, "uid", None)
-        if not uid:
-            text = "unregistered"
-        else:
-            rec = rt.lineage.record(uid)
-            text = f"{rec.mutation_kind} {rec.notes}".strip()
-        return list_from([ord(ch) for ch in text])
-
-    if op == TRACE:
-        # Run a program in a sandbox and return its surprise trace -- the
-        # deviations, in order.  Introspection over Axiom 7's signal.
-        # The sandbox inherits what is left of this run's ceilings, so a
-        # loop of traces cannot slip past MAX_STEPS.
-        program = _as_program(_eval(node.args[0], rt), "trace")
-        inner = Runtime(
-            env=dict(rt.env), lineage=rt.lineage,
-            max_steps=max(1, rt.max_steps - rt.steps),
-            max_call_depth=max(1, rt.max_call_depth - rt.call_depth),
+    target = _as_list(target, "tail")
+    if target is NIL_VALUE:
+        raise DomainTrap(
+            "domain-error",
+            "tail: the list is empty; guard with `nil?` before taking a "
+            "tail",
+            {"operator": "tail"},
+            "guard with `(if (nil? xs) fallback (tail xs))`",
         )
-        try:
-            _eval(program, inner)
-        finally:
-            rt.steps += inner.steps
-        return list_from([event["deviation"] for event in inner.surprise.events])
+    return target.tail
 
-    # --- evolution (M14, first two) -- Axiom 6 ----------------------------------
-    if op == CLONE:
-        program = _as_program(_eval(node.args[0], rt), "clone")
-        _ensure_registered(program, rt)
-        return rt.lineage.clone(program)
 
-    if op == MUTATE:
-        # (mutate program percent): strength as a percentage, because the
-        # language has no fractions.  Deterministic for a given store
-        # seed, so a mutation is reproducible from the run that made it.
-        program = _as_program(_eval(node.args[0], rt), "mutate")
-        percent = _as_int(_eval(node.args[1], rt), "mutate")
-        if not 0 <= percent <= 100:
-            raise DomainTrap(
-                "domain-error", f"mutate: strength {percent} is not a percentage",
-                {"operator": "mutate", "strength": percent},
-                "give a strength between 0 and 100",
-            )
-        _ensure_registered(program, rt)
-        return rt.lineage.mutate(program, strength=percent / 100)
+def _op_IS_NIL(node: Node, rt: Runtime, chained: bool) -> Any:
+    target = _eval(node.args[0], rt)
+    if target is NIL_VALUE:
+        return 1
+    if isinstance(target, Cons):
+        return 0
+    _as_list(target, "nil?")                  # raises the structured fault
+    return 0
 
-    # --- evolution, the rest (M15) -- Axiom 6 ------------------------------
-    if op == DEFPOP:
-        if not node.args:
-            raise DomainTrap(
-                "malformed", "defpop: missing scorer", {"operator": "defpop"},
-                "give `defpop` a scorer function and at least one program",
-            )
-        scorer = _eval(node.args[0], rt)
-        if not is_callable_value(scorer):
-            raise DomainTrap(
-                "type-violation",
-                f"defpop: the scorer must be a function, got {scorer!r}",
-                {"operator": "defpop", "expected": "Fn"},
-                "pass a lambda from Program to Int as the first argument",
-            )
-        variants: List[Node] = []
-        for arg in node.args[1:]:
-            value = _eval(arg, rt)
-            if is_list_value(value):
-                # A list of programs is spliced in (M18), so a pool can
-                # be rebuilt from `variants-of` by library code.
-                for item in list_to_python(value):
-                    variants.append(_as_program(item, "defpop"))
-            else:
-                variants.append(_as_program(value, "defpop"))
-        if not variants:
-            raise DomainTrap(
-                "domain-error", "defpop: a population needs at least one variant",
-                {"operator": "defpop"}, "quote at least one program",
-            )
-        for variant in variants:
-            _ensure_registered(variant, rt)
-        return Population(scorer=scorer, variants=variants)
 
-    if op == VARIANT:
-        pop = _as_population(_eval(node.args[0], rt), "variant")
-        k = _as_int(_eval(node.args[1], rt), "variant")
-        if not 0 <= k < len(pop.variants):
-            raise DomainTrap(
-                "domain-error",
-                f"variant: index {k} out of range for a pool of {len(pop.variants)}",
-                {"operator": "variant", "index": k, "size": len(pop.variants)},
-                "index from 0 to one less than the pool size",
-            )
-        return pop.variants[k]
+def _op_QUOTE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # The operand is not evaluated.  It is copied, so that registering
+    # or mutating the value never reaches back into the program that
+    # contains the quote.
+    return _deep_copy_node(node.args[0])
 
-    if op == SELECT:
-        pop = _as_population(_eval(node.args[0], rt), "select")
-        k = _as_int(_eval(node.args[1], rt), "select")
-        _scores, order = _rank_population(pop, rt)
-        if not 0 <= k < len(order):
-            raise DomainTrap(
-                "domain-error",
-                f"select: rank {k} out of range for a pool of {len(order)}",
-                {"operator": "select", "rank": k, "size": len(order)},
-                "rank 0 is the fittest; the last rank is the pool size less one",
-            )
-        return pop.variants[order[k]]
 
-    if op == FITNESS:
-        pop = _as_population(_eval(node.args[0], rt), "fitness")
-        return list_from(_score_population(pop, rt))
+def _op_EVAL(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Run a program value in the current environment.  Its steps and
+    # budget charge to this run like any other node's, because it is
+    # this run.
+    program = _as_program(_eval(node.args[0], rt), "eval")
+    return _eval(program, rt)
 
-    if op == RETIRE:
-        pop = _as_population(_eval(node.args[0], rt), "retire")
-        if len(pop.variants) < 2:
-            raise DomainTrap(
-                "domain-error", "retire: cannot retire the last variant",
-                {"operator": "retire", "size": len(pop.variants)},
-                "a population keeps at least one variant",
-            )
-        _scores, order = _rank_population(pop, rt)
-        worst = order[-1]
-        kept = [v for i, v in enumerate(pop.variants) if i != worst]
-        return Population(scorer=pop.scorer, variants=kept,
-                          generation=pop.generation)
 
-    if op == EVOLVE:
-        # One generation, the same rule core/populations.py applies: the
-        # bottom RETIRE_FRACTION go; each vacated slot is refilled from
-        # the survivors, chosen with sharply fitness-weighted odds, by a
-        # clone or a mutation.  The mutation draws on the lineage
-        # store's seeded generator, so a run is reproducible.
-        pop = _as_population(_eval(node.args[0], rt), "evolve")
-        size = len(pop.variants)
-        if size < 2:
-            raise DomainTrap(
-                "domain-error", "evolve: a population of one cannot evolve",
-                {"operator": "evolve", "size": size},
-                "start with at least two variants",
-            )
-        scores, order = _rank_population(pop, rt)
-        n_retire = max(1, int(size * RETIRE_FRACTION))
-        survivors = order[:size - n_retire]                 # fittest first
-        clamp = [min(scores[i], 10 ** 9) for i in survivors]
-        worst_kept = max(clamp)
-        weights = [(worst_kept - c + 1) ** SELECTION_SHARPNESS for c in clamp]
-        rng = rt.lineage._rng
-        children: List[Node] = []
-        for _ in range(n_retire):
-            pick = rng.random() * sum(weights)
-            acc = 0.0
-            chosen = survivors[-1]
-            for idx, weight in zip(survivors, weights):
-                acc += weight
-                if pick <= acc:
-                    chosen = idx
-                    break
-            parent = pop.variants[chosen]
-            if rng.random() < CLONE_PROBABILITY:
-                children.append(rt.lineage.clone(parent))
-            else:
-                children.append(rt.lineage.mutate(parent, strength=EVOLVE_STRENGTH))
-        kept = [v for i, v in enumerate(pop.variants) if i in set(survivors)]
-        return Population(scorer=pop.scorer, variants=kept + children,
-                          generation=pop.generation + 1)
+def _op_EXPLAIN(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Stage 3's human interface: a program, rendered as text -- which
+    # in LOVA is a list of codepoints.  This is the Stage-1 surface
+    # reached from *inside* the language for the first time.
+    from core.surface import pretty
+    program = _as_program(_eval(node.args[0], rt), "explain")
+    return list_from([ord(ch) for ch in pretty(program)])
 
-    # --- error handling (M13) --------------------------------------------
-    if op == WHEN_ANOMALY:
-        # Evaluate the body; on a trap, hand the handler the anomaly's
-        # code and return what it produces.
-        #
-        # `StepTrap` is deliberately *not* caught.  The step ceiling is
-        # the substrate's guarantee that a program terminates, and a
-        # guarantee a program can mask is not a guarantee.  Every other
-        # fault -- budget, depth, conservation, domain, type, unbound
-        # reference -- is a condition a program may reasonably expect and
-        # recover from.
-        try:
-            return _eval(node.args[0], rt)
-        except StepTrap:
+
+def _op_READ(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # The inverse of `explain`: Stage-1 text, as a codepoint list, to a
+    # program.  The full surface is accepted -- `def`, macros, strings
+    # -- so a program can be authored in the sugar and read back.
+    # A malformed text is a structured fault, not a Python error.
+    from core.surface import parse as parse_text
+    source = _as_text(_eval(node.args[0], rt), "read")
+    try:
+        return parse_text(source)
+    except ValueError as exc:
+        raise DomainTrap(
+            "malformed", f"read: {exc}",
+            {"operator": "read", "source": source[:80]},
+            "give `read` text that `explain` could have produced",
+        ) from None
+
+
+def _op_HASH(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Axiom 1, taken literally: the program *is* this integer.
+    program = _as_program(_eval(node.args[0], rt), "hash")
+    return int.from_bytes(encode(program), "big")
+
+
+def _op_UID(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    program = _as_program(_eval(node.args[0], rt), "uid")
+    return getattr(program, "uid", None) or 0
+
+
+def _op_GENERATION(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    program = _as_program(_eval(node.args[0], rt), "generation")
+    uid = getattr(program, "uid", None)
+    return rt.lineage.record(uid).generation if uid else 0
+
+
+def _op_ANCESTOR_OF(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    a = _as_program(_eval(node.args[0], rt), "ancestor-of")
+    b = _as_program(_eval(node.args[1], rt), "ancestor-of")
+    ua, ub = getattr(a, "uid", None), getattr(b, "uid", None)
+    if not ua or not ub:
+        return 0
+    return 1 if rt.lineage.is_ancestor_of(ua, ub) else 0
+
+
+def _op_LINEAGE_QUERY(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # self -> parent -> ... -> root, as uids.  Empty for an
+    # unregistered program: it has no history yet.
+    program = _as_program(_eval(node.args[0], rt), "lineage-query")
+    uid = getattr(program, "uid", None)
+    if not uid:
+        return NIL_VALUE
+    return list_from([rec.uid for rec in rt.lineage.ancestors(uid)])
+
+
+def _op_WHY(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Why does this program exist?  Its mutation kind and notes, as
+    # text.  The question Axiom 5 promised the language could answer.
+    program = _as_program(_eval(node.args[0], rt), "why")
+    uid = getattr(program, "uid", None)
+    if not uid:
+        text = "unregistered"
+    else:
+        rec = rt.lineage.record(uid)
+        text = f"{rec.mutation_kind} {rec.notes}".strip()
+    return list_from([ord(ch) for ch in text])
+
+
+def _op_TRACE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Run a program in a sandbox and return its surprise trace -- the
+    # deviations, in order.  Introspection over Axiom 7's signal.
+    # The sandbox inherits what is left of this run's ceilings, so a
+    # loop of traces cannot slip past MAX_STEPS.
+    program = _as_program(_eval(node.args[0], rt), "trace")
+    inner = Runtime(
+        env=dict(rt.env), lineage=rt.lineage,
+        max_steps=max(1, rt.max_steps - rt.steps),
+        max_call_depth=max(1, rt.max_call_depth - rt.call_depth),
+    )
+    try:
+        _eval(program, inner)
+    finally:
+        rt.steps += inner.steps
+    return list_from([event["deviation"] for event in inner.surprise.events])
+
+
+def _op_CLONE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    program = _as_program(_eval(node.args[0], rt), "clone")
+    _ensure_registered(program, rt)
+    return rt.lineage.clone(program)
+
+
+def _op_MUTATE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # (mutate program percent): strength as a percentage, because the
+    # language has no fractions.  Deterministic for a given store
+    # seed, so a mutation is reproducible from the run that made it.
+    program = _as_program(_eval(node.args[0], rt), "mutate")
+    percent = _as_int(_eval(node.args[1], rt), "mutate")
+    if not 0 <= percent <= 100:
+        raise DomainTrap(
+            "domain-error", f"mutate: strength {percent} is not a percentage",
+            {"operator": "mutate", "strength": percent},
+            "give a strength between 0 and 100",
+        )
+    _ensure_registered(program, rt)
+    return rt.lineage.mutate(program, strength=percent / 100)
+
+
+def _op_DEFPOP(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    if not node.args:
+        raise DomainTrap(
+            "malformed", "defpop: missing scorer", {"operator": "defpop"},
+            "give `defpop` a scorer function and at least one program",
+        )
+    scorer = _eval(node.args[0], rt)
+    if not is_callable_value(scorer):
+        raise DomainTrap(
+            "type-violation",
+            f"defpop: the scorer must be a function, got {scorer!r}",
+            {"operator": "defpop", "expected": "Fn"},
+            "pass a lambda from Program to Int as the first argument",
+        )
+    variants: List[Node] = []
+    for arg in node.args[1:]:
+        value = _eval(arg, rt)
+        if is_list_value(value):
+            # A list of programs is spliced in (M18), so a pool can
+            # be rebuilt from `variants-of` by library code.
+            for item in list_to_python(value):
+                variants.append(_as_program(item, "defpop"))
+        else:
+            variants.append(_as_program(value, "defpop"))
+    if not variants:
+        raise DomainTrap(
+            "domain-error", "defpop: a population needs at least one variant",
+            {"operator": "defpop"}, "quote at least one program",
+        )
+    for variant in variants:
+        _ensure_registered(variant, rt)
+    return Population(scorer=scorer, variants=variants)
+
+
+def _op_VARIANT(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    pop = _as_population(_eval(node.args[0], rt), "variant")
+    k = _as_int(_eval(node.args[1], rt), "variant")
+    if not 0 <= k < len(pop.variants):
+        raise DomainTrap(
+            "domain-error",
+            f"variant: index {k} out of range for a pool of {len(pop.variants)}",
+            {"operator": "variant", "index": k, "size": len(pop.variants)},
+            "index from 0 to one less than the pool size",
+        )
+    return pop.variants[k]
+
+
+def _op_SELECT(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    pop = _as_population(_eval(node.args[0], rt), "select")
+    k = _as_int(_eval(node.args[1], rt), "select")
+    _scores, order = _rank_population(pop, rt)
+    if not 0 <= k < len(order):
+        raise DomainTrap(
+            "domain-error",
+            f"select: rank {k} out of range for a pool of {len(order)}",
+            {"operator": "select", "rank": k, "size": len(order)},
+            "rank 0 is the fittest; the last rank is the pool size less one",
+        )
+    return pop.variants[order[k]]
+
+
+def _op_FITNESS(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    pop = _as_population(_eval(node.args[0], rt), "fitness")
+    return list_from(_score_population(pop, rt))
+
+
+def _op_RETIRE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    pop = _as_population(_eval(node.args[0], rt), "retire")
+    if len(pop.variants) < 2:
+        raise DomainTrap(
+            "domain-error", "retire: cannot retire the last variant",
+            {"operator": "retire", "size": len(pop.variants)},
+            "a population keeps at least one variant",
+        )
+    _scores, order = _rank_population(pop, rt)
+    worst = order[-1]
+    kept = [v for i, v in enumerate(pop.variants) if i != worst]
+    return Population(scorer=pop.scorer, variants=kept,
+                      generation=pop.generation)
+
+
+def _op_EVOLVE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # One generation, the same rule core/populations.py applies: the
+    # bottom RETIRE_FRACTION go; each vacated slot is refilled from
+    # the survivors, chosen with sharply fitness-weighted odds, by a
+    # clone or a mutation.  The mutation draws on the lineage
+    # store's seeded generator, so a run is reproducible.
+    pop = _as_population(_eval(node.args[0], rt), "evolve")
+    size = len(pop.variants)
+    if size < 2:
+        raise DomainTrap(
+            "domain-error", "evolve: a population of one cannot evolve",
+            {"operator": "evolve", "size": size},
+            "start with at least two variants",
+        )
+    scores, order = _rank_population(pop, rt)
+    n_retire = max(1, int(size * RETIRE_FRACTION))
+    survivors = order[:size - n_retire]                 # fittest first
+    clamp = [min(scores[i], 10 ** 9) for i in survivors]
+    worst_kept = max(clamp)
+    weights = [(worst_kept - c + 1) ** SELECTION_SHARPNESS for c in clamp]
+    rng = rt.lineage._rng
+    children: List[Node] = []
+    for _ in range(n_retire):
+        pick = rng.random() * sum(weights)
+        acc = 0.0
+        chosen = survivors[-1]
+        for idx, weight in zip(survivors, weights):
+            acc += weight
+            if pick <= acc:
+                chosen = idx
+                break
+        parent = pop.variants[chosen]
+        if rng.random() < CLONE_PROBABILITY:
+            children.append(rt.lineage.clone(parent))
+        else:
+            children.append(rt.lineage.mutate(parent, strength=EVOLVE_STRENGTH))
+    kept = [v for i, v in enumerate(pop.variants) if i in set(survivors)]
+    return Population(scorer=pop.scorer, variants=kept + children,
+                      generation=pop.generation + 1)
+
+
+def _op_WHEN_ANOMALY(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Evaluate the body; on a trap, hand the handler the anomaly's
+    # code and return what it produces.
+    #
+    # `StepTrap` is deliberately *not* caught.  The step ceiling is
+    # the substrate's guarantee that a program terminates, and a
+    # guarantee a program can mask is not a guarantee.  Every other
+    # fault -- budget, depth, conservation, domain, type, unbound
+    # reference -- is a condition a program may reasonably expect and
+    # recover from.
+    try:
+        return _eval(node.args[0], rt)
+    except StepTrap:
+        raise
+    except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
+        anomaly = getattr(trap, "anomaly", None)
+        if anomaly is None:                      # not one of ours
             raise
-        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
-            anomaly = getattr(trap, "anomaly", None)
-            if anomaly is None:                      # not one of ours
-                raise
-            code = anomaly_code(anomaly)
-            rt.caught.append(anomaly)
-            # A handled anomaly is still an observation (Axiom 7): the
-            # trace records it, so an AI reading the run afterwards sees
-            # what the program swallowed.
-            rt.surprise.emit(0, code, ctx="when-anomaly")
-            handler = _eval(node.args[1], rt)
-            return _call(handler, code, rt)
+        code = anomaly_code(anomaly)
+        rt.caught.append(anomaly)
+        # A handled anomaly is still an observation (Axiom 7): the
+        # trace records it, so an AI reading the run afterwards sees
+        # what the program swallowed.
+        rt.surprise.emit(0, code, ctx="when-anomaly")
+        handler = _eval(node.args[1], rt)
+        return _call(handler, code, rt)
 
-    # --- effects / IO (M11) ----------------------------------------------
-    if op == STDOUT:
-        value = _eval(node.args[0], rt)
-        text = _as_text(value, "stdout")
-        rt.write(text)
-        return len(text)
 
-    if op == STDIN:
-        line = rt.read_line()
-        if line is None:
-            return NIL_VALUE          # end of input, not an error
-        return list_from([ord(ch) for ch in line])
+def _op_STDOUT(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    value = _eval(node.args[0], rt)
+    text = _as_text(value, "stdout")
+    rt.write(text)
+    return len(text)
 
-    # --- the world, under a boundary (M19) ------------------------------
-    if op == EXTERNAL_BOUNDARY:
-        # Declares what the body may do.  Checked twice: statically,
-        # that every effect inside is declared here (the compiler's
-        # capability pass), and now, that the host granted what is
-        # declared.  A boundary the host refuses traps *before* the body
-        # runs -- the declaration is the contract, and the trap is
-        # where the contract meets the world.
-        if node.args[0].op != LIT_INT:
-            raise DomainTrap(
-                "malformed", "external-boundary: capability slot must be a literal",
-                {"operator": "external-boundary", "slot": 0},
-                "put a literal capability mask in the first slot",
-            )
-        declared = int(node.args[0].args[0])
-        excess = declared & ~rt.caps
-        if rt.enclosed and excess:
-            # Nested boundaries narrow (Q70).  Reachable only for code
-            # the compiler did not see -- evaluated or read at run time.
-            raise DomainTrap(
-                "capability-denied",
-                f"external-boundary: nested boundary declares "
-                f"{capability_names(excess)} beyond the enclosing "
-                f"{capability_names(rt.caps)}",
-                {"operator": "external-boundary",
-                 "declared": capability_names(declared),
-                 "enclosing": capability_names(rt.caps),
-                 "excess": capability_names(excess)},
-                "a nested boundary may only narrow; declare it in the enclosing one",
-            )
-        missing = declared & ~rt.granted
-        if missing:
-            raise DomainTrap(
-                "capability-denied",
-                f"external-boundary: declares {capability_names(declared)} "
-                f"but the host granted {capability_names(rt.granted) or 'nothing'}",
-                {"operator": "external-boundary",
-                 "declared": capability_names(declared),
-                 "granted": capability_names(rt.granted),
-                 "missing": capability_names(missing)},
-                "run with `--allow " + ",".join(capability_names(missing))
-                + "`, or declare less",
-            )
-        saved_caps, saved_enclosed = rt.caps, rt.enclosed
-        rt.caps, rt.enclosed = declared, True
-        try:
-            return _eval(node.args[1], rt)
-        finally:
-            rt.caps, rt.enclosed = saved_caps, saved_enclosed
 
-    if op == FS_READ:
-        _require_capability(rt, FS_READ, "fs-read")
-        path = _as_text(_eval(node.args[0], rt), "fs-read")
-        try:
-            with open(path, encoding="utf-8") as handle:
-                text = handle.read()
-        except (OSError, UnicodeDecodeError) as exc:
-            raise DomainTrap(
-                "domain-error", f"fs-read: {path}: {exc}",
-                {"operator": "fs-read", "path": path,
-                 "reason": type(exc).__name__},
-                "give `fs-read` the path of a readable UTF-8 file",
-            ) from None
-        return list_from([ord(ch) for ch in text])
+def _op_STDIN(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    line = rt.read_line()
+    if line is None:
+        return NIL_VALUE          # end of input, not an error
+    return list_from([ord(ch) for ch in line])
 
-    if op == FS_WRITE:
-        _require_capability(rt, FS_WRITE, "fs-write")
-        path = _as_text(_eval(node.args[0], rt), "fs-write")
-        text = _as_text(_eval(node.args[1], rt), "fs-write")
-        try:
-            with open(path, "w", encoding="utf-8", newline="") as handle:
-                handle.write(text)
-        except OSError as exc:
-            raise DomainTrap(
-                "domain-error", f"fs-write: {path}: {exc}",
-                {"operator": "fs-write", "path": path,
-                 "reason": type(exc).__name__},
-                "give `fs-write` a path in a directory that exists",
-            ) from None
-        return len(text)
 
-    if op == NET_SEND:
-        _require_capability(rt, NET_SEND, "net-send")
-        address = _as_text(_eval(node.args[0], rt), "net-send")
-        payload = _as_text(_eval(node.args[1], rt), "net-send")
-        host, port = _net_address(address, "net-send")
-        allowed = set(rt.net_send_to or ())
-        if "*" not in allowed and f"{host}:{port}" not in allowed:
-            raise DomainTrap(
-                "capability-denied",
-                f"net-send: {host}:{port} is not a granted address",
-                {"operator": "net-send", "address": f"{host}:{port}",
-                 "granted": sorted(allowed)},
-                f"run with `--allow net={host}:{port}`",
-            )
-        data = payload.encode("utf-8")
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                sock.sendto(data, (host, port))
-        except OSError as exc:
-            raise DomainTrap(
-                "domain-error", f"net-send: {host}:{port}: {exc}",
-                {"operator": "net-send", "address": f"{host}:{port}",
-                 "reason": type(exc).__name__},
-                "give `net-send` a reachable host:port",
-            ) from None
-        return len(data)
+def _op_MAP_PUT(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    base = _as_map(_eval(node.args[0], rt), "map-put")
+    key = _eval(node.args[1], rt)
+    value = _eval(node.args[2], rt)
+    out = MapValue(dict(base.entries))          # persistence by copying
+    out.entries[_map_key(key, "map-put")] = (key, value)
+    return out
 
-    if op == NET_RECV:
-        _require_capability(rt, NET_RECV, "net-recv")
-        ports = sorted(rt.net_listen_on or ())
-        if not ports:
-            raise DomainTrap(
-                "capability-denied",
-                "net-recv: no listening port was granted",
-                {"operator": "net-recv", "granted": []},
-                "run with `--allow net=:PORT`",
-            )
-        port = ports[0]                 # the lowest granted port listens
-        sock = rt.net_sockets.get(port)
-        try:
-            if sock is None:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.bind(("", port))
-                rt.net_sockets[port] = sock
-            sock.settimeout(rt.net_timeout)
-            data, _peer = sock.recvfrom(65535)
-        except socket.timeout:
-            return NIL_VALUE            # nothing arrived; not an error
-        except OSError as exc:
-            raise DomainTrap(
-                "domain-error", f"net-recv: port {port}: {exc}",
-                {"operator": "net-recv", "port": port,
-                 "reason": type(exc).__name__},
-                "grant a port that is free to bind",
-            ) from None
-        text = data.decode("utf-8", errors="replace")
-        return list_from([ord(ch) for ch in text])
 
-    if op == CLOCK:
-        _require_capability(rt, CLOCK, "clock")
-        if rt.clock is not None:
-            return _as_int(rt.clock(), "clock")
-        return time.time_ns() // 1_000_000
+def _op_MAP_GET(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    m = _as_map(_eval(node.args[0], rt), "map-get")
+    key = _eval(node.args[1], rt)
+    hit = m.entries.get(_map_key(key, "map-get"))
+    if hit is None:
+        return _eval(node.args[2], rt)          # the default, only when needed
+    return hit[1]
 
-    # --- conservation ---------------------------------------------------
-    if op == BUDGET:
-        limit = _as_int(_eval(node.args[0], rt), "budget")
-        b = Budget(limit=limit)
-        rt.budget_stack.append(b)
-        try:
-            return _eval(node.args[1], rt)
-        finally:
-            rt.budget_stack.pop()
 
-    if op == CONSERVE:
-        # In Milestone 1 the invariant argument is a literal int flag:
-        #   0 = SUM_INVARIANT — expect body to preserve its own input sum.
-        # The body is expected to compute something whose result equals
-        # the first argument's value; otherwise Δ-trap.  This is a toy
-        # semantic to show the *mechanism* — proper invariants in M2+.
-        # Both slots are typed Int, but a partially-applied function
-        # evaluates to a callable while still declaring Int (the `Fn` type
-        # does not track curried arity -- journal Q35).  Coerce here so a
-        # generated `(conserve k (apply (loop-until ...)))` reports the
-        # type violation instead of failing inside the body scanner.
-        expected = _as_int(_eval(node.args[0], rt), "conserve")
-        actual = _as_int(_eval(node.args[1], rt), "conserve")
-        if expected != actual:
-            body_offender = _scan_body_offender(
-                node.args[1], expected, actual, dict(rt.env)
-            )
-            repair_hint = (
-                "body produced a value different from the expected "
-                "conserve target; replace the divergent op with "
-                "one that preserves the value"
-            )
-            if body_offender is not None:
-                repair_hint = (
-                    f"body-offender `{body_offender['op_name']}` at "
-                    f"path {body_offender['path']} returns "
-                    f"{body_offender['observed']}; needs {body_offender['needed']} "
-                    f"(correction {body_offender['correction']:+d}) to restore "
-                    "the conserve invariant"
-                )
-            raise DeltaTrap(
-                anomaly={
-                    "kind": "conservation-violated",
-                    "detail": {
-                        "invariant": "conserve/equality",
-                        "entry": expected,
-                        "exit": actual,
-                        "deviation": actual - expected,
-                    },
-                    "position_path": (),
-                    "offending_op": None,
-                    "offending_op_name": "",
-                    "valid_alternatives": (),
-                    "body_offender": body_offender,
-                    "repair_hint": repair_hint,
-                }
-            )
-        return actual
+def _op_MAP_PAIRS(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    m = _as_map(_eval(node.args[0], rt), "map-pairs")
+    return list_from([list_from([k, v]) for k, v in m.entries.values()])
 
-    if op == VIOLATE:
-        # Synthetic "break conservation" — returns first arg's value
-        # plus one, so wrapping with CONSERVE always triggers Δ-trap.
-        # For testing only.
-        return _as_int(_eval(node.args[0], rt), "violate") + 1
 
-    # --- surprise -------------------------------------------------------
-    if op == SURPRISE:
-        predicted = _as_int(_eval(node.args[0], rt), "surprise")
-        actual = _as_int(_eval(node.args[1], rt), "surprise")
-        return rt.surprise.emit(predicted, actual, ctx="surprise")
-
-    if op == TRACE_SURPRISE:
-        val = _as_int(_eval(node.args[0], rt), "trace-surprise")
-        rt.surprise.emit(0, val, ctx="trace-surprise")
-        return val
-
-    if op == DEVIATION:
-        # The signed sibling of SURPRISE (which returns |a - b|).  Sign
-        # is the whole point: it is what makes ordering expressible.
-        # Emits no surprise event — this is a pure comparison, not an
-        # observation about a prediction.
-        a = _as_int(_eval(node.args[0], rt), "deviation")
-        b = _as_int(_eval(node.args[1], rt), "deviation")
-        return a - b
-
-    if op == THRESHOLD:
-        # Sign test: did the value cross zero from below?
-        #   (a < b)  ==  (threshold (deviation b a))
-        #   (a > b)  ==  (threshold (deviation a b))
-        x = _as_int(_eval(node.args[0], rt), "threshold")
-        return 1 if x > 0 else 0
-
-    # --- composition ----------------------------------------------------
-    if op == SEQ:
-        last = 0
-        for child in node.args:
-            last = _eval(child, rt)
-        return last
-
-    if op == LET:
-        # (let name value body) — ``name`` must be a LIT_INT symbol id.
-        #
-        # M9: this is a **letrec**.  A fresh scope dict is created for
-        # the binding and installed *before* the value is evaluated, so
-        # any closure built while evaluating the value captures that
-        # same dict by reference.  The binding is written into it after
-        # the value exists, which is precisely late enough for a lambda
-        # (whose body runs only at apply time) and precisely early
-        # enough for the self-reference to resolve.
-        #
-        # Backward-compatible: before M9 a self-reference in the value
-        # slot was an `unbound-ref` compile error, so no program that
-        # used to be valid changes meaning.
-        if node.args[0].op != LIT_INT:
-            raise DomainTrap(
-                "malformed", "LET: name slot must be a literal integer id",
-                {"operator": "let", "slot": 0},
-                "put a literal integer in LET's first slot",
-            )
-        name_id = int(node.args[0].args[0])
-
-        # A LET directly in another LET's body joins that binding group
-        # and writes into the same frame.  Since a closure captures the
-        # frame by reference, the first function in a group of `def`s
-        # sees the last one -- which is mutual recursion, at the cost of
-        # no new token and no change to any program that already worked.
-        #
-        # Shadowing keeps its own frame: re-binding a name that the group
-        # already holds would otherwise reach back and change what an
-        # earlier closure sees.
-        extend = (chained and isinstance(rt.env, Scope)
-                  and name_id not in rt.env)
-        saved_env = rt.env
-        if extend:
-            scope = rt.env
-        else:
-            scope = Scope(rt.env)
-            rt.env = scope
-        try:
-            value = _eval(node.args[1], rt)
-            if isinstance(value, Closure) and value.name is None:
-                value.name = name_id
-            scope[name_id] = value
-            rt.let_chain = True          # the body may continue the group
-            return _eval(node.args[2], rt)
-        finally:
-            rt.let_chain = False
-            if not extend:
-                rt.env = saved_env
-
-    if op == REF:
-        if node.args[0].op != LIT_INT:
-            raise DomainTrap(
-                "malformed", "REF: name slot must be a literal integer id",
-                {"operator": "ref", "slot": 0},
-                "put a literal integer in REF's slot",
-            )
-        name_id = int(node.args[0].args[0])
-        if name_id not in rt.env:
-            raise DomainTrap(
-                "unbound-ref", f"unbound ref: {name_id}",
-                {"name_id": name_id, "bound_names": sorted(rt.env)},
-                "bind the name with a `let`, or reference one that is bound",
-            )
-        return rt.env[name_id]
-
-    if op == IF_SURPRISE:
-        # (if-surprise surprise-expr then else)
-        # Milestone 1 predicate: non-zero surprise triggers the ``then`` branch.
-        s = _as_int(_eval(node.args[0], rt), "if-surprise")
-        branch = node.args[1] if s != 0 else node.args[2]
-        return _eval(branch, rt)
-
-    # --- abstraction (M9) ------------------------------------------------
-    if op == LAMBDA:
-        # (lambda param body) — unary.  Multi-argument functions are
-        # curried: (lambda a (lambda b body)).  The environment is
-        # captured by reference so an enclosing LET can complete a
-        # recursive binding after the closure is built.
-        if node.args[0].op != LIT_INT:
-            raise DomainTrap(
-                "malformed", "LAMBDA: param slot must be a literal integer id",
-                {"operator": "lambda", "slot": 0},
-                "put a literal integer in LAMBDA's first slot",
-            )
-        return Closure(
-            param=int(node.args[0].args[0]),
-            body=node.args[1],
-            env=rt.env,
-            caps=rt.caps,
-            enclosed=rt.enclosed,
+def _op_SIGNAL(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    code = _as_int(_eval(node.args[0], rt), "signal")
+    if code < FIRST_PROGRAM_SIGNAL:
+        raise DomainTrap(
+            "domain-error",
+            f"signal: codes below {FIRST_PROGRAM_SIGNAL} are the substrate's own kinds",
+            {"operator": "signal", "code": code, "first_allowed": FIRST_PROGRAM_SIGNAL},
+            f"signal with a code of {FIRST_PROGRAM_SIGNAL} or more",
         )
+    raise DomainTrap(
+        "signalled", f"signal {code}", {"operator": "signal", "code": code},
+        "catch it with `when-anomaly` and branch on the code",
+    )
 
-    if op == APPLY:
-        # (apply f a b ...) — left-associative currying.  Zero
-        # arguments is legal and simply yields the function itself,
-        # which keeps `(apply f)` from being a special case in the
-        # generator.
-        if not node.args:
-            raise DomainTrap(
-                "malformed", "APPLY: missing function in head slot",
-                {"operator": "apply"},
-                "give `apply` a function to call",
+
+def _op_EXTERNAL_BOUNDARY(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Declares what the body may do.  Checked twice: statically,
+    # that every effect inside is declared here (the compiler's
+    # capability pass), and now, that the host granted what is
+    # declared.  A boundary the host refuses traps *before* the body
+    # runs -- the declaration is the contract, and the trap is
+    # where the contract meets the world.
+    if node.args[0].op != LIT_INT:
+        raise DomainTrap(
+            "malformed", "external-boundary: capability slot must be a literal",
+            {"operator": "external-boundary", "slot": 0},
+            "put a literal capability mask in the first slot",
+        )
+    declared = int(node.args[0].args[0])
+    excess = declared & ~rt.caps
+    if rt.enclosed and excess:
+        # Nested boundaries narrow (Q70).  Reachable only for code
+        # the compiler did not see -- evaluated or read at run time.
+        raise DomainTrap(
+            "capability-denied",
+            f"external-boundary: nested boundary declares "
+            f"{capability_names(excess)} beyond the enclosing "
+            f"{capability_names(rt.caps)}",
+            {"operator": "external-boundary",
+             "declared": capability_names(declared),
+             "enclosing": capability_names(rt.caps),
+             "excess": capability_names(excess)},
+            "a nested boundary may only narrow; declare it in the enclosing one",
+        )
+    missing = declared & ~rt.granted
+    if missing:
+        raise DomainTrap(
+            "capability-denied",
+            f"external-boundary: declares {capability_names(declared)} "
+            f"but the host granted {capability_names(rt.granted) or 'nothing'}",
+            {"operator": "external-boundary",
+             "declared": capability_names(declared),
+             "granted": capability_names(rt.granted),
+             "missing": capability_names(missing)},
+            "run with `--allow " + ",".join(capability_names(missing))
+            + "`, or declare less",
+        )
+    saved_caps, saved_enclosed = rt.caps, rt.enclosed
+    rt.caps, rt.enclosed = declared, True
+    try:
+        return _eval(node.args[1], rt)
+    finally:
+        rt.caps, rt.enclosed = saved_caps, saved_enclosed
+
+
+def _op_FS_READ(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    _require_capability(rt, FS_READ, "fs-read")
+    path = _as_text(_eval(node.args[0], rt), "fs-read")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise DomainTrap(
+            "domain-error", f"fs-read: {path}: {exc}",
+            {"operator": "fs-read", "path": path,
+             "reason": type(exc).__name__},
+            "give `fs-read` the path of a readable UTF-8 file",
+        ) from None
+    return list_from([ord(ch) for ch in text])
+
+
+def _op_FS_WRITE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    _require_capability(rt, FS_WRITE, "fs-write")
+    path = _as_text(_eval(node.args[0], rt), "fs-write")
+    text = _as_text(_eval(node.args[1], rt), "fs-write")
+    try:
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+    except OSError as exc:
+        raise DomainTrap(
+            "domain-error", f"fs-write: {path}: {exc}",
+            {"operator": "fs-write", "path": path,
+             "reason": type(exc).__name__},
+            "give `fs-write` a path in a directory that exists",
+        ) from None
+    return len(text)
+
+
+def _op_NET_SEND(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    _require_capability(rt, NET_SEND, "net-send")
+    address = _as_text(_eval(node.args[0], rt), "net-send")
+    payload = _as_text(_eval(node.args[1], rt), "net-send")
+    host, port = _net_address(address, "net-send")
+    allowed = set(rt.net_send_to or ())
+    if "*" not in allowed and f"{host}:{port}" not in allowed:
+        raise DomainTrap(
+            "capability-denied",
+            f"net-send: {host}:{port} is not a granted address",
+            {"operator": "net-send", "address": f"{host}:{port}",
+             "granted": sorted(allowed)},
+            f"run with `--allow net={host}:{port}`",
+        )
+    data = payload.encode("utf-8")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.sendto(data, (host, port))
+    except OSError as exc:
+        raise DomainTrap(
+            "domain-error", f"net-send: {host}:{port}: {exc}",
+            {"operator": "net-send", "address": f"{host}:{port}",
+             "reason": type(exc).__name__},
+            "give `net-send` a reachable host:port",
+        ) from None
+    return len(data)
+
+
+def _op_NET_RECV(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    _require_capability(rt, NET_RECV, "net-recv")
+    ports = sorted(rt.net_listen_on or ())
+    if not ports:
+        raise DomainTrap(
+            "capability-denied",
+            "net-recv: no listening port was granted",
+            {"operator": "net-recv", "granted": []},
+            "run with `--allow net=:PORT`",
+        )
+    port = ports[0]                 # the lowest granted port listens
+    sock = rt.net_sockets.get(port)
+    try:
+        if sock is None:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.bind(("", port))
+            rt.net_sockets[port] = sock
+        sock.settimeout(rt.net_timeout)
+        data, _peer = sock.recvfrom(65535)
+    except socket.timeout:
+        return NIL_VALUE            # nothing arrived; not an error
+    except OSError as exc:
+        raise DomainTrap(
+            "domain-error", f"net-recv: port {port}: {exc}",
+            {"operator": "net-recv", "port": port,
+             "reason": type(exc).__name__},
+            "grant a port that is free to bind",
+        ) from None
+    text = data.decode("utf-8", errors="replace")
+    return list_from([ord(ch) for ch in text])
+
+
+def _op_CLOCK(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    _require_capability(rt, CLOCK, "clock")
+    if rt.clock is not None:
+        return _as_int(rt.clock(), "clock")
+    return time.time_ns() // 1_000_000
+
+
+def _op_BUDGET(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    limit = _as_int(_eval(node.args[0], rt), "budget")
+    b = Budget(limit=limit)
+    rt.budget_stack.append(b)
+    try:
+        return _eval(node.args[1], rt)
+    finally:
+        rt.budget_stack.pop()
+
+
+def _op_CONSERVE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # In Milestone 1 the invariant argument is a literal int flag:
+    #   0 = SUM_INVARIANT — expect body to preserve its own input sum.
+    # The body is expected to compute something whose result equals
+    # the first argument's value; otherwise Δ-trap.  This is a toy
+    # semantic to show the *mechanism* — proper invariants in M2+.
+    # Both slots are typed Int, but a partially-applied function
+    # evaluates to a callable while still declaring Int (the `Fn` type
+    # does not track curried arity -- journal Q35).  Coerce here so a
+    # generated `(conserve k (apply (loop-until ...)))` reports the
+    # type violation instead of failing inside the body scanner.
+    expected = _as_int(_eval(node.args[0], rt), "conserve")
+    actual = _as_int(_eval(node.args[1], rt), "conserve")
+    if expected != actual:
+        body_offender = _scan_body_offender(
+            node.args[1], expected, actual, dict(rt.env)
+        )
+        repair_hint = (
+            "body produced a value different from the expected "
+            "conserve target; replace the divergent op with "
+            "one that preserves the value"
+        )
+        if body_offender is not None:
+            repair_hint = (
+                f"body-offender `{body_offender['op_name']}` at "
+                f"path {body_offender['path']} returns "
+                f"{body_offender['observed']}; needs {body_offender['needed']} "
+                f"(correction {body_offender['correction']:+d}) to restore "
+                "the conserve invariant"
             )
-        fn = _eval(node.args[0], rt)
-        for arg_node in node.args[1:]:
-            argument = _eval(arg_node, rt)
-            fn = _call(fn, argument, rt)
-        return fn
+        raise DeltaTrap(
+            anomaly={
+                "kind": "conservation-violated",
+                "detail": {
+                    "invariant": "conserve/equality",
+                    "entry": expected,
+                    "exit": actual,
+                    "deviation": actual - expected,
+                },
+                "position_path": (),
+                "offending_op": None,
+                "offending_op_name": "",
+                "valid_alternatives": (),
+                "body_offender": body_offender,
+                "repair_hint": repair_hint,
+            }
+        )
+    return actual
 
-    if op == LOOP_UNTIL:
-        # (loop-until pred step) — a combinator.  Returns the function
-        # that, applied to a seed, iterates `step` until `pred` is
-        # non-zero.  The seed arrives through APPLY, which is why this
-        # fits the declared arity of 2.
-        pred = _eval(node.args[0], rt)
-        step = _eval(node.args[1], rt)
-        if not is_callable_value(pred) or not is_callable_value(step):
-            raise DomainTrap(
-                "type-violation",
-                "LOOP_UNTIL: both slots must be functions (type Fn); got "
-                f"pred={pred!r}, step={step!r}",
-                {"operator": "loop-until", "expected": "Fn"},
-                "pass two lambdas: a predicate and a step",
-            )
-        return LoopFn(pred=pred, step=step)
 
-    # --- everything else ------------------------------------------------
+def _op_VIOLATE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Synthetic "break conservation" — returns first arg's value
+    # plus one, so wrapping with CONSERVE always triggers Δ-trap.
+    # For testing only.
+    return _as_int(_eval(node.args[0], rt), "violate") + 1
+
+
+def _op_SURPRISE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    predicted = _as_int(_eval(node.args[0], rt), "surprise")
+    actual = _as_int(_eval(node.args[1], rt), "surprise")
+    return rt.surprise.emit(predicted, actual, ctx="surprise")
+
+
+def _op_TRACE_SURPRISE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    val = _as_int(_eval(node.args[0], rt), "trace-surprise")
+    rt.surprise.emit(0, val, ctx="trace-surprise")
+    return val
+
+
+def _op_DEVIATION(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # The signed sibling of SURPRISE (which returns |a - b|).  Sign
+    # is the whole point: it is what makes ordering expressible.
+    # Emits no surprise event — this is a pure comparison, not an
+    # observation about a prediction.
+    a = _as_int(_eval(node.args[0], rt), "deviation")
+    b = _as_int(_eval(node.args[1], rt), "deviation")
+    return a - b
+
+
+def _op_THRESHOLD(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # Sign test: did the value cross zero from below?
+    #   (a < b)  ==  (threshold (deviation b a))
+    #   (a > b)  ==  (threshold (deviation a b))
+    x = _as_int(_eval(node.args[0], rt), "threshold")
+    return 1 if x > 0 else 0
+
+
+def _op_SEQ(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    last = 0
+    for child in node.args:
+        last = _eval(child, rt)
+    return last
+
+
+def _op_LET(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # (let name value body) — ``name`` must be a LIT_INT symbol id.
+    #
+    # M9: this is a **letrec**.  A fresh scope dict is created for
+    # the binding and installed *before* the value is evaluated, so
+    # any closure built while evaluating the value captures that
+    # same dict by reference.  The binding is written into it after
+    # the value exists, which is precisely late enough for a lambda
+    # (whose body runs only at apply time) and precisely early
+    # enough for the self-reference to resolve.
+    #
+    # Backward-compatible: before M9 a self-reference in the value
+    # slot was an `unbound-ref` compile error, so no program that
+    # used to be valid changes meaning.
+    if node.args[0].op != LIT_INT:
+        raise DomainTrap(
+            "malformed", "LET: name slot must be a literal integer id",
+            {"operator": "let", "slot": 0},
+            "put a literal integer in LET's first slot",
+        )
+    name_id = int(node.args[0].args[0])
+
+    # A LET directly in another LET's body joins that binding group
+    # and writes into the same frame.  Since a closure captures the
+    # frame by reference, the first function in a group of `def`s
+    # sees the last one -- which is mutual recursion, at the cost of
+    # no new token and no change to any program that already worked.
+    #
+    # Shadowing keeps its own frame: re-binding a name that the group
+    # already holds would otherwise reach back and change what an
+    # earlier closure sees.
+    extend = (chained and isinstance(rt.env, Scope)
+              and name_id not in rt.env)
+    saved_env = rt.env
+    if extend:
+        scope = rt.env
+    else:
+        scope = Scope(rt.env)
+        rt.env = scope
+    try:
+        value = _eval(node.args[1], rt)
+        if isinstance(value, Closure) and value.name is None:
+            value.name = name_id
+        scope[name_id] = value
+        rt.let_chain = True          # the body may continue the group
+        return _eval(node.args[2], rt)
+    finally:
+        rt.let_chain = False
+        if not extend:
+            rt.env = saved_env
+
+
+def _op_REF(node: Node, rt: Runtime, chained: bool) -> Any:
+    slot = node.args[0]
+    if slot.op != LIT_INT:
+        raise DomainTrap(
+            "malformed", "REF: name slot must be a literal integer id",
+            {"operator": "ref", "slot": 0},
+            "put a literal integer in REF's slot",
+        )
+    name_id = slot.args[0]
+    try:
+        return rt.env[name_id]
+    except KeyError:
+        pass
+    if name_id not in rt.env:
+        raise DomainTrap(
+            "unbound-ref", f"unbound ref: {name_id}",
+            {"name_id": name_id, "bound_names": sorted(rt.env)},
+            "bind the name with a `let`, or reference one that is bound",
+        )
+    return rt.env[name_id]
+
+
+def _op_IF_SURPRISE(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # (if-surprise surprise-expr then else)
+    # Milestone 1 predicate: non-zero surprise triggers the ``then`` branch.
+    s = _as_int(_eval(node.args[0], rt), "if-surprise")
+    branch = node.args[1] if s != 0 else node.args[2]
+    return _eval(branch, rt)
+
+
+def _op_LAMBDA(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # (lambda param body) — unary.  Multi-argument functions are
+    # curried: (lambda a (lambda b body)).  The environment is
+    # captured by reference so an enclosing LET can complete a
+    # recursive binding after the closure is built.
+    if node.args[0].op != LIT_INT:
+        raise DomainTrap(
+            "malformed", "LAMBDA: param slot must be a literal integer id",
+            {"operator": "lambda", "slot": 0},
+            "put a literal integer in LAMBDA's first slot",
+        )
+    return Closure(
+        param=int(node.args[0].args[0]),
+        body=node.args[1],
+        env=rt.env,
+        caps=rt.caps,
+        enclosed=rt.enclosed,
+    )
+
+
+def _op_APPLY(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # (apply f a b ...) — left-associative currying.  Zero
+    # arguments is legal and simply yields the function itself,
+    # which keeps `(apply f)` from being a special case in the
+    # generator.
+    if not node.args:
+        raise DomainTrap(
+            "malformed", "APPLY: missing function in head slot",
+            {"operator": "apply"},
+            "give `apply` a function to call",
+        )
+    fn = _eval(node.args[0], rt)
+    for arg_node in node.args[1:]:
+        argument = _eval(arg_node, rt)
+        fn = _call(fn, argument, rt)
+    return fn
+
+
+def _op_LOOP_UNTIL(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    # (loop-until pred step) — a combinator.  Returns the function
+    # that, applied to a seed, iterates `step` until `pred` is
+    # non-zero.  The seed arrives through APPLY, which is why this
+    # fits the declared arity of 2.
+    pred = _eval(node.args[0], rt)
+    step = _eval(node.args[1], rt)
+    if not is_callable_value(pred) or not is_callable_value(step):
+        raise DomainTrap(
+            "type-violation",
+            "LOOP_UNTIL: both slots must be functions (type Fn); got "
+            f"pred={pred!r}, step={step!r}",
+            {"operator": "loop-until", "expected": "Fn"},
+            "pass two lambdas: a predicate and a step",
+        )
+    return LoopFn(pred=pred, step=step)
+
+
+def _eval_unimplemented(node: Node, rt: Runtime) -> Any:
+    op = node.op
     sig = SIGNATURES.get(op, {"name": "unknown", "family": "?"})
     raise NotImplementedError(
         f"operator {sig['name']} (family {sig['family']}) not implemented "
         f"in Milestone 1 runtime"
     )
+
+# Operator dispatch (M22).  One hash per node where a chain of
+# comparisons used to walk past fifty operators to reach `ref`.
+_HANDLERS = {
+    LIT_INT: _op_LIT_INT,
+    IDENTITY: _op_IDENTITY,
+    MERGE: _op_MERGE,
+    PARTITION: _op_PARTITION,
+    P: _op_P,
+    TAU: _op_TAU,
+    SIGMA: _op_SIGMA,
+    GCD: _op_GCD,
+    MOBIUS: _op_MOBIUS,
+    MUL: _op_MUL,
+    DIV: _op_DIV,
+    MOD: _op_MOD,
+    NIL: _op_NIL,
+    CONS: _op_CONS,
+    HEAD: _op_HEAD,
+    TAIL: _op_TAIL,
+    IS_NIL: _op_IS_NIL,
+    QUOTE: _op_QUOTE,
+    EVAL: _op_EVAL,
+    EXPLAIN: _op_EXPLAIN,
+    READ: _op_READ,
+    HASH: _op_HASH,
+    UID: _op_UID,
+    GENERATION: _op_GENERATION,
+    ANCESTOR_OF: _op_ANCESTOR_OF,
+    LINEAGE_QUERY: _op_LINEAGE_QUERY,
+    WHY: _op_WHY,
+    TRACE: _op_TRACE,
+    CLONE: _op_CLONE,
+    MUTATE: _op_MUTATE,
+    DEFPOP: _op_DEFPOP,
+    VARIANT: _op_VARIANT,
+    SELECT: _op_SELECT,
+    FITNESS: _op_FITNESS,
+    RETIRE: _op_RETIRE,
+    EVOLVE: _op_EVOLVE,
+    WHEN_ANOMALY: _op_WHEN_ANOMALY,
+    STDOUT: _op_STDOUT,
+    STDIN: _op_STDIN,
+    MAP_PUT: _op_MAP_PUT,
+    MAP_GET: _op_MAP_GET,
+    MAP_PAIRS: _op_MAP_PAIRS,
+    SIGNAL: _op_SIGNAL,
+    EXTERNAL_BOUNDARY: _op_EXTERNAL_BOUNDARY,
+    FS_READ: _op_FS_READ,
+    FS_WRITE: _op_FS_WRITE,
+    NET_SEND: _op_NET_SEND,
+    NET_RECV: _op_NET_RECV,
+    CLOCK: _op_CLOCK,
+    BUDGET: _op_BUDGET,
+    CONSERVE: _op_CONSERVE,
+    VIOLATE: _op_VIOLATE,
+    SURPRISE: _op_SURPRISE,
+    TRACE_SURPRISE: _op_TRACE_SURPRISE,
+    DEVIATION: _op_DEVIATION,
+    THRESHOLD: _op_THRESHOLD,
+    SEQ: _op_SEQ,
+    LET: _op_LET,
+    REF: _op_REF,
+    IF_SURPRISE: _op_IF_SURPRISE,
+    LAMBDA: _op_LAMBDA,
+    APPLY: _op_APPLY,
+    LOOP_UNTIL: _op_LOOP_UNTIL,
+}
+
 
 
 # --- self-test ---------------------------------------------------------------

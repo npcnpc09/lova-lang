@@ -1,0 +1,44 @@
+;;; assoc.lova  --  association lists: a map, written from lists
+;;;
+;;; `(use "assoc")` to get these.  An association list is a list of
+;;; entries, each entry `(list key value)`; keys are text (lists of
+;;; codepoints) and are compared with `same`.  Every operation is
+;;; O(n) in the number of entries, which is the honest cost of a map
+;;; built from the six list operators -- journal M22 measures it, and
+;;; Q73 asks whether a native map is worth the last free slots.
+
+(use "prelude")
+
+;; The entry for `k`, or the empty list.
+(def assoc-find [al k]
+  (let f (iterate al
+                  (lambda s (or (nil? s) (same (head (head s)) k)))
+                  (lambda s (tail s)))
+    (if (nil? f) (nil) (head f))))
+
+(def assoc-has [al k]
+  (not (nil? (assoc-find al k))))
+
+;; The value for `k`, or `default` when there is none.
+(def assoc-get [al k default]
+  (let e (assoc-find al k)
+    (if (nil? e) default (head (tail e)))))
+
+;; Without any entry for `k`.
+(def assoc-del [al k]
+  (filter (lambda e (not (same (head e) k))) al))
+
+;; With `k` bound to `v`, replacing any earlier binding.
+(def assoc-put [al k v]
+  (cons (list k v) (assoc-del al k)))
+
+;; With `k` bound to `(f current)`, `default` standing in when absent.
+(def assoc-update [al k f default]
+  (assoc-put al k (f (assoc-get al k default))))
+
+;; One more for `k`: the word-count idiom.
+(def assoc-count [al k]
+  (assoc-update al k inc 0))
+
+(def assoc-keys [al] (map (lambda e (head e)) al))
+(def assoc-vals [al] (map (lambda e (head (tail e))) al))

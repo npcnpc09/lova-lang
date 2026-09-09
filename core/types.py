@@ -146,6 +146,19 @@ This is that value.  ``defpop`` builds one from a scorer and any number
 of programs; ``evolve`` returns the next generation; ``select`` ranks.
 """
 
+MAP = Type("Map")
+"""A persistent map from keys to values (M22).
+
+Keys are integers or lists (so text); values are anything.  Built by
+`map-put` from a list of pairs -- the empty list is the empty map --
+read by `map-get` with a default, and taken apart by `map-pairs`.
+Every `map-put` yields a new map and leaves the old one as it was: a
+map is a value, not a place.  The word-count program that took more
+than twenty million steps on an association list takes a few hundred
+thousand on one of these; journal M22 has the measurement that spent
+the last three free slots.
+"""
+
 VALUE = Type("Value")
 """The top type — anything a name can be bound to (M9).
 
@@ -173,6 +186,7 @@ _SUBTYPE_PAIRS = frozenset({
     (LIST, VALUE),
     (PROGRAM, VALUE),
     (POPULATION, VALUE),
+    (MAP, VALUE),
 })
 
 
@@ -214,8 +228,9 @@ def _self_test() -> None:
     assert not is_subtype(INT, FN)
     assert not is_subtype(LITERAL_INT, FN)
     # Value is the top type: everything flows into it, nothing out of it.
-    for t in (INT, LITERAL_INT, FN, VALUE, LIST, PROGRAM):
+    for t in (INT, LITERAL_INT, FN, VALUE, LIST, PROGRAM, MAP):
         assert is_subtype(t, VALUE), t
+    assert not is_subtype(MAP, LIST) and not is_subtype(LIST, MAP)
     for other in (INT, LIST, FN):
         assert not is_subtype(PROGRAM, other) and not is_subtype(other, PROGRAM)
     # List is incomparable with Int and Fn.

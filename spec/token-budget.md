@@ -385,7 +385,30 @@ enters the byte sequence. **59 of 64 implemented.** The IO family is
 8/8. Nothing is reserved any more except the four free slots below,
 which have been waiting on a decision since M10.
 
-### Still unspent, still needing a decision
+### M22 spent the last four: `signal`, and the map
+
+| Byte | Was | Now | Type |
+|---|---|---|---|
+| 0x12 | `delta-check` | `signal` | `Int -> Value` (never returns; fits any slot) |
+| 0x13 | `respawn` | `map-put` | `Value, Value, Value -> Map` |
+| 0x14 | `budget-remaining` | `map-get` | `Map, Value, Value -> Value` (result follows the stored value) |
+| 0x16 | `preserve` | `map-pairs` | `Map -> List` |
+
+`signal` because a language that can catch (M13) but not raise leaves
+its libraries guessing at bad input. The map because of a number: an
+association list written from the list operators could not count the
+words of a thousand lines in twenty million steps, and a native map
+does it in 3.4 million (journal M22). The owner said yes to the last
+three slots on that number.
+
+**63 of 64 implemented; the table is full.** What remains to decide:
+
+| Candidate | Slots | Status |
+|---|---|---|
+| Axiom 8 revision | — | Not applied. `CLAUDE.md` requires the owner's approval for any axiom change. |
+| number-theory reallocation | up to 4 | The reserve position (Q74): `p`, `tau`, `sigma`, `mobius` underpin LOVABench and nothing else. The next operator that earns a slot takes one of these. |
+
+### The decisions M10 left open, as they stood
 
 | Candidate | Slots | Status |
 |---|---|---|

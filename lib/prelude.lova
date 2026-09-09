@@ -7,55 +7,107 @@
 ;;; Costs nothing to include.  The compiler's `drop-unused` pass
 ;;; removes any binding the program never mentions, so a program that
 ;;; calls none of this compiles to exactly what it would have without
-;;; the prelude -- 18 nodes to 1 in the pass's own self-test.  Use
-;;; `--no-prelude` to see the difference.
+;;; the prelude.  Use `--no-prelude` to see the difference.
 ;;;
 ;;; Order is free.  Since M12 a chain of `def`s shares one environment
 ;;; frame, so any definition may call any other regardless of position,
 ;;; and mutual recursion works.  The order below is for a reader, not
-;;; for the compiler.  Helpers that need an accumulator take it as a
-;;; second curried parameter, the same shape every recursive LOVA
-;;; program uses.
+;;; for the compiler.
+;;;
+;;; Since M22 the list functions *iterate* rather than recurse.  The
+;;; interpreter has no tail-call elimination, so a recursive `len` of a
+;;; list costs one call frame per element; `iterate` runs in the
+;;; interpreter's loop instead, and a list of a million elements costs
+;;; no depth at all.  Recursion is kept where the depth is small by
+;;; nature -- `digits`, `gcd2`, the log-depth halves of `sort-by`.
+
+;; --- iteration ------------------------------------------------------
+;;
+;; `(iterate state done step)` runs `step` on `state` until `done`
+;; holds.  Two state shapes recur below.  `(cons n rest)` carries an
+;; integer in front of what is left; `(cons rest acc)` carries a list
+;; accumulator behind it.  Which goes where is fixed by `cons` itself:
+;; its second slot is a List.  The value in the head slot comes back
+;; untyped, so an integer result is written `(merge 0 (head s))` --
+;; one node, and the checker knows it is an Int again.
+
+(def iterate [state done step]
+  (apply (loop-until done step) state))
 
 ;; --- lists ----------------------------------------------------------
 
 (def len [xs]
-  (if (nil? xs) 0 (merge 1 (len (tail xs)))))
+  (merge 0 (head (iterate (cons 0 xs)
+                          (lambda s (nil? (tail s)))
+                          (lambda s (cons (merge 1 (head s)) (tail (tail s))))))))
 
+(def sum [xs]
+  (merge 0 (head (iterate (cons 0 xs)
+                          (lambda s (nil? (tail s)))
+                          (lambda s (cons (merge (head s) (head (tail s)))
+                                          (tail (tail s))))))))
+
+(def product [xs]
+  (merge 0 (head (iterate (cons 1 xs)
+                          (lambda s (nil? (tail s)))
+                          (lambda s (cons (mul (head s) (head (tail s)))
+                                          (tail (tail s))))))))
+
+;; Reverse `xs` onto `acc`: the one loop every other list function is
+;; built from.
 (def rev-onto [xs acc]
-  (if (nil? xs) acc (rev-onto (tail xs) (cons (head xs) acc))))
+  (tail (iterate (cons xs acc)
+                 (lambda s (nil? (head s)))
+                 (lambda s (cons (tail (head s))
+                                 (cons (head (head s)) (tail s)))))))
 
 (def reverse [xs]
   (rev-onto xs (nil)))
 
 (def append [xs ys]
-  (rev-onto (rev-onto xs (nil)) ys))
+  (rev-onto (reverse xs) ys))
 
 (def nth [xs k]
-  (if k (nth (tail xs) (sub k 1)) (head xs)))
-;; Past the end, `head` or `tail` of the empty list raises the same
-;; domain-error every other out-of-range access does.  A silent zero
-;; here would have been the one place the standard library broke
-;; Constraint 5 -- and it did, until it was caught in the M13 audit.
+  (head (tail (iterate (cons k xs)
+                       (lambda s (or (le (head s) 0) (nil? (tail s))))
+                       (lambda s (cons (sub (head s) 1) (tail (tail s))))))))
+;; Past the end, `head` of the empty list raises the same domain-error
+;; every other out-of-range access does.  A silent zero here would have
+;; been the one place the standard library broke Constraint 5 -- and it
+;; did, until it was caught in the M13 audit.  `last` is loud the same
+;; way since M22.
 
 (def last [xs]
-  (if (nil? xs) 0 (if (nil? (tail xs)) (head xs) (last (tail xs)))))
+  (head (reverse xs)))
 
-(def sum [xs]
-  (if (nil? xs) 0 (merge (head xs) (sum (tail xs)))))
+(def take [n xs]
+  (reverse (tail (tail (iterate
+    (cons n (cons xs (nil)))
+    (lambda s (or (le (head s) 0) (nil? (head (tail s)))))
+    (lambda s (cons (sub (head s) 1)
+                    (cons (tail (head (tail s)))
+                          (cons (head (head (tail s))) (tail (tail s)))))))))))
 
-(def product [xs]
-  (if (nil? xs) 1 (mul (head xs) (product (tail xs)))))
+(def drop [n xs]
+  (tail (iterate (cons n xs)
+                 (lambda s (or (le (head s) 0) (nil? (tail s))))
+                 (lambda s (cons (sub (head s) 1) (tail (tail s)))))))
 
 (def contains [xs v]
-  (if (nil? xs) 0 (if (eq (head xs) v) 1 (contains (tail xs) v))))
+  (if (head (iterate (cons 0 xs)
+                     (lambda s (or (head s) (nil? (tail s))))
+                     (lambda s (cons (eq (head (tail s)) v) (tail (tail s))))))
+    1 0))
 
+;; Two lists of integers, element for element.  The test every text
+;; comparison is: a string is a list of codepoints.
 (def same [a b]
-  (cond
-    (nil? a) (nil? b)
-    (nil? b) 0
-    (ne (head a) (head b)) 0
-    (same (tail a) (tail b))))
+  (let f (iterate (cons a b)
+                  (lambda s (or (nil? (head s))
+                                (or (nil? (tail s))
+                                    (ne (head (head s)) (head (tail s))))))
+                  (lambda s (cons (tail (head s)) (tail (tail s)))))
+    (and (nil? (head f)) (nil? (tail f)))))
 
 ;; --- higher order ---------------------------------------------------
 ;;
@@ -64,24 +116,86 @@
 ;; and it runs because `apply` takes any value as an argument.
 
 (def map [f xs]
-  (if (nil? xs) (nil) (cons (f (head xs)) (map f (tail xs)))))
+  (reverse (tail (iterate (cons xs (nil))
+                          (lambda s (nil? (head s)))
+                          (lambda s (cons (tail (head s))
+                                          (cons (f (head (head s))) (tail s))))))))
 
 (def filter [f xs]
-  (cond
-    (nil? xs) (nil)
-    (f (head xs)) (cons (head xs) (filter f (tail xs)))
-    (filter f (tail xs))))
+  (reverse (tail (iterate (cons xs (nil))
+                          (lambda s (nil? (head s)))
+                          (lambda s (cons (tail (head s))
+                                          (if (f (head (head s)))
+                                            (cons (head (head s)) (tail s))
+                                            (tail s))))))))
 
 (def fold [f acc xs]
-  (if (nil? xs) acc (fold f (f acc (head xs)) (tail xs))))
+  (head (iterate (cons acc xs)
+                 (lambda s (nil? (tail s)))
+                 (lambda s (cons (f (head s) (head (tail s))) (tail (tail s)))))))
+
+(def any [f xs]
+  (if (head (iterate (cons 0 xs)
+                     (lambda s (or (head s) (nil? (tail s))))
+                     (lambda s (cons (f (head (tail s))) (tail (tail s))))))
+    1 0))
+
+(def all [f xs]
+  (if (head (iterate (cons 1 xs)
+                     (lambda s (or (not (head s)) (nil? (tail s))))
+                     (lambda s (cons (f (head (tail s))) (tail (tail s))))))
+    1 0))
+
+(def zip [xs ys]
+  (reverse (tail (tail (iterate
+    (cons xs (cons ys (nil)))
+    (lambda s (or (nil? (head s)) (nil? (head (tail s)))))
+    (lambda s (cons (tail (head s))
+                    (cons (tail (head (tail s)))
+                          (cons (list (head (head s)) (head (head (tail s))))
+                                (tail (tail s)))))))))))
+
+;; --- sorting --------------------------------------------------------
+;;
+;; Merge sort: the halving recurses log n deep, the merge iterates.
+;; `less` is a two-argument function; `(sort xs)` is ascending.
+
+(def sort-by [less xs]
+  (if (or (nil? xs) (nil? (tail xs)))
+    xs
+    (let half (div (len xs) 2)
+      (merge-by less (sort-by less (take half xs))
+                     (sort-by less (drop half xs))))))
+
+(def merge-by [less a b]
+  (let f (iterate
+           (cons a (cons b (nil)))
+           (lambda s (or (nil? (head s)) (nil? (head (tail s)))))
+           (lambda s (if (less (head (head s)) (head (head (tail s))))
+                       (cons (tail (head s))
+                             (cons (head (tail s))
+                                   (cons (head (head s)) (tail (tail s)))))
+                       (cons (head s)
+                             (cons (tail (head (tail s)))
+                                   (cons (head (head (tail s))) (tail (tail s))))))))
+    (rev-onto (tail (tail f))
+              (if (nil? (head f)) (head (tail f)) (head f)))))
+
+(def le2 [a b] (le a b))
+(def ge2 [a b] (ge a b))
+(def sort [xs] (sort-by le2 xs))
 
 ;; --- construction ---------------------------------------------------
 
 (def range [a b]
-  (if (lt a b) (cons a (range (merge a 1) b)) (nil)))
+  (tail (iterate (cons (sub b 1) (nil))
+                 (lambda s (lt (head s) a))
+                 (lambda s (cons (sub (head s) 1) (cons (head s) (tail s)))))))
 
 (def repeat [x n]
-  (if n (cons x (repeat x (sub n 1))) (nil)))
+  (tail (iterate (cons n (nil))
+                 (lambda s (le (head s) 0))
+                 (lambda s (cons (sub (head s) 1) (cons x (tail s)))))))
 
 ;; --- integers -------------------------------------------------------
 
@@ -89,8 +203,13 @@
 
 (def odd [n] (mod n 2))
 
+(def inc [n] (merge n 1))
+
 (def pow [b e]
-  (if e (mul b (pow b (sub e 1))) 1))
+  (merge 0 (head (iterate (cons 1 (cons e (nil)))
+                          (lambda s (le (head (tail s)) 0))
+                          (lambda s (cons (mul (head s) b)
+                                          (cons (sub (head (tail s)) 1) (nil))))))))
 
 (def gcd2 [a b]
   (if b (gcd2 b (mod a b)) a))
@@ -99,6 +218,107 @@
   (if (lt n 10)
     (cons n (nil))
     (append (digits (div n 10)) (cons (mod n 10) (nil)))))
+
+;; --- text -----------------------------------------------------------
+;;
+;; A string is a list of codepoints, so these are list functions with
+;; opinions about 32, 10 and 48.  A library fault is `signal`led; a
+;; program catches it with `when-anomaly` and branches on the code.
+;; The prelude's codes (16 and up are a program's to use):
+;;   16  not a number  (`parse-int` of text that is not decimal digits)
+
+;; Whitespace is every control character and the space itself: one
+;; comparison, because `words` asks this once per character.
+(def space [c] (le c 32))
+
+(def digit [c]
+  (and (ge c 48) (le c 57)))
+
+;; Split `text` at every `sep`: `(split "a,b,,c" 44)` is ("a" "b" "" "c").
+(def split [text sep]
+  (let f (iterate
+           (cons text (cons (nil) (nil)))
+           (lambda s (nil? (head s)))
+           (lambda s (if (eq (head (head s)) sep)
+                       (cons (tail (head s))
+                             (cons (nil) (cons (reverse (head (tail s))) (tail (tail s)))))
+                       (cons (tail (head s))
+                             (cons (cons (head (head s)) (head (tail s))) (tail (tail s)))))))
+    (reverse (cons (reverse (head (tail f))) (tail (tail f))))))
+
+(def lines [text] (split text 10))
+
+;; The words of `text`: runs of non-space characters.
+(def words [text]
+  (let f (iterate
+           (cons text (cons (nil) (nil)))
+           (lambda s (nil? (head s)))
+           (lambda s (if (space (head (head s)))
+                       (cons (tail (head s))
+                             (cons (nil) (if (nil? (head (tail s)))
+                                           (tail (tail s))
+                                           (cons (reverse (head (tail s))) (tail (tail s))))))
+                       (cons (tail (head s))
+                             (cons (cons (head (head s)) (head (tail s))) (tail (tail s)))))))
+    (reverse (if (nil? (head (tail f)))
+               (tail (tail f))
+               (cons (reverse (head (tail f))) (tail (tail f)))))))
+
+;; Join `parts` with `sep` between them.
+(def join [parts sep]
+  (let f (iterate (cons parts (nil))
+                  (lambda s (nil? (head s)))
+                  (lambda s (cons (tail (head s))
+                                  (rev-onto (head (head s)) (cons sep (tail s))))))
+    (if (nil? (tail f)) (nil) (tail (reverse (tail f))))))
+
+;; Decimal text to an integer; an optional leading `-`.  Anything else
+;; in the text is a fault, not a guess.
+(def parse-int [text]
+  (if (eq (head text) 45)
+    (neg (parse-digits (tail text)))
+    (parse-digits text)))
+
+(def parse-digits [text]
+  (if (or (nil? text) (not (all digit text)))
+    (signal 16)
+    (merge 0 (head (iterate (cons 0 text)
+                            (lambda s (nil? (tail s)))
+                            (lambda s (cons (merge (mul (head s) 10) (sub (head (tail s)) 48))
+                                            (tail (tail s)))))))))
+
+;; An integer as decimal text.
+(def text-of [n]
+  (if (lt n 0)
+    (cons 45 (text-of (neg n)))
+    (map (lambda d (merge d 48)) (digits n))))
+
+;; Lexicographic order on codepoint lists, so `(sort-by text-lt words)`.
+(def text-lt [a b]
+  (let f (iterate (cons a b)
+                  (lambda s (or (nil? (head s))
+                                (or (nil? (tail s))
+                                    (ne (head (head s)) (head (tail s))))))
+                  (lambda s (cons (tail (head s)) (tail (tail s)))))
+    (cond
+      (nil? (head f)) (not (nil? (tail f)))
+      (nil? (tail f)) 0
+      (lt (head (head f)) (head (tail f))))))
+
+;; --- maps -----------------------------------------------------------
+;;
+;; `map-put` / `map-get` / `map-pairs` are operators; these are the
+;; idioms over them.  `(map-count m k)` is the word-count step.
+;; Presence is `map-get` with a default the caller knows is not a
+;; stored value -- there is no `map-has`, because two arbitrary values
+;; cannot be compared in LOVA.
+
+(def map-of [pairs]
+  (fold (lambda m (lambda e (map-put m (head e) (head (tail e))))) (nil) pairs))
+(def map-count [m k] (map-put m k (inc (map-get m k 0))))
+(def map-keys [m] (map (lambda e (head e)) (map-pairs m)))
+(def map-vals [m] (map (lambda e (head (tail e))) (map-pairs m)))
+(def map-size [m] (len (map-pairs m)))
 
 ;; --- output ---------------------------------------------------------
 

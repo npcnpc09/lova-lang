@@ -42,11 +42,11 @@ MOBIUS          = 0x0F
 # Family 0x10-0x17  Conservation
 BUDGET          = 0x10   # (budget k body) — body may consume ≤ k units
 CONSERVE        = 0x11   # (conserve invariant body) — verify invariant holds
-DELTA_CHECK     = 0x12
-RESPAWN         = 0x13
-BUDGET_REMAINING = 0x14
+SIGNAL          = 0x12   # (signal code) -- M22; was the delta-check placeholder
+MAP_PUT         = 0x13   # (map-put m k v) -- M22; was the respawn placeholder
+MAP_GET         = 0x14   # (map-get m k default) -- M22; was budget-remaining
 NIL             = 0x15   # the empty list (M10: was sum-invariant)
-PRESERVE        = 0x16
+MAP_PAIRS       = 0x16   # (map-pairs m) -- M22; was the preserve placeholder
 VIOLATE         = 0x17   # (violate)  — synthetic "break conservation" op, testing only
 
 # Family 0x18-0x1F  Surprise / watch
@@ -127,11 +127,11 @@ SIGNATURES = {
     # Conservation
     BUDGET:       {"name": "budget",        "arity": 2, "family": "cons"},
     CONSERVE:     {"name": "conserve",      "arity": 2, "family": "cons"},
-    DELTA_CHECK:  {"name": "delta-check",   "arity": 1, "family": "cons"},
-    RESPAWN:      {"name": "respawn",       "arity": 1, "family": "cons"},
-    BUDGET_REMAINING: {"name": "budget-remaining", "arity": 0, "family": "cons"},
+    SIGNAL:       {"name": "signal",        "arity": 1, "family": "cons"},
+    MAP_PUT:      {"name": "map-put",       "arity": 3, "family": "cons"},
+    MAP_GET:      {"name": "map-get",       "arity": 3, "family": "cons"},
     NIL:          {"name": "nil",           "arity": 0, "family": "cons"},
-    PRESERVE:     {"name": "preserve",      "arity": 2, "family": "cons"},
+    MAP_PAIRS:    {"name": "map-pairs",     "arity": 1, "family": "cons"},
     VIOLATE:      {"name": "violate",       "arity": 1, "family": "cons"},
     # Surprise
     SURPRISE:     {"name": "surprise",      "arity": 2, "family": "surp"},
@@ -190,7 +190,7 @@ assert len(SIGNATURES) == 64, f"Token table must have exactly 64 entries, found 
 # treats them as unreachable and never emits them.  As milestones land,
 # operators get type info here and become generation-reachable.
 
-from core.types import FN, INT, LIST, LITERAL_INT, POPULATION, PROGRAM, VALUE  # noqa: E402
+from core.types import MAP, FN, INT, LIST, LITERAL_INT, POPULATION, PROGRAM, VALUE  # noqa: E402
 
 _TYPE_INFO = {
     # Literals
@@ -350,6 +350,27 @@ _TYPE_INFO = {
     FS_READ:        {"in_types": [LIST], "out_type": LIST},
     FS_WRITE:       {"in_types": [LIST, VALUE], "out_type": INT},
     CLOCK:          {"in_types": [], "out_type": INT},
+    # map (M22): the last three free slots, spent on a measurement.  An
+    # association list could not count the words of a thousand lines
+    # in twenty million steps; a native map does it in a few hundred
+    # thousand.  `map-put` takes a Map or a list of pairs (the empty
+    # list is the empty map) and yields a new Map; `map-get` reads with
+    # a default, so presence is always testable; `map-pairs` gives the
+    # entries back as `(list k v)` in insertion order.  Keys are
+    # integers or lists.  `map-get`'s result is whatever was stored, so
+    # it follows its operands.
+    MAP_PUT:        {"in_types": [VALUE, VALUE, VALUE], "out_type": MAP},
+    MAP_GET:        {"in_types": [MAP, VALUE, VALUE], "out_type": VALUE},
+    MAP_PAIRS:      {"in_types": [MAP], "out_type": LIST},
+    # signal (M22): raise a structured anomaly from inside a program --
+    # the half of Axiom 7 that `when-anomaly` (M13) left open.  A library
+    # that meets bad input can now say so loudly instead of guessing.
+    # The code is the program's own and must be >= 16; below that are
+    # the substrate's kinds (ANOMALY_CODES), and a handler receives the
+    # program's code, not the kind's.  Never returns, so it fits any
+    # slot: a member of RESULT_FOLLOWS_OPERANDS.  On the Conservation
+    # family's first free slot because that is where the free slots are.
+    SIGNAL:         {"in_types": [INT], "out_type": VALUE},
     # M21 -- the network, as datagrams.  `(net-send "host:port" value)`
     # sends one UDP datagram (the value as UTF-8 text, an integer as its
     # digits) and yields the bytes sent; `(net-recv)` yields the next
@@ -386,7 +407,7 @@ TYPED_TOKENS = frozenset(_TYPE_INFO.keys())
 # is not determined by the slot it sits in.  The compiler checks that
 # case separately.
 RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL, HEAD,
-                                     EXTERNAL_BOUNDARY})
+                                     EXTERNAL_BOUNDARY, SIGNAL, MAP_GET})
 
 # ``REF`` is the other operator whose result type is not its declared
 # one: it is whatever the binding holds.  The compiler resolves that

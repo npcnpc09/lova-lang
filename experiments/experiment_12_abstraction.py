@@ -54,7 +54,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from core.compiler import compile as lova_compile
-from core.conservation import BudgetTrap, DepthTrap, StepTrap
+from core.conservation import BudgetTrap, DepthTrap, DomainTrap, StepTrap
 from core.runtime import Runtime, evaluate
 from core.surface import parse
 from core.tokens import encode
@@ -411,12 +411,16 @@ def part_3_ceilings() -> dict:
 
     trapped = schema_ok = 0
     for label, src in RUNAWAY_SHAPES:
-        rt = Runtime(max_steps=200_000)
+        # The ceilings are pinned to what this experiment measures: M22
+        # raised the default depth to 10 000, at which the argument-
+        # doubling shape overflows the integer-size guard (a DomainTrap,
+        # also L2) before it reaches the depth ceiling.
+        rt = Runtime(max_steps=200_000, max_call_depth=200)
         try:
             result = evaluate(parse(src), rt)
             print(f"  {label:<48s} NO TRAP (returned {result!r})")
             continue
-        except BudgetTrap as trap:
+        except (BudgetTrap, DomainTrap) as trap:
             trapped += 1
             anomaly = trap.anomaly
             complete = all(f in anomaly for f in L2_FIELDS)
@@ -424,6 +428,7 @@ def part_3_ceilings() -> dict:
             kind = anomaly["kind"]
             family = ("DepthTrap" if isinstance(trap, DepthTrap)
                       else "StepTrap" if isinstance(trap, StepTrap)
+                      else "DomainTrap" if isinstance(trap, DomainTrap)
                       else "BudgetTrap")
             print(f"  {label:<48s} {family:<10s} {kind}")
             print(f"  {'':<48s} {'':<10s} hint: {anomaly['repair_hint'][:60]}...")

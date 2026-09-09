@@ -32,7 +32,10 @@ import sys
 from dataclasses import asdict
 from typing import Any, Callable, Dict, List, Optional
 
-from core.cli import build, format_value, parse_allow, parse_net_allow, substitute
+from core.cli import (
+    CLI_MAX_DEPTH, CLI_MAX_STEPS, build, format_value, parse_allow,
+    parse_net_allow, substitute,
+)
 from core.compiler import CompileError
 from core.conservation import BudgetTrap, DeltaTrap
 from core.generator import GenState, cheapest_to_finish
@@ -106,8 +109,8 @@ TOOLS: List[Dict[str, Any]] = [
                                          "clock, all, net=host:port, net=:port"},
                 "stdin": {"type": "string",
                           "description": "lines the program may read with (stdin)"},
-                "max_steps": {"type": "integer", "default": 1000000},
-                "max_depth": {"type": "integer", "default": 200},
+                "max_steps": {"type": "integer", "default": 20000000},
+                "max_depth": {"type": "integer", "default": 10000},
             },
             "required": ["source"],
         },
@@ -227,8 +230,8 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
         return _failure("grant", exc)
     stdin_text = params.get("stdin") or ""
     runtime = Runtime(
-        max_steps=int(params.get("max_steps", 1_000_000)),
-        max_call_depth=int(params.get("max_depth", 200)),
+        max_steps=int(params.get("max_steps", CLI_MAX_STEPS)),
+        max_call_depth=int(params.get("max_depth", CLI_MAX_DEPTH)),
         granted=granted, net_send_to=send_to, net_listen_on=listen_on,
         input_lines=stdin_text.splitlines() if stdin_text else [],
     )

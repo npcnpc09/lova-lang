@@ -196,6 +196,8 @@ arity for nine milestones and never an implementation:
 | 0x15 | `sum-invariant` | `nil` | M10 |
 | 0x19 | `watch` | `nil?` | M10 |
 | 0x1E | `normal-range` | `read` | M18 |
+| 0x12 | `delta-check` | `signal` | M22 |
+| 0x13 / 0x14 / 0x16 | `respawn` / `budget-remaining` / `preserve` | `map-put` / `map-get` / `map-pairs` | M22 |
 
 The DNA OS lineage for the *architecture* is unaffected; these slots
 changed hands, and the core is still exactly 64 operators.
@@ -379,7 +381,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M21 + M7)
+## Current state (2026-09-10 — post-M22)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -470,6 +472,17 @@ experiment details.
   work. Related: four runtime arithmetic sites trusted their slot type
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
+
+**M22** made LOVA a language a real program can stand on, measured by
+one: `apps/wordfreq.lova`. Ceilings raised (depth 10 000; CLI/MCP
+20 000 000 steps, library 1 000 000); the prelude iterates instead of
+recursing and grew the text and list functions a program needs;
+`signal` (0x12) raises what `when-anomaly` catches; a persistent map
+on the last three free slots (0x13 / 0x14 / 0x16) after an association
+list failed to count a thousand lines in twenty million steps; the
+interpreter three times faster (table dispatch, one function per node,
+fast paths). **63 / 64 operators; the table is full.** 10 000 lines
+count in 73 s. Q73 closed; Q74 (the reserve family), Q75 (speed floor).
 
 **M7** (named long ago, delivered last) made LOVA a tool for agents:
 `core/mcp_server.py` serves `lova_execute` / `lova_static_analyze` /
@@ -588,13 +601,13 @@ proved the token table could not beat) and on LOVABench 2.00× →
 **5.38×** vs sympy-Python. Exp 11's Stage-2 *projection* understated
 density by 70%; node count is a poor proxy in both directions.
 
-**59 / 64 operators runtime-implemented**; nothing is reserved any
-more, and 4 slots are genuinely free (see the slot-budget note above). See
+**63 / 64 operators runtime-implemented**; the table is full (the
+64th is `END`), and the reserve position is the number-theory family (see the slot-budget note above). See
 `spec/tokens.md` for the complete table (generated) and
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-618 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+665 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

@@ -293,8 +293,11 @@ class TestListTypes(unittest.TestCase):
         )
         valid = GenState.fresh().step(HEAD).valid_next()
         # Lists come from the cons cell, from input, from every Meta
-        # operator that answers in text (M14), and from `fitness` (M15).
-        producers = frozenset({NIL, CONS, TAIL, STDIN,
+        # operator that answers in text (M14), from `fitness` (M15), and
+        # from `map-pairs` (M22).  The world's readers (`fs-read`,
+        # `net-recv`) need a boundary, so they are absent here.
+        from core.tokens import MAP_PAIRS
+        producers = frozenset({NIL, CONS, TAIL, STDIN, MAP_PAIRS,
                                EXPLAIN, LINEAGE_QUERY, WHY, TRACE, FITNESS})
         self.assertLessEqual(producers, valid)
         # Plus the operators whose result type the state machine cannot
@@ -352,8 +355,9 @@ class TestSlotBudget(unittest.TestCase):
         # +12 for M14: quote/eval, the whole Meta family, clone/mutate;
         # +6 for M15: the rest of Evolution; +1 for M18: read; +4 for
         # M19: external-boundary, fs-read, fs-write, clock; +2 for M21:
-        # net-send, net-recv.  The table is spent but for four free slots.
-        self.assertEqual(len(TYPED_TOKENS), 59)
+        # net-send, net-recv; +4 for M22: signal, map-put, map-get,
+        # map-pairs.  The table is full: 63 operators and END.
+        self.assertEqual(len(TYPED_TOKENS), 63)
 
     def test_the_core_is_still_64_operators(self):
         self.assertEqual(len(SIGNATURES), 64)
@@ -375,6 +379,9 @@ class TestSlotBudget(unittest.TestCase):
             0x23: "select", 0x26: "fitness", 0x27: "retire",
             # M18: read, the inverse of explain, on a free slot.
             0x1E: "read",
+            # M22: signal, the raise to when-anomaly's catch; and the map,
+            # on the last three free slots.
+            0x12: "signal", 0x13: "map-put", 0x14: "map-get", 0x16: "map-pairs",
         }
         for byte, name in expected.items():
             self.assertEqual(SIGNATURES[byte]["name"], name)

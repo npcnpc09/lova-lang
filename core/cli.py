@@ -29,12 +29,15 @@ from core.compiler import CompileError, compile as lova_compile
 from core.conservation import BudgetTrap, DeltaTrap
 from core.observability import static_analyze
 from core.runtime import (
-    Cons, NIL_VALUE, Runtime, evaluate, is_list_value, is_population_value,
-    is_program_value, list_to_python,
+    Cons, NIL_VALUE, Runtime, evaluate, is_list_value, is_map_value,
+    is_population_value, is_program_value, list_to_python,
 )
 from core.surface import parse, parse_with_prelude, pretty
 from core.tokens import ALL_CAPABILITIES, CAPABILITY_BITS, encode
 
+
+CLI_MAX_STEPS = 20_000_000
+CLI_MAX_DEPTH = 10_000
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -59,8 +62,11 @@ def substitute(source: str, args: List[str]) -> str:
     """
     import re
 
+    # Names are collected from code only: a comment that mentions
+    # `{n}` must not decide the argument order (M22).
+    code = re.sub(r";[^\n]*", "", source)
     names: List[str] = []
-    for match in re.finditer(r"\{(\w+)\}", source):
+    for match in re.finditer(r"\{(\w+)\}", code):
         if match.group(1) not in names:
             names.append(match.group(1))
     if not names:
@@ -107,6 +113,12 @@ def format_value(value: Any) -> str:
     if is_population_value(value):
         return (f"#<population n={len(value.variants)} "
                 f"gen={value.generation}>")
+    if is_map_value(value):
+        shown = " ".join(
+            f"{format_value(k)}: {format_value(v)}"
+            for k, v in list(value.entries.values())[:8])
+        more = "" if len(value.entries) <= 8 else " ..."
+        return f"#<map n={len(value.entries)} {{{shown}{more}}}>"
     if is_program_value(value):
         uid = getattr(value, "uid", None)
         tag = f" uid={uid}" if uid else ""
@@ -374,8 +386,11 @@ def build_parser() -> argparse.ArgumentParser:
                          help="skip the compiler passes")
         sub.add_argument("--stage2", action="store_true",
                          help="read the source as the Stage-2 surface")
-        sub.add_argument("--max-steps", type=int, default=1_000_000)
-        sub.add_argument("--max-depth", type=int, default=200)
+        # M22: the CLI runs real programs, so its ceilings are wide; the
+        # library defaults (core/runtime.py) stay tight because the
+        # generation experiments run thousands of random programs.
+        sub.add_argument("--max-steps", type=int, default=CLI_MAX_STEPS)
+        sub.add_argument("--max-depth", type=int, default=CLI_MAX_DEPTH)
         sub.add_argument("--allow", action="append", metavar="CAPS",
                          help="grant capabilities: fs-read, fs-write, clock, "
                               "all, net=host:port, net=:port "

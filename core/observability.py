@@ -39,7 +39,8 @@ from core.tokens import (
     ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
     MUTATE, QUOTE, TRACE, UID, WHY,
     DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
-    CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, NET_RECV, NET_SEND,
+    CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, NET_RECV, NET_SEND, SIGNAL,
+    MAP_GET, MAP_PAIRS, MAP_PUT,
 )
 from core.types import INT, LITERAL_INT, Type, is_subtype
 
@@ -102,6 +103,11 @@ _EFFECTS: dict = {
     # M13 -- handling an anomaly is an effect on the run's trace, and it
     # also means the enclosed cost is not the program's declared cost.
     WHEN_ANOMALY: frozenset({"handle-anomaly"}),
+    SIGNAL: frozenset({"signal"}),
+    # M22 -- maps are values; nothing here touches the world.
+    MAP_PUT: frozenset(),
+    MAP_GET: frozenset(),
+    MAP_PAIRS: frozenset(),
     # M14 -- programs as values.  Quoting runs nothing; eval and trace
     # run code the static view cannot see, so their cost is unbounded.
     QUOTE: frozenset(),

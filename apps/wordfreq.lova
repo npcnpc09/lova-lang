@@ -1,0 +1,23 @@
+;;; wordfreq.lova  --  the most frequent words of a file
+;;;
+;;;   lova run apps/wordfreq.lova notes.txt 10 --allow fs-read
+;;;
+;;; Reads the file, splits it into words, counts them in a map, sorts
+;;; by count and prints the top n as "word count".  The value of the
+;;; program is the number of distinct words.
+;;;
+;;; The M22 acceptance program: file IO under a declared boundary,
+;;; text functions, a map, a sort, output -- with the map the one
+;;; piece that is not written in LOVA, because the version that was
+;;; (`lib/assoc.lova`) could not count a thousand lines in twenty
+;;; million steps.  Journal M22 has both numbers.
+
+(def by-count [a b] (ge (head (tail a)) (head (tail b))))
+
+(def show [e]
+  (println (join (list (head e) (text-of (head (tail e)))) 32)))
+
+(boundary "fs-read"
+  (let counts (fold map-count (nil) (words (fs-read {path})))
+    (seq (map show (take {n} (sort-by by-count (map-pairs counts))))
+         (map-size counts))))

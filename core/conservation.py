@@ -207,13 +207,24 @@ ANOMALY_CODES: Dict[str, int] = {
     "malformed": 7,
     "step-limit-exceeded": 8,   # not catchable; see the WHEN_ANOMALY handler
     "capability-denied": 9,     # M19: an effect outside a boundary that declares it
+    "signalled": 10,            # M22: raised by the program itself; codes >= 16
 }
+
+# The first code a program may `signal` with.  Below it are the kinds.
+FIRST_PROGRAM_SIGNAL = 16
 
 ANOMALY_KINDS: Dict[int, str] = {v: k for k, v in ANOMALY_CODES.items()}
 
 
 def anomaly_code(anomaly: Dict[str, Any]) -> int:
-    """The integer a handler receives for this anomaly.  0 if unknown."""
+    """The integer a handler receives for this anomaly.  0 if unknown.
+
+    A `signal`led anomaly carries the program's own code (M22), which
+    is what its handler wants to branch on; the kind's code would say
+    only "the program said so".
+    """
+    if anomaly.get("kind") == "signalled":
+        return int(anomaly.get("detail", {}).get("code", ANOMALY_CODES["signalled"]))
     return ANOMALY_CODES.get(anomaly.get("kind", ""), 0)
 
 
