@@ -657,15 +657,26 @@ def _self_test() -> None:
     for slot_type, want in expected.items():
         got = completion_cost(slot_type)
         assert got == want, f"completion_cost({slot_type}) = {got}, want {want}"
-    from core.tokens import REF as _REF
+    # The cost table counts `ref` as the cheapest way to close an Fn slot,
+    # but since M16 `ref` is offered only where a bound function exists.
+    # In a fresh state nothing is bound, so the cheapest *available*
+    # closer is `lambda`; once a function is in scope it is `ref`.
     for slot_type, escape in ((INT, LIT_INT), (_VALUE, LIT_INT),
-                              (_LIST, NIL), (_FN, _REF)):
+                              (_LIST, NIL), (_FN, LAMBDA)):
         slot = Slot(expected_type=slot_type)
         costs = {t: token_completion_cost(t, slot)
                  for t in GenState.fresh(slot_type).valid_next()}
         assert min(costs, key=lambda t: (costs[t], t)) == escape, (
             f"{slot_type}: cheapest closer is not {SIGNATURES[escape]['name']}"
         )
+    from core.tokens import REF as _REF
+    with_fn = (GenState.fresh(INT).step(LET).step(LIT_INT, 0)
+               .step(LAMBDA).step(LIT_INT, 1).step(LIT_INT, 5))   # (let 0 (lambda 1 5) _)
+    fn_slot_state = with_fn.step(_AP)                              # apply's Fn head
+    assert _REF in fn_slot_state.valid_next(), "a bound function should make ref available"
+    costs = {t: token_completion_cost(t, fn_slot_state.stack[-1])
+             for t in fn_slot_state.valid_next()}
+    assert min(costs, key=lambda t: (costs[t], t)) == _REF
     # The two shapes that defeated the earlier tests.
     fn_slot = Slot(expected_type=_FN)
     assert token_completion_cost(_LU, fn_slot) > token_completion_cost(LAMBDA, fn_slot)
