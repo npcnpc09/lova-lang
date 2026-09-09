@@ -113,7 +113,9 @@ def format_value(value: Any) -> str:
         return f"#<program{tag} {pretty(value)}>"
     if is_list_value(value):
         items = list_to_python(value)
-        shown = "(" + " ".join(str(i) for i in items) + ")"
+        shown = "(" + " ".join(
+            format_value(i) if not isinstance(i, int) else str(i) for i in items
+        ) + ")"
         if items and all(isinstance(i, int) and 32 <= i <= 0x10FFFF
                          for i in items):
             try:

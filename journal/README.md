@@ -241,6 +241,32 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 17 (2026-09-09) — Lists hold any value
+A cons cell takes a `Value` (Q42 closed the cheap way). Trees, lists of
+programs, lists of functions are representable; strings are unchanged.
+The price is that `head`'s result type is no longer written on the
+operator — it follows the list, which the checker and the generator
+cannot see — so `head` joins the result-follows-operands set and a
+misuse fails at run time with a structured error. The same trade
+`apply` and `ref` made. `List<T>` would recover the static answer and
+now has a working baseline to be measured against (Q63).
+
+**It broke the termination bias, instructively.** Once `head` fit any
+slot, `(head (nil))` became the cheapest way to close an `Fn` slot —
+two tokens against `lambda`'s three — so the depth bias would reach for
+a guaranteed run-time trap. The bias now chooses among **certain**
+closers only: END, a literal, an operator whose declared type is the
+slot's, or a `ref` to a bound name of *known* compatible type. Every
+slot type has one (`lit` / `nil` / `lambda` / `quote` / `defpop`), so the
+fallback never fires. Transparent operators remain available in the
+free-sampling phase, where a gamble belongs.
+
+That change moved Exp 16's *baseline*: with the bias no longer choosing
+`ref` in the old machine either, pre-M16 unbound references read
+248/1000 (was 704) and runnable 29% (was 16%). The M16 column is what
+matters and is unchanged in kind: **0 unbound, 38% runnable**. The
+journal entry carries both readings. Tests 447 → 467.
+
 ### Milestone 16 (2026-09-09) — Scope-aware generation
 `GenState.step` takes the literal's payload. A LET or LAMBDA opens a
 frame, its binder names it, the binding's first token types it (unknown
@@ -724,11 +750,9 @@ the corpus grows again.
   accumulator — which is what every program that iterates needs?
 
 ### Raised by M10 (data)
-- **Q42**: `cons` takes an `Int`, so a list of lists is not
-  constructible. That keeps `head : List -> Int` *sound* rather than
-  merely permissive, but it rules out trees and nested structure.
-  Parameterised `List<T>` is the fix; what does it cost in a type system
-  whose whole virtue is being tiny?
+- ~~**Q42**~~: *closed the cheap way by M17.* `cons` takes a `Value`
+  and `head` is transparent. `List<T>` would make `head` static again;
+  Q63 holds the measurement.
 - **Q43**: A lambda parameter's type is unknown — LOVA has no parameter
   annotations, so the checker accepts a reference to a parameter in any
   slot and leaves misuse to the runtime. Third member of the family with

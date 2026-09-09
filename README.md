@@ -129,7 +129,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (447 tests, stdlib unittest only)
+# run the test suite (467 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -173,7 +173,7 @@ statistical guarantees** — sample sizes are stated for each.
 | ...by adding `lt` and `sub` as primitives | 9%, for 2 slots — so they shipped as macros instead | Exp 13 |
 | ...residual, unreachable by any token-table change | 61% (s-expression syntax) | Exp 13 |
 | Runaway programs producing a structured anomaly | 5/5, all with the full L2 schema | Exp 12 |
-| Unbound references in generated programs | 704/1000 → **0/1000**; runnable 16% → 37% | Exp 16 (scope-aware generation) |
+| Unbound references in generated programs | 248/1000 → **0/1000**; runnable 29% → 38% | Exp 16 (scope-aware generation, M17 re-run) |
 | Self-healing, written as a LOVA program | 9/10 seeds improve, 3/10 converge, best 35 → 1 | Exp 15 (10 seeds × 30 generations) |
 | Constant-folding compression | 58.5% fewer nodes, 43.9% fewer bytes | Exp 08 |
 | Telemetry-weighted vs uniform sampling | +32 pp pass-without-trap (88% vs 56%) | Exp 10 (N=50, re-run at M16 with scope-aware samplers) |
@@ -260,7 +260,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         447 unit tests, stdlib only
+tests/         467 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
@@ -274,9 +274,10 @@ Stated plainly, because the list is short and the omissions are large:
 - **A population is its own value, not a list of programs.** That
   sidestepped parameterised lists (Q42) for now; `List<T>` remains the
   better long-term shape (Q63).
-- **No lists of lists.** `cons` takes an `Int`, which keeps
-  `head : List -> Int` sound but rules out trees and nested structure
-  (Q42). Strings work because a string is a flat list of codepoints.
+- **`head` is checked at run time.** A cons cell holds any value —
+  trees and lists of programs are representable since M17 — so `head`'s
+  result type follows its list, which the checker cannot see. A
+  parameterised `List<T>` would recover the static answer (Q63).
 - **Function types are shallow.** Functions are first-class — the
   prelude's `map` / `filter` / `fold` take functions — but `Fn` does not
   track arity or return type, so a partial application or a call result

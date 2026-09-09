@@ -37,6 +37,13 @@ pass and a bounded run.
 | `apply` head is a reference | 74 | 5 |
 | `apply` head is a lambda / loop-until | 62 | 110 |
 
+*Re-run at M17*, after the termination bias was restricted to certain
+closers (so the old machine's bias no longer reaches for `ref` either):
+pre-M16 unbound **248**, runnable **291**; M16 unbound **0**, runnable
+**379**. The baseline moved because the bias moved; the M16 column did
+not change in kind. `experiments/results_16/run.log` holds the M17
+numbers.
+
 Boundary: self recursion, nested lets and shadowing validate; a
 **mutually recursive `def` chain compiles (M12) but does not validate**.
 

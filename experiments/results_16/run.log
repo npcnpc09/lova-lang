@@ -5,12 +5,12 @@ LOVA Experiment 16 -- scope-aware generation (M16)
 ==============================================================================
   outcome                                pre-M16       M16
   ----------------------------------------------------------
-  unbound reference (compile error)      704 70%     0  0%
-  other compile error                     47  5%     1  0%
-  compiles, traps at run time             93  9%   629 63%
-  compiles and runs                      156 16%   370 37%
+  unbound reference (compile error)      248 25%     0  0%
+  other compile error                      7  1%     0  0%
+  compiles, traps at run time            454 45%   621 62%
+  compiles and runs                      291 29%   379 38%
   ----------------------------------------------------------
-  references emitted                        1306       122
+  references emitted                         269        35
 
   An unbound reference is now unrepresentable by generation, as
   Axiom 3 always said ill-typed programs were.  The compiler's
@@ -22,8 +22,8 @@ LOVA Experiment 16 -- scope-aware generation (M16)
 ==============================================================================
   apply head is                  pre-M16       M16
   --------------------------------------------------
-  a reference                         74         5
-  a lambda / loop-until               62       110
+  a reference                         21         1
+  a lambda / loop-until               97       134
 
   Before, a reference in an Fn slot named whatever the sampler
   drew -- almost never a bound function.  After, it names a bound
@@ -49,7 +49,7 @@ LOVA Experiment 16 -- scope-aware generation (M16)
 ==============================================================================
   Experiment 16 -- summary
 ==============================================================================
-  unbound references in generated programs: 704/1000 -> 0/1000
-  programs that compile and run:            156/1000 -> 370/1000
+  unbound references in generated programs: 248/1000 -> 0/1000
+  programs that compile and run:            291/1000 -> 379/1000
   Axiom 3 now holds at the name level for generated programs;
   the compiler's scope pass remains the check for everything else.

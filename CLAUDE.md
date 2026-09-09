@@ -374,7 +374,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M16)
+## Current state (2026-09-09 — post-M17)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -466,6 +466,12 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M17** let a cons cell hold any value — trees, lists of programs,
+lists of functions — with `head` joining the result-follows-operands
+set (Q42 closed the cheap way; `List<T>` is Q63). The termination bias
+was restricted to *certain* closers on the way, because `(head (nil))`
+had become the cheapest way to close an `Fn` slot.
+
 **M16** made generation scope-aware. `GenState.step` takes the
 literal's payload, keeps frames, and offers `ref` only where a bound,
 type-compatible name exists. Exp 16: unbound references in generated
@@ -539,7 +545,7 @@ are genuinely free (see the slot-budget note above). See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-447 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+467 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

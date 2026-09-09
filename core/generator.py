@@ -383,10 +383,14 @@ def _compute_completion_costs() -> Dict[Type, int]:
                 out = SIGNATURES[tok].get("out_type")
                 if out is None:
                     continue
-                transparent = tok in RESULT_NOT_STATIC
-                if not transparent and not is_subtype(out, target):
-                    continue
-                if transparent and target == LITERAL_INT:
+                # Only operators whose result type is written on them.
+                # A transparent operator -- `head`, `apply`, `eval` --
+                # can fill any slot and be wrong at run time; counting
+                # `(head (nil))` as the cheapest way to close an Fn slot
+                # (M17 made it so) would make the termination bias reach
+                # for a guaranteed trap.  Certainty is the bias's job;
+                # the free phase may still gamble.
+                if tok in RESULT_NOT_STATIC or not is_subtype(out, target):
                     continue
                 pushed, variadic = _pushed_types(tok, target)
                 total = 1 + (1 if variadic else 0)
@@ -431,8 +435,34 @@ def token_completion_cost(token: int, slot: Slot) -> int:
     return total
 
 
+def is_certain(state: "GenState", token: int) -> bool:
+    """Does ``token``'s result type certainly fit the top slot?
+
+    True for END, literals and any operator whose declared out_type is
+    the slot's.  For ``ref`` it depends on scope: certain when a bound
+    name of *known*, compatible type exists.  False for the transparent
+    operators, whose result is whatever their operands turn out to be.
+    """
+    if token == END or token == LIT_INT:
+        return True
+    if token == REF:
+        if not state.stack or not state.track_scope:
+            return False
+        from core.types import is_subtype
+        wanted = state.stack[-1].expected_type
+        return any(f.type is not None and is_subtype(f.type, wanted)
+                   for f in state.bound_names())
+    return token not in RESULT_NOT_STATIC
+
+
 def cheapest_to_finish(state: "GenState", tokens) -> List[int]:
     """Restrict ``tokens`` to those that finish the program soonest.
+
+    Among *certain* closers (M17): a transparent operator is never the
+    bias's choice, because "cheapest" would then mean "cheapest gamble".
+    Every slot type has a certain closer -- a literal, `nil`, `lambda`,
+    `quote`, `defpop` -- so the fallback to all tokens never fires for a
+    well-formed slot.
 
     Exposed because every sampler needs it and the obvious hand-rolled
     version is wrong.  "Prefer END, else LIT_INT" reads like a
@@ -445,7 +475,8 @@ def cheapest_to_finish(state: "GenState", tokens) -> List[int]:
     if not state.stack:
         return list(tokens)
     slot = state.stack[-1]
-    costs = {t: token_completion_cost(t, slot) for t in tokens}
+    certain = [t for t in tokens if is_certain(state, t)] or list(tokens)
+    costs = {t: token_completion_cost(t, slot) for t in certain}
     if not costs:
         return list(tokens)
     cheapest = min(costs.values())
@@ -653,7 +684,10 @@ def _self_test() -> None:
     # closes List in one.  Fn takes two, because the cheapest way to
     # produce a function is to name one -- `(ref k)` is an operator plus
     # its literal, against `lambda`'s three.
-    expected = {INT: 1, LITERAL_INT: 1, _VALUE: 1, _LIST: 1, _FN: 2}
+    # Certain closers only: Fn is three tokens (a lambda), not two (a ref
+    # that might exist).  A ref is the cheapest closer once a *typed*
+    # function is bound -- checked below.
+    expected = {INT: 1, LITERAL_INT: 1, _VALUE: 1, _LIST: 1, _FN: 3}
     for slot_type, want in expected.items():
         got = completion_cost(slot_type)
         assert got == want, f"completion_cost({slot_type}) = {got}, want {want}"
@@ -663,26 +697,25 @@ def _self_test() -> None:
     # closer is `lambda`; once a function is in scope it is `ref`.
     for slot_type, escape in ((INT, LIT_INT), (_VALUE, LIT_INT),
                               (_LIST, NIL), (_FN, LAMBDA)):
-        slot = Slot(expected_type=slot_type)
-        costs = {t: token_completion_cost(t, slot)
-                 for t in GenState.fresh(slot_type).valid_next()}
-        # Cheapest, possibly tied: in an Fn slot `(eval (quote 5))` costs
-        # the same three tokens as a lambda.  It is well-typed and traps
-        # at run time, which is Q65's territory, not this check's.
-        assert costs[escape] == min(costs.values()), (
-            f"{slot_type}: {SIGNATURES[escape]['name']} is not a cheapest closer"
+        fresh = GenState.fresh(slot_type)
+        chosen = cheapest_to_finish(fresh, fresh.valid_next())
+        # Ties are legitimate -- a Value slot closes in one token by a
+        # literal, `nil` or `stdin` alike.  What must hold is that the
+        # certain closer is among the choices and no gamble is.
+        assert escape in chosen, (
+            f"{slot_type}: bias picks {[SIGNATURES[t]['name'] for t in chosen]}, "
+            f"not {SIGNATURES[escape]['name']}"
         )
-        if slot_type == _FN:
-            from core.tokens import REF as _REF0
-            assert _REF0 not in costs, "ref must not be offered with nothing bound"
+        assert not any(t in RESULT_NOT_STATIC for t in chosen), (
+            f"{slot_type}: the bias chose a transparent operator"
+        )
     from core.tokens import REF as _REF
     with_fn = (GenState.fresh(INT).step(LET).step(LIT_INT, 0)
                .step(LAMBDA).step(LIT_INT, 1).step(LIT_INT, 5))   # (let 0 (lambda 1 5) _)
     fn_slot_state = with_fn.step(_AP)                              # apply's Fn head
     assert _REF in fn_slot_state.valid_next(), "a bound function should make ref available"
-    costs = {t: token_completion_cost(t, fn_slot_state.stack[-1])
-             for t in fn_slot_state.valid_next()}
-    assert min(costs, key=lambda t: (costs[t], t)) == _REF
+    assert is_certain(fn_slot_state, _REF), "a typed bound function makes ref certain"
+    assert cheapest_to_finish(fn_slot_state, fn_slot_state.valid_next()) == [_REF]
     # The two shapes that defeated the earlier tests.
     fn_slot = Slot(expected_type=_FN)
     assert token_completion_cost(_LU, fn_slot) > token_completion_cost(LAMBDA, fn_slot)

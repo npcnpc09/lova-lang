@@ -293,6 +293,16 @@ class Cons:
             rest = rest.tail
         return "(" + " ".join(items) + ")"
 
+    def depth(self) -> int:
+        """Nesting depth: 1 for a flat list, 2 for a list of lists."""
+        deepest = 0
+        rest = self
+        while isinstance(rest, Cons):
+            if isinstance(rest.head, Cons):
+                deepest = max(deepest, rest.head.depth())
+            rest = rest.tail
+        return deepest + 1
+
 
 class Scope(dict):
     """An environment frame opened by ``LET``.
@@ -1051,7 +1061,9 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
         return NIL_VALUE
 
     if op == CONS:
-        element = _as_int(_eval(node.args[0], rt), "cons")
+        # Any value may be an element (M17): an integer, a list, a
+        # program, a function.  Only the tail has to be a list.
+        element = _eval(node.args[0], rt)
         rest = _as_list(_eval(node.args[1], rt), "cons")
         return Cons(head=element, tail=rest)
 

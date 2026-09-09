@@ -81,12 +81,14 @@ Before it there was no way to return two values -- ``partition``
 returns ``n // 2`` rather than the pair it means, because a pair was
 not representable.
 
-**Elements are ``Int``, not ``Value``.**  A list of lists is therefore
-not constructible.  That is deliberate: typing ``head`` as ``List ->
-Int`` makes it *sound*, whereas ``List -> Value`` would type-check
-``(merge (head l) 1)`` and then fail at run time.  Parameterised
-``List<T>`` is the fix and is future work (see journal Q42); a flat
-list of integers already covers strings and every present use.
+**Elements are any value (M17).**  From M10 to M16 a cons cell held an
+``Int`` only, which kept ``head : List -> Int`` sound at the cost of
+ruling out trees, lists of programs and nested structure.  M17 widened
+the element to ``Value`` and made ``head``'s result follow its operand
+-- unknown to the checker, checked at run time -- the same trade
+``apply`` and ``ref`` made.  A parameterised ``List<T>`` would recover
+the static answer (journal Q42) and now has something to be measured
+against.
 """
 
 PROGRAM = Type("Program")

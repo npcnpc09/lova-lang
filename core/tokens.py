@@ -199,10 +199,15 @@ _TYPE_INFO = {
     PARTITION:      {"in_types": [INT], "out_type": INT},
     MERGE:          {"in_types": [INT, INT], "out_type": INT},
     IDENTITY:       {"in_types": [INT], "out_type": INT},
-    # Lists (M10).  Elements are Int, not Value -- see core.types.LIST for
-    # why that keeps `head` sound rather than merely permissive.
+    # Lists (M10; elements widened in M17).  A cons cell holds any value
+    # -- an integer, a program, a list -- so trees and lists of programs
+    # are representable.  The price is that `head`'s result type is no
+    # longer written on the operator: it follows the list, which the
+    # checker and the generator cannot see, so `head` joins the
+    # result-follows-operands set and a misuse fails at run time with a
+    # structured error.  The same trade `apply` and `ref` made (Q42).
     NIL:            {"in_types": [], "out_type": LIST},
-    CONS:           {"in_types": [INT, LIST], "out_type": LIST},
+    CONS:           {"in_types": [VALUE, LIST], "out_type": LIST},
     HEAD:           {"in_types": [LIST], "out_type": INT},
     TAIL:           {"in_types": [LIST], "out_type": LIST},
     IS_NIL:         {"in_types": [LIST], "out_type": INT},
@@ -341,7 +346,7 @@ TYPED_TOKENS = frozenset(_TYPE_INFO.keys())
 # variadic may be empty, and `(seq)` evaluates to 0, so its result type
 # is not determined by the slot it sits in.  The compiler checks that
 # case separately.
-RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL})
+RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL, HEAD})
 
 # ``REF`` is the other operator whose result type is not its declared
 # one: it is whatever the binding holds.  The compiler resolves that
