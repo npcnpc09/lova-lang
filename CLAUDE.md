@@ -275,6 +275,9 @@ python -m core.cli emit apps/coprime.lova 14 15 --form stage2
 # Static analysis without running it
 python -m core.cli analyze apps/collatz.lova 27
 
+# Serve the language to an MCP host (execute / analyze / valid_next / emit)
+python -m core.cli mcp
+
 # Run an experiment
 python experiments/experiment_01_hello_lova.py
 ```
@@ -376,7 +379,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M21)
+## Current state (2026-09-09 — post-M21 + M7)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -467,6 +470,15 @@ experiment details.
   work. Related: four runtime arithmetic sites trusted their slot type
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
+
+**M7** (named long ago, delivered last) made LOVA a tool for agents:
+`core/mcp_server.py` serves `lova_execute` / `lova_static_analyze` /
+`lova_valid_next` / `lova_emit` over the MCP stdio transport with no
+dependency outside the standard library — `lova mcp` starts it,
+`apps/mcp_demo.py` drives it — and `pip install .` builds a wheel that
+ships `core`, `lib/*.lova` and the corpus with a `lova` command
+(version 0.2.0). `lova_valid_next` is Axiom 3 as a service: a host can
+ask, at every step, which tokens may follow.
 
 **M21** activated the network on the IO family's last two slots:
 `net-send` / `net-recv` over UDP datagrams, under the `net` bit of the
@@ -582,7 +594,7 @@ more, and 4 slots are genuinely free (see the slot-budget note above). See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-595 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+618 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 
@@ -669,12 +681,19 @@ v3 with an algorithmic category), Q34 (mutual recursion), Q35
 (arity-indexed `Fn<n>`), Q36 (re-run Exp 03/10 — `constrained_random`
 now emits lambdas, so their distributions are stale).
 
-**M7 — MCP server / external integration** (≈ 1-2 weeks)
-1. `lova-mcp` Python package exposing `lova/execute`,
-   `lova/valid_next`, `lova/static_analyze` as MCP tools.
-2. One-line install path: `pip install lova-lang`.
-3. Demo scripts that any MCP-connected agent (Claude Desktop, Cursor,
-   Claude Code) can call directly.
+**M7 — MCP server / external integration** (complete, 2026-09-09)
+1. ✅ `core/mcp_server.py` exposes `lova_execute`, `lova_valid_next`,
+   `lova_static_analyze` (and `lova_emit`) as MCP tools over stdio —
+   inside the package rather than a separate `lova-mcp`, and with no
+   MCP SDK dependency, because the transport is one JSON object per
+   line and the core is stdlib-only by design. Tool names use `_`
+   rather than `/` because hosts validate names against
+   `[a-zA-Z0-9_-]`.
+2. ✅ `pip install .` builds a wheel with `core`, `lib/*.lova` and the
+   corpus, and a `lova` console script (0.2.0). Publishing to PyPI is
+   the owner's call.
+3. ✅ `apps/mcp_demo.py` drives the server through its pipes; the
+   README carries the host configuration.
 
 **M8 — Fine-tuning corpus + real-LLM benchmark** (≈ 1 month + GPU)
 0. **Prerequisite from Exp 12:** every LOVABench task predates M9, so

@@ -404,7 +404,18 @@ def build_parser() -> argparse.ArgumentParser:
                   with_file=False)
     repl.set_defaults(func=cmd_repl)
 
+    mcp = subparsers.add_parser(
+        "mcp", help="serve LOVA as MCP tools over stdio (for agents)")
+    mcp.set_defaults(func=cmd_mcp)
+
     return parser
+
+
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """Speak the Model Context Protocol on stdin/stdout until EOF (M7)."""
+    from core.mcp_server import serve
+    serve()
+    return EXIT_OK
 
 
 def main(argv: Optional[List[str]] = None) -> int:

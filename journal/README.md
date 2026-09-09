@@ -241,6 +241,39 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 7 (2026-09-09) — LOVA as a tool for agents
+Named at M6 and delivered after M21, because everything it exposes had
+to exist first. `core/mcp_server.py` speaks the Model Context
+Protocol's stdio transport — JSON-RPC 2.0, one object per line — with
+no dependency outside the standard library, and serves four tools:
+
+- **`lova_execute`**: run a program (Stage 1 or Stage 2, placeholders,
+  stdin lines, explicit capability grants), and get the value in every
+  shape an agent might want (`value`, `value_int`, `value_list`,
+  `value_text`), the output, the step count, and — on a trap or a
+  compile error — the structured anomaly with its repair hint, flagged
+  `isError` so a host can branch on it.
+- **`lova_static_analyze`**: the static analysis, the compiler report,
+  the compiled form, its bytes and its Stage-2 projection.
+- **`lova_valid_next`**: Axiom 3 as a service. Give a partial program
+  as bytes or as tokens; get every token that may follow, with types,
+  effects, termination flag and telemetry priors, which tokens finish
+  soonest, and — in a reference slot — the names in scope (M16). A host
+  that constrains its decoding with this cannot emit an ill-typed or
+  unbound program.
+- **`lova_emit`**: Stage 2, s-expression, bytes, or one integer.
+
+`lova mcp` starts it; `apps/mcp_demo.py` drives it through pipes and
+calls each tool. `pip install .` now builds a wheel (0.2.0) that ships
+`core`, `lib/*.lova` — a package now, so the prelude and `evolution`
+install next to `core` in the same layout as a checkout — and the
+corpus, with a `lova` console script. Tests 595 → 618.
+
+The one deviation from the M7 plan: no `lova-mcp` package and no MCP
+SDK. The transport is small enough to write, and a stdlib-only core
+was the rule already; a second package would have been a second thing
+to version for no second thing to say.
+
 ### Milestone 21 (2026-09-09) — The network, as datagrams
 The IO family's last two slots, activated as named: **`net-send`
 (0x31)** sends one UDP datagram — `(net-send "host:port" value)`, the

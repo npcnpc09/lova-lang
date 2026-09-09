@@ -66,8 +66,13 @@ semantics.
   the rest, none of them builtins. Free to include: the compiler's
   `drop-unused` pass takes a program that calls none of it from 474 nodes
   back to 1
-- **A command line** — `lova run | repl | emit | analyze`
+- **A command line** — `lova run | repl | emit | analyze | mcp`
   (`core/cli.py`)
+- **An MCP server** — `lova mcp` serves `lova_execute`,
+  `lova_static_analyze`, `lova_valid_next` and `lova_emit` to any
+  Model-Context-Protocol host over stdio, with no dependency outside the
+  standard library; `lova_valid_next` is Axiom 3 as a service
+  (`core/mcp_server.py`)
 - **One error model, reachable from inside** — every fault carries the
   same structured anomaly, and `(when-anomaly body handler)` hands a
   program the anomaly's code so it can recover. The substrate's
@@ -145,7 +150,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (595 tests, stdlib unittest only)
+# run the test suite (618 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -155,6 +160,31 @@ python experiments/experiment_01_hello_lova.py
 #   (parse → analyse → compile → encode → evaluate)
 python apps/is_perfect.py 28
 ```
+
+Or install it — the wheel ships the core, the LOVA libraries and the
+corpus, and puts a `lova` command on the path:
+
+```bash
+pip install .
+lova run apps/is_prime.lova 1999
+```
+
+### Give it to an agent
+
+`lova mcp` speaks the Model Context Protocol on stdin/stdout. Any MCP
+host — Claude Code, Claude Desktop, Cursor — gets four tools: run a
+program (with explicit capability grants), analyse one without running
+it, ask which tokens may come next in a partial program, and project a
+program into Stage 2 / bytes / one integer.
+
+```json
+{"mcpServers": {"lova": {"command": "lova", "args": ["mcp"]}}}
+```
+
+From a checkout without installing: `"command": "python", "args":
+["-m", "core.cli", "mcp"], "cwd": "/path/to/lova-lang"`.
+`apps/mcp_demo.py` drives the server through its pipes and calls each
+tool once.
 
 All 14 experiments run. Exp 03 and Exp 07 had been dead since the
 corpus grew from 20 tasks to 60; they were fixed at M13 and their
@@ -276,7 +306,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         595 unit tests, stdlib only
+tests/         618 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do

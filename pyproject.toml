@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lova-lang"
-version = "0.1.0"
+version = "0.2.0"
 description = "LOVA — an AI-native integer-sequence programming language"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -32,4 +32,11 @@ lova = "core.cli:main"
 experiments = ["tiktoken>=0.5"]
 
 [tool.setuptools]
-packages = ["core", "corpus"]
+# ``lib`` ships the LOVA-side libraries (prelude, evolution) next to
+# ``core``, which locates them as ``../lib`` -- the same layout as a
+# checkout, so an installed ``lova`` and a checkout behave alike.
+packages = ["core", "corpus", "lib"]
+
+[tool.setuptools.package-data]
+lib = ["*.lova"]
+corpus = ["*.jsonl", "*.json"]
