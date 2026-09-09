@@ -29,8 +29,8 @@ from core.compiler import CompileError, compile as lova_compile
 from core.conservation import BudgetTrap, DeltaTrap
 from core.observability import static_analyze
 from core.runtime import (
-    Cons, NIL_VALUE, Runtime, evaluate, is_list_value, is_program_value,
-    list_to_python,
+    Cons, NIL_VALUE, Runtime, evaluate, is_list_value, is_population_value,
+    is_program_value, list_to_python,
 )
 from core.surface import parse, parse_with_prelude, pretty
 from core.tokens import encode
@@ -104,6 +104,9 @@ def format_value(value: Any) -> str:
     plausible codepoint — a string is a list of codepoints, so the
     reader deserves to be told which one they are looking at.
     """
+    if is_population_value(value):
+        return (f"#<population n={len(value.variants)} "
+                f"gen={value.generation}>")
     if is_program_value(value):
         uid = getattr(value, "uid", None)
         tag = f" uid={uid}" if uid else ""

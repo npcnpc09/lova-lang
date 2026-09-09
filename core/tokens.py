@@ -190,7 +190,7 @@ assert len(SIGNATURES) == 64, f"Token table must have exactly 64 entries, found 
 # treats them as unreachable and never emits them.  As milestones land,
 # operators get type info here and become generation-reachable.
 
-from core.types import FN, INT, LIST, LITERAL_INT, PROGRAM, VALUE  # noqa: E402
+from core.types import FN, INT, LIST, LITERAL_INT, POPULATION, PROGRAM, VALUE  # noqa: E402
 
 _TYPE_INFO = {
     # Literals
@@ -258,6 +258,25 @@ _TYPE_INFO = {
     # LOVA has no fractions.
     CLONE:          {"in_types": [PROGRAM], "out_type": PROGRAM},
     MUTATE:         {"in_types": [PROGRAM, INT], "out_type": PROGRAM},
+    # Evolution, the rest (M15) -- Axiom 6 in the language.  A scorer is
+    # an Fn from Program to Int, and **lower is fitter**: the natural
+    # score is a surprise magnitude, and zero surprise is perfect.
+    #   (defpop scorer p1 p2 ...)   build a pool
+    #   (fitness pop)               every variant's score, in pool order
+    #   (variant pop k)             the k-th variant in pool order
+    #   (select pop k)              the k-th *fittest* (0 = best)
+    #   (retire pop)                the pool without its least-fit member
+    #   (evolve pop)                one generation: retire the bottom 20%,
+    #                               refill from the survivors by sharp
+    #                               fitness-weighted clone (30%) or
+    #                               mutate (70%, strength 30%)
+    DEFPOP:         {"in_types": None, "head_types": [FN],
+                     "variadic_type": PROGRAM, "out_type": POPULATION},
+    VARIANT:        {"in_types": [POPULATION, INT], "out_type": PROGRAM},
+    EVOLVE:         {"in_types": [POPULATION], "out_type": POPULATION},
+    SELECT:         {"in_types": [POPULATION, INT], "out_type": PROGRAM},
+    FITNESS:        {"in_types": [POPULATION], "out_type": LIST},
+    RETIRE:         {"in_types": [POPULATION], "out_type": POPULATION},
     # Error handling (M13).  ``(when-anomaly body handler)``: evaluate
     # `body`; if it traps, call `handler` with the anomaly's integer code
     # and return that instead.  The handler is an ``Fn`` because a

@@ -104,6 +104,17 @@ Disjoint from ``Int``, ``List`` and ``Fn``: a program is not a number
 text), and not callable (``eval`` runs it).
 """
 
+POPULATION = Type("Population")
+"""A pool of program variants under a fitness function (M15).
+
+Axiom 6 says a function is a population of variants, not a single
+definition.  Until M15 that was true only in ``core/populations.py``:
+the Evolution family's remaining six slots each needed a population as
+a *value*, and the language had no collection but a list of integers.
+This is that value.  ``defpop`` builds one from a scorer and any number
+of programs; ``evolve`` returns the next generation; ``select`` ranks.
+"""
+
 VALUE = Type("Value")
 """The top type — anything a name can be bound to (M9).
 
@@ -130,6 +141,7 @@ _SUBTYPE_PAIRS = frozenset({
     (FN, VALUE),
     (LIST, VALUE),
     (PROGRAM, VALUE),
+    (POPULATION, VALUE),
 })
 
 

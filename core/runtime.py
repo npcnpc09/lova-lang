@@ -15,7 +15,8 @@ Operators implemented:
 - QUOTE, EVAL                            (programs as values)
 - EXPLAIN, HASH, UID, GENERATION, ANCESTOR_OF, LINEAGE_QUERY, WHY, TRACE
                                          (Axiom 5, in the language)
-- CLONE, MUTATE                          (Axiom 6, beginning)
+- CLONE, MUTATE, DEFPOP, VARIANT, EVOLVE, SELECT, FITNESS, RETIRE
+                                         (Axiom 6, in the language)
 - P, TAU, SIGMA, GCD, MOBIUS, MUL, MOD, DIV  (number-theory primitives)
 - BUDGET, CONSERVE, VIOLATE              (conservation layer)
 - SURPRISE, TRACE_SURPRISE, DEVIATION, THRESHOLD  (the debugger
@@ -91,6 +92,7 @@ from core.tokens import (
     WHEN_ANOMALY,
     ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
     MUTATE, QUOTE, TRACE, UID, WHY, encode,
+    DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -344,6 +346,13 @@ def _as_text(v: Any, ctx: str) -> str:
     """
     if isinstance(v, int) and not isinstance(v, bool):
         return str(v)
+    if is_population_value(v):
+        raise DomainTrap(
+            "type-violation",
+            f"{ctx}: cannot write a population; `explain` a selected variant",
+            {"operator": ctx, "got": "Population"},
+            "write `(explain (select pop 0))`",
+        )
     if is_program_value(v):
         raise DomainTrap(
             "type-violation",
@@ -372,6 +381,72 @@ def _as_text(v: Any, ctx: str) -> str:
         {"operator": ctx, "got": "Fn"},
         "write an integer or a list of codepoints",
     )
+
+
+@dataclass
+class Population:
+    """A pool of program variants under a scorer (M15) -- Axiom 6's value.
+
+    Immutable: ``evolve`` and ``retire`` return a new pool.  The scorer
+    is a LOVA function from Program to Int, lower being fitter, so a
+    surprise magnitude is a score without translation.
+    """
+
+    scorer: Any
+    variants: List[Node]
+    generation: int = 0
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return f"<population n={len(self.variants)} gen={self.generation}>"
+
+
+# A variant whose scorer traps is not scored; it is unfit.  The anomaly
+# is recorded on the runtime, so a variant that mutated into dividing by
+# zero is visible, not silent -- it just loses.
+UNFIT = 1 << 62
+
+# The evolution rule, matching core/populations.py's defaults so the
+# in-language step is the same step Exp 05 ran from Python.
+RETIRE_FRACTION = 0.2
+CLONE_PROBABILITY = 0.3
+EVOLVE_STRENGTH = 0.3
+SELECTION_SHARPNESS = 3
+
+
+def is_population_value(v: Any) -> bool:
+    return isinstance(v, Population)
+
+
+def _as_population(v: Any, ctx: str) -> Population:
+    if isinstance(v, Population):
+        return v
+    raise DomainTrap(
+        "type-violation",
+        f"{ctx}: expected a Population, got {v!r}; `defpop` builds one",
+        {"operator": ctx, "expected": "Population"},
+        "build a pool with `(defpop scorer program ...)`",
+    )
+
+
+def _score_population(pop: Population, rt: "Runtime") -> List[int]:
+    """Every variant's score, in pool order.  Lower is fitter."""
+    scores: List[int] = []
+    for variant in pop.variants:
+        try:
+            scores.append(_as_int(_call(pop.scorer, variant, rt), "fitness"))
+        except StepTrap:
+            raise                       # the ceiling is not a fitness signal
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
+            rt.caught.append(trap.anomaly)
+            scores.append(UNFIT)
+    return scores
+
+
+def _rank_population(pop: Population, rt: "Runtime") -> Tuple[List[int], List[int]]:
+    """(scores, indices fittest-first).  Ties keep pool order."""
+    scores = _score_population(pop, rt)
+    order = sorted(range(len(scores)), key=lambda i: (scores[i], i))
+    return scores, order
 
 
 def is_program_value(v: Any) -> bool:
@@ -455,6 +530,14 @@ def _as_int(v: Any, ctx: str) -> int:
         return int(v)
     if isinstance(v, int):
         return v
+    if is_population_value(v):
+        raise DomainTrap(
+            "type-violation",
+            f"{ctx}: expected an Int, got a population; `fitness` gives "
+            "its scores, `select` gives a variant",
+            {"operator": ctx, "expected": "Int", "got": "Population"},
+            "use `fitness` for the scores or `select` for a variant",
+        )
     if is_program_value(v):
         raise DomainTrap(
             "type-violation",
@@ -1103,6 +1186,114 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
             )
         _ensure_registered(program, rt)
         return rt.lineage.mutate(program, strength=percent / 100)
+
+    # --- evolution, the rest (M15) -- Axiom 6 ------------------------------
+    if op == DEFPOP:
+        if not node.args:
+            raise DomainTrap(
+                "malformed", "defpop: missing scorer", {"operator": "defpop"},
+                "give `defpop` a scorer function and at least one program",
+            )
+        scorer = _eval(node.args[0], rt)
+        if not is_callable_value(scorer):
+            raise DomainTrap(
+                "type-violation",
+                f"defpop: the scorer must be a function, got {scorer!r}",
+                {"operator": "defpop", "expected": "Fn"},
+                "pass a lambda from Program to Int as the first argument",
+            )
+        variants = [_as_program(_eval(arg, rt), "defpop") for arg in node.args[1:]]
+        if not variants:
+            raise DomainTrap(
+                "domain-error", "defpop: a population needs at least one variant",
+                {"operator": "defpop"}, "quote at least one program",
+            )
+        for variant in variants:
+            _ensure_registered(variant, rt)
+        return Population(scorer=scorer, variants=variants)
+
+    if op == VARIANT:
+        pop = _as_population(_eval(node.args[0], rt), "variant")
+        k = _as_int(_eval(node.args[1], rt), "variant")
+        if not 0 <= k < len(pop.variants):
+            raise DomainTrap(
+                "domain-error",
+                f"variant: index {k} out of range for a pool of {len(pop.variants)}",
+                {"operator": "variant", "index": k, "size": len(pop.variants)},
+                "index from 0 to one less than the pool size",
+            )
+        return pop.variants[k]
+
+    if op == SELECT:
+        pop = _as_population(_eval(node.args[0], rt), "select")
+        k = _as_int(_eval(node.args[1], rt), "select")
+        _scores, order = _rank_population(pop, rt)
+        if not 0 <= k < len(order):
+            raise DomainTrap(
+                "domain-error",
+                f"select: rank {k} out of range for a pool of {len(order)}",
+                {"operator": "select", "rank": k, "size": len(order)},
+                "rank 0 is the fittest; the last rank is the pool size less one",
+            )
+        return pop.variants[order[k]]
+
+    if op == FITNESS:
+        pop = _as_population(_eval(node.args[0], rt), "fitness")
+        return list_from(_score_population(pop, rt))
+
+    if op == RETIRE:
+        pop = _as_population(_eval(node.args[0], rt), "retire")
+        if len(pop.variants) < 2:
+            raise DomainTrap(
+                "domain-error", "retire: cannot retire the last variant",
+                {"operator": "retire", "size": len(pop.variants)},
+                "a population keeps at least one variant",
+            )
+        _scores, order = _rank_population(pop, rt)
+        worst = order[-1]
+        kept = [v for i, v in enumerate(pop.variants) if i != worst]
+        return Population(scorer=pop.scorer, variants=kept,
+                          generation=pop.generation)
+
+    if op == EVOLVE:
+        # One generation, the same rule core/populations.py applies: the
+        # bottom RETIRE_FRACTION go; each vacated slot is refilled from
+        # the survivors, chosen with sharply fitness-weighted odds, by a
+        # clone or a mutation.  The mutation draws on the lineage
+        # store's seeded generator, so a run is reproducible.
+        pop = _as_population(_eval(node.args[0], rt), "evolve")
+        size = len(pop.variants)
+        if size < 2:
+            raise DomainTrap(
+                "domain-error", "evolve: a population of one cannot evolve",
+                {"operator": "evolve", "size": size},
+                "start with at least two variants",
+            )
+        scores, order = _rank_population(pop, rt)
+        n_retire = max(1, int(size * RETIRE_FRACTION))
+        survivors = order[:size - n_retire]                 # fittest first
+        clamp = [min(scores[i], 10 ** 9) for i in survivors]
+        worst_kept = max(clamp)
+        weights = [(worst_kept - c + 1) ** SELECTION_SHARPNESS for c in clamp]
+        rng = rt.lineage._rng
+        children: List[Node] = []
+        for _ in range(n_retire):
+            pick = rng.random() * sum(weights)
+            acc = 0.0
+            chosen = survivors[-1]
+            for idx, weight in zip(survivors, weights):
+                acc += weight
+                if pick <= acc:
+                    chosen = idx
+                    break
+            parent = pop.variants[chosen]
+            if rng.random() < CLONE_PROBABILITY:
+                children.append(rt.lineage.clone(parent))
+            else:
+                children.append(rt.lineage.mutate(parent, strength=EVOLVE_STRENGTH))
+        kept = [v for i, v in enumerate(pop.variants) if i in set(survivors)]
+        return Population(scorer=pop.scorer, variants=kept + children,
+                          generation=pop.generation + 1)
 
     # --- error handling (M13) --------------------------------------------
     if op == WHEN_ANOMALY:

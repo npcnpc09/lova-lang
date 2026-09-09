@@ -321,6 +321,23 @@ prerequisite for the whole Meta family: no program value, nothing to
 explain. **Five free slots remain**: 0x12 `delta-check`, 0x13 `respawn`,
 0x14 `budget-remaining`, 0x16 `preserve`, 0x1E `normal-range`.
 
+### M15 activated the rest of the Evolution family
+
+| Byte | Name | Type |
+|---|---|---|
+| 0x20 | `defpop` | `Fn, Program* -> Population` |
+| 0x21 | `variant` | `Population, Int -> Program` |
+| 0x22 | `evolve` | `Population -> Population` |
+| 0x23 | `select` | `Population, Int -> Program` |
+| 0x26 | `fitness` | `Population -> List` |
+| 0x27 | `retire` | `Population -> Population` |
+
+Activated as named; no free slot consumed. **52 of 64 implemented.**
+The five free slots are unchanged: 0x12 `delta-check`, 0x13 `respawn`,
+0x14 `budget-remaining`, 0x16 `preserve`, 0x1E `normal-range`. The
+twelve reserved are those five plus the seven Effects/IO slots that
+are not `stdout` / `stdin`.
+
 ### Still unspent, still needing a decision
 
 | Candidate | Slots | Status |

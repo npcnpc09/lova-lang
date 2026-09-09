@@ -1,0 +1,57 @@
+LOVA Experiment 15 -- Axiom 6 in the language (Exp 05 from inside)
+
+==============================================================================
+  1. Ten seeds, thirty generations, written as a LOVA program
+==============================================================================
+  initial distances to 42: [35, 14, 12, 33, 30]   (best 12, worst 35) -- Exp 05's numbers, from inside
+
+  seed  final  from best  from worst  gen  trapped  winner
+  --------------------------------------------------------------------------
+     0      2       83%        94%    6        0  (merge 15 25)
+     1      3       75%        91%    5        0  (merge 14 25)
+     2      5       58%        86%    3        0  (merge 19 18)
+     3     10       17%        71%    1        0  (merge 12 20)
+     4      5       58%        86%    2        0  (merge 12 25)
+     5      2       83%        94%    8        0  (merge 18 22)
+     6      1       92%        97%    4        0  (merge 16 25)
+     7     10       17%        71%    2        0  (merge 12 20)
+     8      3       75%        91%    5        0  (merge 17 22)
+     9     12        0%        66%    0        0  (merge 10 20)
+  --------------------------------------------------------------------------
+  improved on the initial best:  9/10
+  converged (distance <= 2):     3/10
+  perfect (distance 0):          0/10
+  mean gap closed, from best:    56%
+  mean gap closed, from worst:   85%   (the baseline Exp 05 reported against)
+
+==============================================================================
+  2. Provenance of the winners, from inside the language
+==============================================================================
+  `why` and `generation` are LOVA operators now; each line below
+  was written by the program about its own winner.
+  seed 0: gen  6  mutate strength=0.3 [lit:12->15]
+  seed 1: gen  5  mutate strength=0.3 [lit:20->25]
+  seed 2: gen  3  mutate strength=0.3 [lit:14->19,lit:21->18]
+  seed 3: gen  1  mutate strength=0.3 [lit:10->12]
+  variants that trapped under the scorer across all runs: 0  (scored UNFIT, recorded in rt.caught, never crashed a pool)
+
+==============================================================================
+  3. What differs from Exp 05
+==============================================================================
+  Exp 05: strength 0.45, 12 rounds x 10 dispatches, Python-driven,
+          best seed 35 -> 1 (97% from worst), 3/10 within +-2,
+          mean 80% closed from worst.
+  Here:   strength 0.30 (the library default `evolve` encodes),
+          30 generations x 1 refill, LOVA-driven,
+          mean 85% closed from worst, 3/10 within +-2.
+  Same rule, different setting -- not the same run.  The point
+  of this experiment is not the number; it is that the number
+  was produced by a LOVA program calling `evolve`, `select`,
+  `generation` and `why`, with Python doing nothing but seeding
+  and printing.  Axiom 6 is in the language.
+
+==============================================================================
+  Experiment 15 -- summary
+==============================================================================
+  9/10 seeds improve, 3/10 converge, mean 85% of the worst-case gap closed, all from
+  inside LOVA; the Evolution family is 8/8 implemented.

@@ -49,8 +49,8 @@ semantics.
 
 ## What's actually implemented
 
-- **64-token core ISA** (8 families × 8), 1 byte per operator — 46 operators
-  have runtime semantics, 18 are reserved (`spec/tokens.md`, generated
+- **64-token core ISA** (8 families × 8), 1 byte per operator — 52 operators
+  have runtime semantics, 12 are reserved (`spec/tokens.md`, generated
   from the table by `spec/generate_tokens_md.py`)
 - **Data** — one cons cell (`nil` / `cons` / `head` / `tail` / `nil?`)
   gives pairs, lists, and strings as codepoint lists, so `"abc"` is
@@ -72,6 +72,11 @@ semantics.
   same structured anomaly, and `(when-anomaly body handler)` hands a
   program the anomaly's code so it can recover. The substrate's
   termination ceiling is the one thing a program cannot mask
+- **Populations** — Axiom 6 in the language: `(defpop scorer p1 p2 …)`
+  builds a pool, `(evolve pop)` runs a generation with the same rule the
+  Python engine used, `(select pop 0)` is the fittest, and the winner
+  can say where it came from. Exp 15 re-runs the self-healing experiment
+  as one LOVA program
 - **Programs as values** — `quote` / `eval`, and the whole Meta family:
   `(explain p)` renders a program as text, `(hash p)` gives its integer,
   `(why p)` / `(lineage-query p)` / `(ancestor-of a b)` ask where it
@@ -124,7 +129,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (398 tests, stdlib unittest only)
+# run the test suite (425 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -168,6 +173,7 @@ statistical guarantees** — sample sizes are stated for each.
 | ...by adding `lt` and `sub` as primitives | 9%, for 2 slots — so they shipped as macros instead | Exp 13 |
 | ...residual, unreachable by any token-table change | 61% (s-expression syntax) | Exp 13 |
 | Runaway programs producing a structured anomaly | 5/5, all with the full L2 schema | Exp 12 |
+| Self-healing, written as a LOVA program | 9/10 seeds improve, 3/10 converge, best 35 → 1 | Exp 15 (10 seeds × 30 generations) |
 | Constant-folding compression | 58.5% fewer nodes, 43.9% fewer bytes | Exp 08 |
 | Telemetry-weighted vs uniform sampling | +40 pp pass-without-trap (100% vs 60%) | Exp 10 (N=50, re-run at M13) |
 
@@ -253,7 +259,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         398 unit tests, stdlib only
+tests/         425 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
@@ -264,15 +270,17 @@ Stated plainly, because the list is short and the omissions are large:
   filesystem, the network and the clock (0x30-0x34, 0x37) are reserved.
 - **No modules.** The prelude is prepended textually, which works for
   one library and will not scale to two (Q50).
-- **Populations still live in Python.** `clone` and `mutate` are
-  operators now, but `defpop` / `evolve` / `select` need a population as
-  a value, and the only collection is a list of integers (Q58).
+- **A population is its own value, not a list of programs.** That
+  sidestepped parameterised lists (Q42) for now; `List<T>` remains the
+  better long-term shape (Q63).
 - **No lists of lists.** `cons` takes an `Int`, which keeps
   `head : List -> Int` sound but rules out trees and nested structure
   (Q42). Strings work because a string is a flat list of codepoints.
-- **No modules beyond textual inclusion** — see above.
-- **First-order functions only.** A function cannot be passed to a
-  function, and partial application is not statically checked (Q35).
+- **Function types are shallow.** Functions are first-class — the
+  prelude's `map` / `filter` / `fold` take functions — but `Fn` does not
+  track arity or return type, so a partial application or a call result
+  used in the wrong slot fails at run time rather than compile time
+  (Q35, Q51).
 - **Generation-time type safety is operator-level, not name-level.**
   `valid_next` cannot consult scope — name ids live in literal payloads
   the generation state machine never sees — so a misused reference is a

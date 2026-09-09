@@ -38,6 +38,7 @@ from core.tokens import (
     CONS, DIV, HEAD, IS_NIL, NIL, TAIL, STDIN, STDOUT, WHEN_ANOMALY,
     ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
     MUTATE, QUOTE, TRACE, UID, WHY,
+    DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT,
 )
 from core.types import INT, LITERAL_INT, Type, is_subtype
 
@@ -105,6 +106,13 @@ _EFFECTS: dict = {
     WHY: frozenset({"read-lineage"}),
     CLONE: frozenset({"write-lineage"}),
     MUTATE: frozenset({"write-lineage"}),
+    # M15 -- populations.  Scoring runs the scorer, which runs code.
+    DEFPOP: frozenset({"write-lineage"}),
+    VARIANT: frozenset(),
+    FITNESS: frozenset({"unbounded-cost"}),
+    SELECT: frozenset({"unbounded-cost"}),
+    RETIRE: frozenset({"unbounded-cost"}),
+    EVOLVE: frozenset({"unbounded-cost", "write-lineage"}),
     # conservation
     BUDGET: frozenset({"budget-scope"}),
     CONSERVE: frozenset({"conservation-check"}),
@@ -389,7 +397,7 @@ def static_analyze(node: Node) -> StaticAnalysis:
         if getattr(n, "uid", None) is not None:
             counts["lineage"] += 1
         if n.op in (UID, GENERATION, ANCESTOR_OF, LINEAGE_QUERY, WHY,
-                    CLONE, MUTATE):
+                    CLONE, MUTATE, DEFPOP, EVOLVE):
             counts["lineage"] += 1
         if n.op == LIT_INT:
             return

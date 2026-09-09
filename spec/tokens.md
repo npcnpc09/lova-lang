@@ -15,7 +15,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  46 of the 64 tokens are implemented.
+  52 of the 64 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -76,14 +76,14 @@ Legend:
 
 | Byte | Name | Arity | In types | Out type | Effects | Status |
 |---|---|---|---|---|---|---|
-| 0x20 | `defpop` | variadic | - | - | - | Reserved |
-| 0x21 | `variant` | 2 | - | - | - | Reserved |
-| 0x22 | `evolve` | 1 | - | - | - | Reserved |
-| 0x23 | `select` | 2 | - | - | - | Reserved |
+| 0x20 | `defpop` | variadic | Fn, Program* | Population | {write-lineage} | **impl** |
+| 0x21 | `variant` | 2 | Population, Int | Program | - | **impl** |
+| 0x22 | `evolve` | 1 | Population | Population | {unbounded-cost, write-lineage} | **impl** |
+| 0x23 | `select` | 2 | Population, Int | Program | {unbounded-cost} | **impl** |
 | 0x24 | `mutate` | 2 | Program, Int | Program | {write-lineage} | **impl** |
 | 0x25 | `clone` | 1 | Program | Program | {write-lineage} | **impl** |
-| 0x26 | `fitness` | 1 | - | - | - | Reserved |
-| 0x27 | `retire` | 1 | - | - | - | Reserved |
+| 0x26 | `fitness` | 1 | Population | List | {unbounded-cost} | **impl** |
+| 0x27 | `retire` | 1 | Population | Population | {unbounded-cost} | **impl** |
 
 ## Composition (0x28 - 0x2F)
 
@@ -252,4 +252,4 @@ the identifier was a convenience for whoever typed it.
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  46/64 operators implemented.
+  52/64 operators implemented.

@@ -241,6 +241,35 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 15 (2026-09-09) — Populations; Axiom 6 completed
+The last axiom living in Python. A `Population` is a value with its own
+type — a scorer plus program variants — because the language had no
+collection but a list of integers (Q58), and parameterising lists (Q42)
+was a larger change than a fifth value kind. Six operators on the
+Evolution family's own reserved slots, activated as named: `defpop`
+builds a pool from an `Fn` scorer and any number of programs,
+`fitness` scores it (lower is fitter — a surprise magnitude is a score
+without translation), `variant` / `select` index by pool order / by
+rank, `retire` drops the least fit, and `evolve` applies
+`core/populations.py`'s own rule: retire the bottom 20%, refill from
+survivors with sharpness-3 fitness weighting, clone 30% / mutate 70% at
+strength 0.30, drawing on the lineage store's seeded generator so a run
+replays. A variant whose scorer traps scores `UNFIT` and is recorded,
+never silent; the step ceiling is not a fitness signal and propagates.
+
+**Exp 15 re-runs Exp 05 as a LOVA program** — 9/10 seeds improve,
+3/10 converge, best seed 35 → 1, mean 85% of the worst-case gap closed
+— with Python doing nothing but seeding and printing. Same rule as
+April, different setting (0.30 vs 0.45), so the same shape rather than
+the same run. Every winner can say where it came from: `generation` and
+`why` read the store `evolve` wrote to, which is Axioms 5 and 6
+composing.
+
+**52 / 64 operators. Evolution 8/8, Meta 8/8. All ten axioms are now
+realised in the language**, with Axiom 3 carrying its measured
+qualifier and Axiom 8 its pending revision. Five free slots remain.
+Tests 398 → 425.
+
 ### Milestone 14 (2026-09-09) — Programs as values; Axiom 5 enters the language
 The design audit at M13 found the honest count was **8/10 axioms in the
 language, 2/10 in Python**: provenance (Axiom 5) was queryable only via
@@ -717,13 +746,22 @@ the corpus grows again.
   an algorithmic category (Q33) would measure both regimes on one task
   set.
 
+### Raised by M15 (Exp 15)
+- **Q61**: `evolve` at strength 0.30 needs ~30 generations for what
+  Exp 05 did in 12 rounds at 0.45. A `defpop` parameter, or a prelude
+  `evolve-with` written from the primitives?
+- **Q62**: The scorer runs every variant on every `select` / `retire`
+  / `evolve`; Exp 05 had rolling fitness windows and dispatch counts.
+  Is memoised fitness a population concern or a scorer concern?
+- **Q63**: With a `Population` type in hand, would `List<T>` (Q42)
+  have made it unnecessary? Rewrite `evolve` from list primitives once
+  they exist and compare.
+
 ### Raised by M14
-- **Q58**: `defpop` / `variant` / `evolve` / `select` / `fitness` /
-  `retire` need a population as a value, and the only collection is a
-  list of integers. A list of programs is the natural shape — which is
-  `List<T>` again (Q42). Alternatively a population could be a program
-  value whose root is a `seq` of variants. Which, and does Axiom 6's
-  "dispatch selects per workload" survive either?
+- ~~**Q58**~~: *closed by M15.* A `Population` is its own value type;
+  the six operators are implemented and Exp 15 reproduces Exp 05 from
+  inside the language. `List<T>` (Q42) remains the better long-term
+  shape and now has something to be measured against (Q63).
 - **Q59**: `eval` runs quoted code in the *caller's* environment, which
   makes `(quote (ref 0))` mean different things in different places.
   That is Lisp's `eval` and it is what made `trace` and `explain` easy;
@@ -803,6 +841,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 15 | 2026-09-09 | Populations: Exp 05 from inside LOVA | Done (10 seeds × 30 gens) | **WIN.** Axiom 6 in the language: `defpop` / `fitness` / `variant` / `select` / `retire` / `evolve` on the Evolution family's own slots, `Population` as a fifth value kind. Exp 05 rewritten as one LOVA program: **9/10 seeds improve, 3/10 converge, best seed 35 → 1 (97%), mean 85% of the worst-case gap closed** — Exp 05 had 3/10, 97%, 80%. Same rule (retire 20%, sharpness 3, clone 30%), different setting (strength 0.30 vs 0.45), so the same shape, not the same run. Winners report their own provenance via `generation` / `why`. Trapping variants score UNFIT and are recorded, not silent. **All ten axioms now realised in the language.** Q61-Q63 raised. |
 | 14 | 2026-09-09 | Stage-2 surface, built and measured | Done (2150 round-trips; 3 corpora) | **WIN (STRONG).** Closes Q37. Built `core/surface2.py`: the text projection of the byte encoding, one character per byte, **no delimiters — because the encoding never had any**, `decode` recovering the tree from arity alone. Losslessness **2150/2150** (trees *and* bytes, incl. 1000 generated programs, with and without the reference digram). **Algorithmic density 0.66x -> 1.13x: LOVA is denser than Python on real programs for the first time**, past the 0.76x ceiling Exp 13 proved no table change could reach. **LOVABench 2.00x -> 5.38x vs sympy, 8.51x -> 22.89x vs pure.** Parentheses 25% -> **0%** of token cost. One compression rule (`(ref k)`, 22% of nodes) was worth **27%**, three times what two new token slots were worth. **Exp 11's Stage-2 projection understated density by 70%** (546 predicted vs 322 measured) having erred the *other* way in Exp 12 — node count is a poor proxy in both directions. First time Axiom 2 was cashed in rather than asserted. Untested and now load-bearing: whether a model can emit it (Q47). Q46-Q49 raised. |
 | 13 | 2026-09-09 | Token budget re-derived | Done (3 corpora; 10 tasks x 3 levers) | **WIN on diagnosis — refuted its own hypothesis.** Where the Stage-1 tokens go: **51% names, 25% parens, 10% literals**. Three levers measured separately: one-token operator spellings close **30% of the algorithmic density gap for 0 slots** (verified by execution, 10/10 programs identical); `lt`+`sub` close **9% for 2 slots**; **61% is s-expression syntax** and unreachable by any table change (best case 0.76x, still below Python). So Exp 12's F7 — "the lever is the operator set" — is wrong by 3x; spelling was never measured and is the biggest term. Census: number-theory family is **33% of LOVABench use vs 3-5% elsewhere**, `p`/`tau`/`mobius` zero outside it — but the benchmark's own docstring says tasks were picked for what LOVA can express, so **it cannot testify about the table** (circularity inherited by Exp 10's generation priors, Q40). Proposal: 10 of 14 free slots; strings cost 0 once `cons` exists. Axiom 8 revision proposed, **not applied** — needs owner approval. Two methodology bugs recorded: a regex that matched 1 of 5 sites, and an AST re-render that measured the desugared form (+67%). Q37-Q41 raised. |
 
