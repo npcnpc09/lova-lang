@@ -29,6 +29,7 @@ Future milestones will add ``Population<F>``, ``Stream<T>``,
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,34 @@ slot from being filled with the wrong kind of thing.
 offers LAMBDA / LOOP_UNTIL, and the APPLY head slot offers only the
 ``Fn``-producing operators.
 """
+
+@dataclass(frozen=True, repr=False)     # keep Type's repr: the name
+class FnType(Type):
+    """A function whose *shape* the checker could see (M20).
+
+    ``arity`` is how many arguments the curried chain takes before it
+    stops being a lambda; ``ret`` is what it then produces, or None
+    when that is not statically known.  The compiler infers one from a
+    syntactically visible lambda and lets it flow through `let` and
+    `apply`, so a partial application in an integer slot, a call with
+    too many arguments, or a call result in the wrong slot is a compile
+    error rather than a run-time trap (Q35, Q51).
+
+    A shape is a subtype of plain ``Fn``: everything that accepts a
+    function accepts a shaped one, and the generator -- which sees
+    operator bytes, not shapes -- keeps working at the ``Fn`` level.
+    Parameters stay untyped (Q43): LOVA has no annotations, and the
+    shape says what a function returns, not what it takes.
+    """
+    arity: int = 1
+    ret: Optional[Type] = None
+
+
+def fn_type(arity: int, ret: Optional[Type] = None) -> FnType:
+    """The shape of an ``arity``-argument function returning ``ret``."""
+    shown = ret if ret is not None else "?"
+    return FnType(name=f"Fn<{arity},{shown}>", arity=arity, ret=ret)
+
 
 LIST = Type("List")
 """A list of integers, built from ``cons`` and terminated by ``nil``.
@@ -156,6 +185,19 @@ def is_subtype(child: Type, parent: Type) -> bool:
     """
     if child == parent:
         return True
+    if isinstance(child, FnType):
+        # A shape is an Fn, and a Value.  Between shapes: same arity,
+        # and the return type flows the way types do; an unknown return
+        # accepts anything.
+        if parent == FN or parent == VALUE:
+            return True
+        if isinstance(parent, FnType):
+            return child.arity == parent.arity and (
+                parent.ret is None
+                or (child.ret is not None and is_subtype(child.ret, parent.ret)))
+        return False
+    if isinstance(parent, FnType):
+        return False          # a plain Fn does not promise a shape
     return (child, parent) in _SUBTYPE_PAIRS
 
 
@@ -181,6 +223,15 @@ def _self_test() -> None:
     assert not is_subtype(LIST, FN) and not is_subtype(FN, LIST)
     assert not is_subtype(VALUE, INT)
     assert not is_subtype(VALUE, FN)
+    # Shapes (M20) sit under Fn.
+    two_int = fn_type(2, INT)
+    assert is_subtype(two_int, FN) and is_subtype(two_int, VALUE)
+    assert not is_subtype(two_int, INT) and not is_subtype(FN, two_int)
+    assert is_subtype(fn_type(1, LITERAL_INT), fn_type(1, INT))
+    assert not is_subtype(fn_type(1, INT), fn_type(1, LITERAL_INT))
+    assert is_subtype(fn_type(1, INT), fn_type(1, None))
+    assert not is_subtype(fn_type(1, INT), fn_type(2, INT))
+    assert repr(two_int) == "Fn<2,Int>" and repr(fn_type(1)) == "Fn<1,?>"
     print("core.types self-test OK")
     print(f"  INT          = {INT}")
     print(f"  LITERAL_INT  = {LITERAL_INT}")

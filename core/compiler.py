@@ -47,7 +47,9 @@ from core.tokens import (
     VIOLATE, WHEN_ANOMALY, QUOTE, Lit, Node,
     CAPABILITY_OF, EXTERNAL_BOUNDARY, capability_names,
 )
-from core.types import FN, INT, LIST, LITERAL_INT, VALUE, Type, is_subtype
+from core.types import (
+    FN, INT, LIST, LITERAL_INT, VALUE, FnType, Type, fn_type, is_subtype,
+)
 
 
 # A lambda parameter's type is not knowable from the definition: LOVA has
@@ -247,26 +249,111 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
 
 # --- Pass 2: type check ----------------------------------------------------
 
+def _join(a: Any, b: Any) -> Any:
+    """The type two branches have in common, or unknown."""
+    if a is _UNKNOWN or b is _UNKNOWN:
+        return _UNKNOWN
+    if a == b or is_subtype(a, b):
+        return b
+    if is_subtype(b, a):
+        return a
+    return _UNKNOWN
+
+
+def _applied(fn: Any, count: int) -> Any:
+    """The type of applying ``fn`` to ``count`` arguments, or unknown."""
+    while count > 0:
+        if not isinstance(fn, FnType):
+            return _UNKNOWN
+        if count < fn.arity:
+            return fn_type(fn.arity - count, fn.ret)
+        count -= fn.arity
+        if fn.ret is None:
+            return _UNKNOWN
+        fn = fn.ret
+    return fn
+
+
+def _excess_arguments(fn: Any, count: int) -> int:
+    """How many of ``count`` arguments ``fn`` provably cannot take."""
+    taken = 0
+    while isinstance(fn, FnType):
+        taken += fn.arity
+        if count <= taken:
+            return 0
+        fn = fn.ret
+    if fn is None or fn is _UNKNOWN or is_subtype(FN, fn):
+        return 0              # may still be a function; the runtime decides
+    return count - taken
+
+
+def _describe(t: Any) -> Dict[str, str]:
+    """``produces`` for an anomaly: the family, and the shape when known."""
+    if isinstance(t, FnType):
+        return {"produces": "Fn", "shape": str(t)}
+    return {"produces": str(t)}
+
+
 def _binding_type(node: Node, type_env: Dict[int, Type]) -> Type:
-    """The type a LET value slot actually produces.
+    """The static type of an expression, as far as the checker can see.
 
     ``REF`` declares ``out_type = Int`` because that is what the vast
     majority of references are and because ``valid_next`` has no scope
-    to consult (name ids live in LIT_INT payloads, which the generation
-    state machine never sees).  The compiler *does* have scope, so here
-    a reference resolves to whatever its binding holds.
+    to consult.  The compiler *does* have scope, so here a reference
+    resolves to whatever its binding holds.
+
+    M20 made this an inference rather than a lookup.  A lambda has a
+    *shape* -- its curried arity, and the type of its innermost body --
+    and the shape flows: through `let` into the names that hold it,
+    through `apply` into what a call produces (a shorter shape for a
+    partial application, the return type for a full one), through both
+    branches of an `if` when they agree.  Unknown is still the answer
+    whenever the tree does not say -- a parameter (Q43), a `head`, an
+    `eval`, a recursive call whose binding is still being typed -- and
+    an unknown is accepted anywhere, so a misuse there fails at run
+    time with a structured error, as before.
     """
-    if node.op == REF and node.args and node.args[0].op == LIT_INT:
+    op = node.op
+    if op == LIT_INT:
+        return LITERAL_INT
+    if op == REF and node.args and node.args[0].op == LIT_INT:
         return type_env.get(int(node.args[0].args[0]), INT)  # type: ignore[return-value]
-    if node.op in _RESULT_FOLLOWS_OPERANDS:
-        # A call, a conditional, an eval: what it produces is not written
-        # on the operator.  Recording its declared placeholder (`Int`)
-        # would make every program value that comes out of a function
-        # statically an integer -- `(explain (twice p))` failed to compile
-        # for exactly that reason at M14.  Unknown is honest; a misuse
-        # then fails at run time with a structured error (Q51).
+    if op == LAMBDA and len(node.args) == 2 and node.args[0].op == LIT_INT:
+        arity, body, inner_env = 0, node, dict(type_env)
+        while (body.op == LAMBDA and len(body.args) == 2
+               and body.args[0].op == LIT_INT):
+            inner_env[int(body.args[0].args[0])] = _UNKNOWN
+            arity += 1
+            body = body.args[1]
+        ret = _binding_type(body, inner_env)
+        return fn_type(arity, None if ret is _UNKNOWN else ret)
+    if op == APPLY and node.args:
+        return _applied(_binding_type(node.args[0], type_env), len(node.args) - 1)
+    if op == IF_SURPRISE and len(node.args) == 3:
+        return _join(_binding_type(node.args[1], type_env),
+                     _binding_type(node.args[2], type_env))
+    if op == LET and len(node.args) == 3 and node.args[0].op == LIT_INT:
+        inner_env = dict(type_env)
+        for other in _chain_names(node):
+            inner_env.setdefault(other, _UNKNOWN)
+        inner_env[int(node.args[0].args[0])] = _binding_type(node.args[1], inner_env)
+        return _binding_type(node.args[2], inner_env)
+    if op == SEQ:
+        return _binding_type(node.args[-1], type_env) if node.args else INT
+    if op == WHEN_ANOMALY and len(node.args) == 2:
+        # Either the guarded value or what the handler returns.
+        return _join(_binding_type(node.args[0], type_env),
+                     _applied(_binding_type(node.args[1], type_env), 1))
+    if op == EXTERNAL_BOUNDARY and len(node.args) == 2:
+        return _binding_type(node.args[1], type_env)
+    if op in _RESULT_FOLLOWS_OPERANDS:
+        # `head`, `eval`: what they produce is not written anywhere the
+        # checker can read.  Recording a placeholder would make every
+        # value that comes out of one statically an integer --
+        # `(explain (twice p))` failed to compile for exactly that
+        # reason at M14.  Unknown is honest.
         return _UNKNOWN  # type: ignore[return-value]
-    declared = SIGNATURES[node.op].get("out_type")
+    declared = SIGNATURES[op].get("out_type")
     return declared if declared is not None else INT
 
 
@@ -337,6 +424,22 @@ def _check_transparent(
         # boundary every call has -- journal Q51).
         _type_check(node.args[0], expected, path + (node.op, 0), type_env)
         _type_check(node.args[1], FN, path + (node.op, 1), type_env)
+        # When the handler's shape is visible, what it returns has to
+        # fit here too (M20): `(merge (try x (nil)) 1)` is refused.
+        fallback = _applied(_binding_type(node.args[1], type_env), 1)
+        if fallback is not _UNKNOWN and not is_subtype(fallback, expected):
+            raise CompileError(
+                kind="type-mismatch",
+                detail={"at_operator": "when-anomaly", **_describe(fallback),
+                        "expected": str(expected),
+                        "note": "the handler's return type is known from its lambda"},
+                position_path=path + (node.op, 1),
+                offending_op=node.op,
+                repair_hint=(
+                    f"the handler returns {fallback} where the slot expects "
+                    f"{expected}; make both branches of the recovery agree"
+                ),
+            )
         return
 
     if node.op == EXTERNAL_BOUNDARY and len(node.args) == 2:
@@ -354,6 +457,41 @@ def _check_transparent(
                 continue
             here = head_types[index] if index < len(head_types) else VALUE
             _type_check(child, here, path + (node.op, index), type_env)
+        if node.args:
+            # M20: when the function's shape is visible, the call is
+            # checked against it -- too many arguments, and the result
+            # against the slot.  Nothing is said when it is not.
+            head = _binding_type(node.args[0], type_env)
+            given = len(node.args) - 1
+            excess = _excess_arguments(head, given)
+            if excess:
+                raise CompileError(
+                    kind="type-mismatch",
+                    detail={"at_operator": "apply", "function": str(head),
+                            "takes": given - excess, "given": given},
+                    position_path=path + (node.op,),
+                    offending_op=node.op,
+                    repair_hint=(
+                        f"the function takes {given - excess} argument(s) "
+                        f"and {given} were given; drop {excess}"
+                    ),
+                )
+            result = _applied(head, given)
+            if result is not _UNKNOWN and not is_subtype(result, expected):
+                raise CompileError(
+                    kind="type-mismatch",
+                    detail={"at_operator": "apply", **_describe(result),
+                            "expected": str(expected),
+                            "note": "the result type is known from the function's lambda"},
+                    position_path=path + (node.op,),
+                    offending_op=node.op,
+                    repair_hint=(
+                        f"this call produces {result} where the slot expects "
+                        f"{expected}"
+                        + ("; give it the rest of its arguments"
+                           if isinstance(result, FnType) else "")
+                    ),
+                )
         return
 
     # Any other result-follows-operands operator: the result is unknown,
@@ -414,7 +552,7 @@ def _type_check(
             kind="type-mismatch",
             detail={
                 "at_operator": sig["name"],
-                "produces": str(out_type),
+                **_describe(out_type),
                 "expected": str(expected),
             },
             position_path=path + (node.op,),

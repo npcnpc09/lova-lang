@@ -376,7 +376,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M19)
+## Current state (2026-09-09 — post-M20)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -467,6 +467,13 @@ experiment details.
   work. Related: four runtime arithmetic sites trusted their slot type
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
+
+**M20** gave the checker function shapes: `Fn<arity,ret>` inferred
+from a visible lambda, flowing through `let` and `apply`, so a partial
+application in an integer slot, a call with too many arguments, or a
+call result in the wrong slot is a compile error (Q35, Q51 closed).
+Parameters stay untyped — the honest answer to Q43 — and the generator
+still sees plain `Fn` (Q71). No new byte.
 
 **M19** put the world under a declared boundary: `external-boundary`
 (0x30) declares, as a literal capability mask, which effects its body
@@ -567,7 +574,7 @@ reserved and 4 are genuinely free (see the slot-budget note above). See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-543 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+567 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

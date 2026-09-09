@@ -241,6 +241,33 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 20 (2026-09-09) — Function shapes
+No new operator, no new byte: a compiler inference. `Fn` said
+"callable" and nothing more, so three misuses could only fail at run
+time — a partial application in an integer slot (Q35), a call with too
+many arguments (Q35), a call result in the wrong slot (Q51). The
+checker now infers a **shape**, `Fn<arity,ret>`, from any
+syntactically visible lambda: the curried arity, and the static type
+of the innermost body. The shape flows through `let` into the names
+that hold it, through `apply` into what a call produces — a shorter
+shape for a partial application, the return type for a full one —
+and through both branches of an `if` when they agree. A `when-anomaly`
+handler's return type is checked against the slot the same way, so
+`(merge (try x (nil)) 1)` is refused.
+
+Where the tree does not say, the answer is still *unknown*, and
+unknown is still accepted anywhere: a parameter (Q43 — no annotations,
+so the honest position stands), a `head`, an `eval`, a recursive call
+whose binding is still being typed. Every claim the inference makes
+is one the tree supports, so nothing that ran before is refused now:
+the whole suite, the prelude, and LOVABench compile unchanged — and
+the prelude's `len` is now `Fn<1,Int>`, its `map` `Fn<2,List>`, so
+`(head (len xs))` is a compile error where it was a run-time trap.
+
+A shape is a subtype of plain `Fn`, and the generator is untouched: it
+sees operator bytes, not shapes, and offers `apply` on the `Fn` level
+as before (Q71). Q35 and Q51 closed; Q43 answered. Tests 543 → 567.
+
 ### Milestone 19 (2026-09-09) — The world, under a declared boundary
 Four activations of the IO family's own slots, no free slot spent, and
 the first time Axiom 4's "effect bounds in the signature" is concrete
@@ -797,8 +824,10 @@ the corpus grows again.
   regression in it.
 - ~~**Q34**~~: *closed by M12.* A chain of `LET`s shares one frame, so a
   group of `def`s is mutually recursive. No new token.
-- **Q35**: Partial application is statically unchecked — `Fn` does not
-  track curried arity. Does an arity-indexed `Fn<n>` pay for itself?
+- ~~**Q35**~~: *closed by M20.* `Fn<arity,ret>` is inferred from a
+  visible lambda; too many arguments, and a partial application in a
+  non-function slot, are compile errors. It paid for itself in one
+  afternoon: no byte, no operator, a compiler pass.
 - **Q36**: `constrained_random` can now emit lambdas, so Exp 03's
   well-formedness rates and Exp 10's telemetry DB were measured against
   a different token distribution than the current one. Both need a
@@ -829,12 +858,12 @@ the corpus grows again.
 - ~~**Q42**~~: *closed the cheap way by M17.* `cons` takes a `Value`
   and `head` is transparent. `List<T>` would make `head` static again;
   Q63 holds the measurement.
-- **Q43**: A lambda parameter's type is unknown — LOVA has no parameter
-  annotations, so the checker accepts a reference to a parameter in any
-  slot and leaves misuse to the runtime. Third member of the family with
-  Q35 (curried arity) and Exp 08's `unbound-ref`. Is there a cheap
-  inference that closes it, or is unityped-parameters the honest
-  position?
+- ~~**Q43**~~: *answered by M20: unityped parameters are the honest
+  position.* A shape says what a function returns, not what it takes;
+  a parameter's misuse is caught where its value is used, at run time,
+  with a structured error. Inferring parameter types from use would be
+  the next step and would need a unifier, which is the thing a tiny
+  type system is not.
 - **Q44**: `MAX_GENERATED_TOKENS` is a generator ceiling the way
   `MAX_STEPS` is a runtime ceiling. Should it be part of the substrate
   contract — i.e. should `valid_next` itself expose completion cost, so
@@ -897,6 +926,13 @@ the corpus grows again.
   That is Lisp's `eval` and it is what made `trace` and `explain` easy;
   it is also dynamic scope by the back door. Should a program value
   close over its environment at `quote` time instead?
+- **Q71**: Shapes live in the compiler. The generation state machine
+  still records a lambda binding as `Fn`, so it can generate
+  `(apply f 1 2)` for a unary `f` — well-formed at the operator level,
+  refused by the checker. Carrying the shape in the `Frame` would make
+  the misuse unrepresentable (the M16 move, for arity), at the cost of
+  the machine inferring body types as it goes. Is the generator's
+  runnable rate (Q65) limited by this?
 - **Q70**: An inner `boundary` *replaces* the outer's mask. That keeps
   the static rule one line — the innermost declaration is the whole
   truth — but it means a library function can escalate: a `boundary`
@@ -967,10 +1003,8 @@ the corpus grows again.
   once, transitive, free after `drop-unused`. No name mangling: two
   libraries defining the same name shadow in inclusion order, which is
   what `let` chains already do, and is the honest limit of the design.
-- **Q51**: `apply` is now transparent in its result type, which means a
-  call in the wrong slot fails at run time rather than at compile time.
-  Third member of the family with Q35 and Q43. Would tracking a
-  function's *return* type (not its arity) close all three at once?
+- ~~**Q51**~~: *closed by M20.* The return type is tracked, and it
+  closed Q35 with it; Q43 it answered rather than closed.
 - ~~**Q52**~~: *closed by M12.* `valid_next` is slot-type-aware for the
   result-follows-operands set, and admits `ref` anywhere, so a `map`-
   shaped program is now generatable.

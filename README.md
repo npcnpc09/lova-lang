@@ -142,7 +142,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (543 tests, stdlib unittest only)
+# run the test suite (567 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -273,7 +273,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         543 unit tests, stdlib only
+tests/         567 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
@@ -295,11 +295,12 @@ Stated plainly, because the list is short and the omissions are large:
   trees and lists of programs are representable since M17 — so `head`'s
   result type follows its list, which the checker cannot see. A
   parameterised `List<T>` would recover the static answer (Q63).
-- **Function types are shallow.** Functions are first-class — the
-  prelude's `map` / `filter` / `fold` take functions — but `Fn` does not
-  track arity or return type, so a partial application or a call result
-  used in the wrong slot fails at run time rather than compile time
-  (Q35, Q51).
+- **Parameters are untyped.** The checker infers a function's shape
+  — arity and return type — from its lambda (M20), so a partial
+  application or a call result in the wrong slot is a compile error;
+  but LOVA has no parameter annotations, so a parameter misused inside
+  a body is caught where its value is used, at run time (Q43). The
+  generator still works at the `Fn` level (Q71).
 - **Generation cannot reach mutual recursion.** Since M16 the
   generation state machine keeps scope, so an unbound or wrongly typed
   reference is unrepresentable in a generated program (Exp 16: 704/1000
