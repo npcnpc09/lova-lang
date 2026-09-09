@@ -38,7 +38,7 @@ from core.tokens import (
     CONS, DIV, HEAD, IS_NIL, NIL, TAIL, STDIN, STDOUT, WHEN_ANOMALY,
     ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
     MUTATE, QUOTE, TRACE, UID, WHY,
-    DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT,
+    DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
 )
 from core.types import INT, LITERAL_INT, Type, is_subtype
 
@@ -98,6 +98,7 @@ _EFFECTS: dict = {
     EVAL: frozenset({"unbounded-cost", "eval"}),
     TRACE: frozenset({"unbounded-cost"}),
     EXPLAIN: frozenset(),
+    READ: frozenset(),
     HASH: frozenset(),
     UID: frozenset({"read-lineage"}),
     GENERATION: frozenset({"read-lineage"}),

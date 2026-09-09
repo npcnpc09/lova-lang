@@ -15,7 +15,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  52 of the 64 tokens are implemented.
+  53 of the 64 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -28,7 +28,7 @@ Legend:
 | 0x01 | `lit` | 0 | - | LiteralInt | - | **impl** |
 | 0x02 | `partition` | 1 | Int | Int | - | **impl** |
 | 0x03 | `merge` | 2 | Int, Int | Int | - | **impl** |
-| 0x04 | `cons` | 2 | Int, List | List | - | **impl** |
+| 0x04 | `cons` | 2 | Value, List | List | - | **impl** |
 | 0x05 | `head` | 1 | List | Int | - | **impl** |
 | 0x06 | `tail` | 1 | List | List | - | **impl** |
 | 0x07 | `identity` | 1 | Int | Int | - | **impl** |
@@ -69,14 +69,14 @@ Legend:
 | 0x1B | `threshold` | 1 | Int | Int | - | **impl** |
 | 0x1C | `eval` | 1 | Program | Int | {eval, unbounded-cost} | **impl** |
 | 0x1D | `trace-surprise` | 1 | Int | Int | {write-surprise-trace} | **impl** |
-| 0x1E | `normal-range` | 2 | - | - | - | Reserved |
+| 0x1E | `read` | 1 | List | Program | - | **impl** |
 | 0x1F | `deviation` | 2 | Int, Int | Int | - | **impl** |
 
 ## Evolution (0x20 - 0x27)
 
 | Byte | Name | Arity | In types | Out type | Effects | Status |
 |---|---|---|---|---|---|---|
-| 0x20 | `defpop` | variadic | Fn, Program* | Population | {write-lineage} | **impl** |
+| 0x20 | `defpop` | variadic | Fn, Value* | Population | {write-lineage} | **impl** |
 | 0x21 | `variant` | 2 | Population, Int | Program | - | **impl** |
 | 0x22 | `evolve` | 1 | Population | Population | {unbounded-cost, write-lineage} | **impl** |
 | 0x23 | `select` | 2 | Population, Int | Program | {unbounded-cost} | **impl** |
@@ -252,4 +252,4 @@ the identifier was a convenience for whoever typed it.
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  52/64 operators implemented.
+  53/64 operators implemented.

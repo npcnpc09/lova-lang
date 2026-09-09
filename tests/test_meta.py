@@ -252,9 +252,11 @@ class TestProgramType(unittest.TestCase):
         self.assertTrue(is_subtype(PROGRAM, VALUE))
 
     def test_a_program_slot_offers_program_producers(self):
-        from core.tokens import CLONE, MUTATE, RESULT_NOT_STATIC, SELECT, VARIANT
+        from core.tokens import (
+            CLONE, MUTATE, READ, RESULT_NOT_STATIC, SELECT, VARIANT,
+        )
         valid = GenState.fresh().step(0x3C).valid_next()     # hash's slot
-        producers = frozenset({QUOTE, CLONE, MUTATE, VARIANT, SELECT})
+        producers = frozenset({QUOTE, CLONE, MUTATE, VARIANT, SELECT, READ})
         self.assertLessEqual(producers, valid)
         self.assertLessEqual(valid, producers | RESULT_NOT_STATIC)
         self.assertNotIn(MERGE, valid)

@@ -241,6 +241,40 @@ because `APPLY` declares `Int` while a partially applied function
 evaluates to a callable — `Fn` does not track curried arity (Q35). Every
 arithmetic site now routes through `_as_int`.
 
+### Milestone 18 (2026-09-09) — `read`, `use`, and a library of rules
+Three things, one slot.
+
+**`read` (0x1E)** is the inverse of `explain`: Stage-1 text, as a
+codepoint list, to a `Program`. With both, a LOVA program can construct
+a program from text and run it — `(eval (read "(mul 12 12)"))` is 144 —
+which is what an agent writing LOVA from inside LOVA needs, and what a
+module system needs underneath. `read` takes the full surface (`def`,
+macros, strings, `use`), so a program authored in the sugar reads back
+to the same core; malformed text is a `malformed` anomaly, catchable
+with `when-anomaly`. It sits in the Surprise family on the old
+`normal-range` placeholder because the Meta family is full (Q39 again).
+
+**`(use "name")`** is the module system, and it is not an operator.
+The prelude has been prepended textually since M11; `use` makes the
+same mechanism addressable: `lib/name.lova`, or a path, spliced in
+where it is named, once per program however many times it is named,
+transitively, and a cycle terminates. `drop-unused` keeps it free — a
+program that uses the prelude and calls nothing compiles to the same
+tree as one that did not. Q50 asked for the smallest thing that is not
+a module system but solves the same problem; this is it.
+
+**`lib/evolution.lova`** is the first library the mechanism was built
+for, and it answers Q61 without a slot: `evolve-with` is a custom
+evolution rule — retire the least fit, add a mutation of the best at a
+chosen strength — written in nine lines over `defpop` / `fitness` /
+`variant` / `select` / `retire` / `mutate`. Writing it exposed two
+gaps. `defpop` is variadic, so a pool could not be rebuilt from a list
+of its variants; it now splices list arguments. And a pool does not
+expose its own scorer, so the rule takes it as a parameter (Q67).
+
+**53 / 64 operators**, four free slots left: 0x12, 0x13, 0x14, 0x16.
+Tests 467 → 497.
+
 ### Milestone 17 (2026-09-09) — Lists hold any value
 A cons cell takes a `Value` (Q42 closed the cheap way). Trees, lists of
 programs, lists of functions are representable; strings are unchanged.
@@ -801,9 +835,9 @@ the corpus grows again.
   runnable vs ~0%, which is the honest form.
 
 ### Raised by M15 (Exp 15)
-- **Q61**: `evolve` at strength 0.30 needs ~30 generations for what
-  Exp 05 did in 12 rounds at 0.45. A `defpop` parameter, or a prelude
-  `evolve-with` written from the primitives?
+- ~~**Q61**~~: *answered by M18 the second way.* `lib/evolution.lova`
+  holds `evolve-with [pop score strength]`, written from the primitives;
+  no parameter was added to `defpop` or `evolve`.
 - **Q62**: The scorer runs every variant on every `select` / `retire`
   / `evolve`; Exp 05 had rolling fitness windows and dispatch counts.
   Is memoised fitness a population concern or a scorer concern?
@@ -821,6 +855,13 @@ the corpus grows again.
   That is Lisp's `eval` and it is what made `trace` and `explain` easy;
   it is also dynamic scope by the back door. Should a program value
   close over its environment at `quote` time instead?
+- **Q67**: A `Population` carries its scorer but does not expose it, so
+  a custom rule that rebuilds a pool (`evolve-with`) has to be handed
+  the scorer again. A `scorer-of : Population -> Fn` would close that
+  at the cost of a slot — the Evolution family is full, so it would be
+  the first operator placed outside its family on purpose. Or a rule
+  could be an `Fn` that `evolve` takes, in which case the pool keeps
+  the scorer and the rule never needs it. Which is the smaller change?
 - **Q60**: `mutate` still draws from `core/lineage.py`'s `_SWAP_GROUPS`,
   which know only the M1 operators. A mutation of a program using
   `cons`, `div` or `apply` can only touch its literals. The swap table
@@ -861,10 +902,10 @@ the corpus grows again.
   non-Int slots. Should a variadic be able to declare a minimum arity?
 
 ### Raised by M11 (a usable language)
-- **Q50**: The prelude is prepended textually because LOVA has no module
-  system. That is adequate for one library and will not stay adequate.
-  What is the smallest thing that is not a module system but solves the
-  same problem — a `use` form, a name-mangling convention, or nothing?
+- ~~**Q50**~~: *closed by M18.* `(use "name")` — textual inclusion,
+  once, transitive, free after `drop-unused`. No name mangling: two
+  libraries defining the same name shadow in inclusion order, which is
+  what `let` chains already do, and is the honest limit of the design.
 - **Q51**: `apply` is now transparent in its result type, which means a
   call in the wrong slot fails at run time rather than at compile time.
   Third member of the family with Q35 and Q43. Would tracking a

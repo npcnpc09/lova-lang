@@ -338,6 +338,22 @@ The five free slots are unchanged: 0x12 `delta-check`, 0x13 `respawn`,
 twelve reserved are those five plus the seven Effects/IO slots that
 are not `stdout` / `stdin`.
 
+### M18 spent one free slot on `read`
+
+| Byte | Was | Now | Type |
+|---|---|---|---|
+| 0x1E | `normal-range` | `read` | `List -> Program` |
+
+The inverse of `explain`. Not a macro: a program has to be able to
+construct a program from text at run time, which no expansion can do.
+Placed in the Surprise family because Meta is full. `use` cost
+nothing — it is textual inclusion in the surface, the prelude's own
+mechanism made addressable — and neither did `defpop` taking lists.
+**53 of 64 implemented. Four free slots remain**: 0x12 `delta-check`,
+0x13 `respawn`, 0x14 `budget-remaining`, 0x16 `preserve`. The eleven
+reserved are those four plus the seven Effects/IO slots that are not
+`stdout` / `stdin`.
+
 ### Still unspent, still needing a decision
 
 | Candidate | Slots | Status |

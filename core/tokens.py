@@ -56,7 +56,7 @@ WHEN_ANOMALY    = 0x1A   # (when-anomaly body handler) -- M13
 THRESHOLD       = 0x1B
 EVAL            = 0x1C   # (eval program)   -- M14; was the predict placeholder
 TRACE_SURPRISE  = 0x1D
-NORMAL_RANGE    = 0x1E
+READ            = 0x1E   # (read text) -- M18; was the normal-range placeholder
 DEVIATION       = 0x1F
 
 # Family 0x20-0x27  Evolution
@@ -140,7 +140,7 @@ SIGNATURES = {
     THRESHOLD:    {"name": "threshold",     "arity": 1, "family": "surp"},
     EVAL:         {"name": "eval",          "arity": 1, "family": "surp"},
     TRACE_SURPRISE: {"name": "trace-surprise", "arity": 1, "family": "surp"},
-    NORMAL_RANGE: {"name": "normal-range",  "arity": 2, "family": "surp"},
+    READ:         {"name": "read",          "arity": 1, "family": "surp"},
     DEVIATION:    {"name": "deviation",     "arity": 2, "family": "surp"},
     # Evolution
     DEFPOP:       {"name": "defpop",        "arity": "variadic", "family": "evo"},
@@ -263,6 +263,12 @@ _TYPE_INFO = {
     # LOVA has no fractions.
     CLONE:          {"in_types": [PROGRAM], "out_type": PROGRAM},
     MUTATE:         {"in_types": [PROGRAM, INT], "out_type": PROGRAM},
+    # read (M18): text -> Program, the inverse of `explain`.  With both,
+    # a LOVA program can construct a program from text and run it --
+    # which is what a module system, and an agent writing LOVA from
+    # inside LOVA, need.  Placed in the Surprise family only because the
+    # Meta family is full (Q39).
+    READ:           {"in_types": [LIST], "out_type": PROGRAM},
     # Evolution, the rest (M15) -- Axiom 6 in the language.  A scorer is
     # an Fn from Program to Int, and **lower is fitter**: the natural
     # score is a surprise magnitude, and zero surprise is perfect.
@@ -275,8 +281,12 @@ _TYPE_INFO = {
     #                               refill from the survivors by sharp
     #                               fitness-weighted clone (30%) or
     #                               mutate (70%, strength 30%)
+    # The tail takes programs, or lists of programs (M18): a pool has to
+    # be rebuildable from `variants-of`, and a variadic cannot be spliced
+    # any other way.  The runtime checks that each element is one or the
+    # other.
     DEFPOP:         {"in_types": None, "head_types": [FN],
-                     "variadic_type": PROGRAM, "out_type": POPULATION},
+                     "variadic_type": VALUE, "out_type": POPULATION},
     VARIANT:        {"in_types": [POPULATION, INT], "out_type": PROGRAM},
     EVOLVE:         {"in_types": [POPULATION], "out_type": POPULATION},
     SELECT:         {"in_types": [POPULATION, INT], "out_type": PROGRAM},

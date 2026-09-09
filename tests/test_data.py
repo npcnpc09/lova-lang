@@ -350,8 +350,8 @@ class TestSlotBudget(unittest.TestCase):
     def test_slots_spent_so_far(self):
         # 25 after M9, +6 data (M10), +2 IO (M11), +1 when-anomaly (M13),
         # +12 for M14: quote/eval, the whole Meta family, clone/mutate;
-        # +6 for M15: the rest of Evolution.
-        self.assertEqual(len(TYPED_TOKENS), 52)
+        # +6 for M15: the rest of Evolution; +1 for M18: read.
+        self.assertEqual(len(TYPED_TOKENS), 53)
 
     def test_the_core_is_still_64_operators(self):
         self.assertEqual(len(SIGNATURES), 64)
@@ -371,6 +371,8 @@ class TestSlotBudget(unittest.TestCase):
             # M15: the rest of the Evolution family, activated as named.
             0x20: "defpop", 0x21: "variant", 0x22: "evolve",
             0x23: "select", 0x26: "fitness", 0x27: "retire",
+            # M18: read, the inverse of explain, on a free slot.
+            0x1E: "read",
         }
         for byte, name in expected.items():
             self.assertEqual(SIGNATURES[byte]["name"], name)

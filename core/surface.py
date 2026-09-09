@@ -36,6 +36,7 @@ language whose canonical form is the integer sequence.
 from __future__ import annotations
 
 import os
+import re
 
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -182,6 +183,7 @@ def parse(src: str) -> Node:
     definition sees every earlier one -- and, because ``let`` is a
     letrec, itself.
     """
+    src = expand_uses(src)
     tokens = _tokenize(src)
     if not tokens:
         raise ValueError("empty source")
@@ -566,10 +568,52 @@ PRELUDE_PATH = os.path.join(
 )
 
 
+LIB_DIR = os.path.dirname(PRELUDE_PATH)
+
+
 def load_prelude() -> str:
     """The text of ``lib/prelude.lova``."""
     with open(PRELUDE_PATH, encoding="utf-8") as handle:
         return handle.read()
+
+
+def resolve_library(name: str) -> str:
+    """Where ``(use "name")`` looks: ``lib/name.lova``, then a plain path."""
+    candidates = [os.path.join(LIB_DIR, name + ".lova"),
+                  os.path.join(LIB_DIR, name), name]
+    for path in candidates:
+        if os.path.isfile(path):
+            return os.path.abspath(path)
+    raise ValueError(
+        f"use: no library named {name!r} (looked in {LIB_DIR} and the "
+        "working directory)"
+    )
+
+
+_USE_FORM = re.compile(r'\(\s*use\s+"([^"]*)"\s*\)')
+
+
+def expand_uses(src: str, _seen: Optional[set] = None) -> str:
+    """Replace every ``(use "name")`` with the text of that library (M18).
+
+    Textual inclusion, the same mechanism the prelude has used since
+    M11, made addressable: a library is a `.lova` file of `def`s, and a
+    program that uses it sees those definitions as if written above.
+    Included once per program however many times it is named, and a
+    cycle is an error rather than a loop.  `drop-unused` keeps it free.
+    """
+    seen = _seen if _seen is not None else set()
+
+    def include(match: "re.Match[str]") -> str:
+        path = resolve_library(match.group(1))
+        if path in seen:
+            return ""                       # already included
+        seen.add(path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        return expand_uses(text, seen) + "\n"
+
+    return _USE_FORM.sub(include, src)
 
 
 def parse_with_prelude(src: str) -> Node:

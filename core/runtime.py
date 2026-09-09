@@ -12,7 +12,7 @@ Operators implemented:
   and therefore strings as codepoint lists)
 - STDOUT, STDIN                          (the effects boundary)
 - WHEN_ANOMALY                           (in-language error handling)
-- QUOTE, EVAL                            (programs as values)
+- QUOTE, EVAL, READ                      (programs as values; text -> program)
 - EXPLAIN, HASH, UID, GENERATION, ANCESTOR_OF, LINEAGE_QUERY, WHY, TRACE
                                          (Axiom 5, in the language)
 - CLONE, MUTATE, DEFPOP, VARIANT, EVOLVE, SELECT, FITNESS, RETIRE
@@ -92,7 +92,7 @@ from core.tokens import (
     WHEN_ANOMALY,
     ANCESTOR_OF, CLONE, EVAL, EXPLAIN, GENERATION, HASH, LINEAGE_QUERY,
     MUTATE, QUOTE, TRACE, UID, WHY, encode,
-    DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT,
+    DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -1118,6 +1118,22 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
         program = _as_program(_eval(node.args[0], rt), "explain")
         return list_from([ord(ch) for ch in pretty(program)])
 
+    if op == READ:
+        # The inverse of `explain`: Stage-1 text, as a codepoint list, to a
+        # program.  The full surface is accepted -- `def`, macros, strings
+        # -- so a program can be authored in the sugar and read back.
+        # A malformed text is a structured fault, not a Python error.
+        from core.surface import parse as parse_text
+        source = _as_text(_eval(node.args[0], rt), "read")
+        try:
+            return parse_text(source)
+        except ValueError as exc:
+            raise DomainTrap(
+                "malformed", f"read: {exc}",
+                {"operator": "read", "source": source[:80]},
+                "give `read` text that `explain` could have produced",
+            ) from None
+
     if op == HASH:
         # Axiom 1, taken literally: the program *is* this integer.
         program = _as_program(_eval(node.args[0], rt), "hash")
@@ -1214,7 +1230,16 @@ def _eval_body(node: Node, rt: Runtime) -> Any:
                 {"operator": "defpop", "expected": "Fn"},
                 "pass a lambda from Program to Int as the first argument",
             )
-        variants = [_as_program(_eval(arg, rt), "defpop") for arg in node.args[1:]]
+        variants: List[Node] = []
+        for arg in node.args[1:]:
+            value = _eval(arg, rt)
+            if is_list_value(value):
+                # A list of programs is spliced in (M18), so a pool can
+                # be rebuilt from `variants-of` by library code.
+                for item in list_to_python(value):
+                    variants.append(_as_program(item, "defpop"))
+            else:
+                variants.append(_as_program(value, "defpop"))
         if not variants:
             raise DomainTrap(
                 "domain-error", "defpop: a population needs at least one variant",

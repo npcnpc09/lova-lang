@@ -80,9 +80,15 @@ semantics.
 - **Programs as values** — `quote` / `eval`, and the whole Meta family:
   `(explain p)` renders a program as text, `(hash p)` gives its integer,
   `(why p)` / `(lineage-query p)` / `(ancestor-of a b)` ask where it
-  came from, `(clone p)` / `(mutate p 30)` derive one and record how.
-  Axiom 5 is now true inside the language, and Stage 3's `explain`
-  exists
+  came from, `(clone p)` / `(mutate p 30)` derive one and record how,
+  and `(read text)` is `explain`'s inverse, so a program can build a
+  program from text and `eval` it. Axiom 5 is now true inside the
+  language, and Stage 3's `explain` exists
+- **Libraries** — `(use "evolution")` includes `lib/evolution.lova`,
+  where a custom evolution rule is nine lines over the six Evolution
+  operators; `(use "prelude")` is the standard library, loaded by the
+  CLI by default. Inclusion is textual, once, and free after
+  `drop-unused`
 - **Abstraction** — unary closures with currying, `letrec`, and a loop
   combinator, so recursion and unbounded iteration are expressible.
   Two always-on ceilings (`MAX_CALL_DEPTH`, `MAX_STEPS`) turn
@@ -129,7 +135,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (467 tests, stdlib unittest only)
+# run the test suite (497 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # run an experiment
@@ -260,7 +266,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         467 unit tests, stdlib only
+tests/         497 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
@@ -269,8 +275,10 @@ Stated plainly, because the list is short and the omissions are large:
 
 - **No IO beyond a terminal.** `stdout` and `stdin` exist; the
   filesystem, the network and the clock (0x30-0x34, 0x37) are reserved.
-- **No modules.** The prelude is prepended textually, which works for
-  one library and will not scale to two (Q50).
+- **Modules are textual.** `(use "name")` includes `lib/name.lova`
+  once and transitively, and `drop-unused` makes it free — but two
+  libraries defining the same name shadow in inclusion order; there
+  are no namespaces (Q50 closed at that limit).
 - **A population is its own value, not a list of programs.** That
   sidestepped parameterised lists (Q42) for now; `List<T>` remains the
   better long-term shape (Q63).

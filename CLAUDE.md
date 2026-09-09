@@ -194,6 +194,7 @@ arity for nine milestones and never an implementation:
 | 0x0D | `η` (Dedekind eta) | `div` | M10 |
 | 0x15 | `sum-invariant` | `nil` | M10 |
 | 0x19 | `watch` | `nil?` | M10 |
+| 0x1E | `normal-range` | `read` | M18 |
 
 The DNA OS lineage for the *architecture* is unaffected; these slots
 changed hands, and the core is still exactly 64 operators.
@@ -374,7 +375,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-09 — post-M17)
+## Current state (2026-09-09 — post-M18)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -466,6 +467,15 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M18** added `read` (0x1E), the inverse of `explain`, so a program
+can construct a program from text and `eval` it; `(use "name")`, a
+module system that is textual inclusion — once, transitive, free after
+`drop-unused` — and not an operator (Q50 closed); and
+`lib/evolution.lova`, whose `evolve-with` is a custom evolution rule
+written from the primitives (Q61 answered without a slot). `defpop`
+splices list arguments so a pool can be rebuilt by library code. Q67.
+**53 / 64 operators, four free slots.**
+
 **M17** let a cons cell hold any value — trees, lists of programs,
 lists of functions — with `head` joining the result-follows-operands
 set (Q42 closed the cheap way; `List<T>` is Q63). The termination bias
@@ -539,13 +549,13 @@ proved the token table could not beat) and on LOVABench 2.00× →
 **5.38×** vs sympy-Python. Exp 11's Stage-2 *projection* understated
 density by 70%; node count is a poor proxy in both directions.
 
-**52 / 64 operators runtime-implemented**; 12 reserved, of which only 5
+**53 / 64 operators runtime-implemented**; 11 reserved, of which only 4
 are genuinely free (see the slot-budget note above). See
 `spec/tokens.md` for the complete table (generated) and
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-467 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+497 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

@@ -1,0 +1,47 @@
+;;; evolution.lova  --  evolution helpers, written from the primitives
+;;;
+;;; `(use "evolution")` to get these.  Nothing here is a builtin: each is
+;;; a `def` over `defpop` / `fitness` / `variant` / `select` / `retire` /
+;;; `mutate` -- which is the point.  Q61 asked whether `evolve`'s fixed
+;;; mutation strength should become a parameter.  It need not: a custom
+;;; evolution rule is a few lines over the six operators, and this file
+;;; holds one.
+;;;
+;;; Included once per program, and free: the compiler's drop-unused pass
+;;; removes whatever a program does not call.
+
+;; Run `evolve` k times.
+(def evolve-n [pop k]
+  (if k (evolve-n (evolve pop) (sub k 1)) pop))
+
+;; The fittest variant, and its score.
+(def best [pop] (select pop 0))
+(def best-score [pop] (head (fitness pop)))
+
+;; How many variants a pool holds: `fitness` yields one score per variant.
+(def pool-size [pop] (count (fitness pop)))
+(def count [xs] (if (nil? xs) 0 (merge 1 (count (tail xs)))))
+
+;; The variants as a list, in pool order.
+(def variants-of [pop] (variants-from pop 0))
+(def variants-from [pop k]
+  (if (lt k (pool-size pop))
+    (cons (variant pop k) (variants-from pop (merge k 1)))
+    (nil)))
+
+;; One generation at a chosen mutation strength (a percentage): retire
+;; the least fit, add a mutation of the fittest.  A steeper, simpler
+;; rule than `evolve`'s -- no clones, no weighted draw -- which is the
+;; shape Exp 05 ran at strength 45.
+;;
+;; The scorer is passed in because a pool does not expose its own; see
+;; journal Q67.  `defpop` accepts a list of programs where it would
+;; accept programs (M18), so a pool can be rebuilt from `variants-of`.
+(def evolve-with [pop score strength]
+  (defpop score
+    (cons (mutate (best pop) strength)
+          (variants-of (retire pop)))))
+
+;; Run `evolve-with` k times.
+(def evolve-with-n [pop score strength k]
+  (if k (evolve-with-n (evolve-with pop score strength) score strength (sub k 1)) pop))
