@@ -48,32 +48,9 @@ by position, to carry several values through a fold or a recursion:
 
 The library, always available (this index is generated from `lib/prelude.lova`):
 
-```
-; lists
-(len xs) (sum xs) (product xs) (reverse xs) (append xs ys) (nth xs k)
-(last xs) (take n xs) (drop n xs) (contains xs v) (same a b)
-; higher order
-(map f xs) (filter f xs) (fold f acc xs) (any f xs) (all f xs) (zip xs ys)
-; sorting
-(sort-by less xs) (sort xs)
-; construction
-(range a b) (repeat x n)
-; integers
-(even n) (odd n) (inc n) (pow b e) (gcd2 a b) (digits n)
-; text
-(split text sep) (lines text) (chomp line) (words text) (join parts sep)
-(parse-int text) (text-of n) (text-lt a b)
-; maps
-(map-of pairs) (map-count m k) (map-keys m) (map-vals m) (map-size m)
-; programs
-(digest p)
-; output
-(println v)
-```
+{{LIBRARY}}
 
-Notes: `(words text)` The words of `text`: runs of non-space characters.  `(join parts sep)` Join `parts` with `sep` between them; `sep` a codepoint or a text.  `(text-of n)` An integer as decimal text.  `(text-lt a b)` Lexicographic order on texts or codepoint lists, so `(sort-by text-lt words)`.
-
-Text operators: `text-len` `text-cat` `text-slice` `text-find` `text-split` `text-join` `text-chars` `text-of-chars` `text-cmp` `text-int` `int-text` `text?` `text-trim`. `(text-slice t start end)`, `(text-find t needle)` (-1 if
+{{TEXT_OPS}} `(text-slice t start end)`, `(text-find t needle)` (-1 if
 absent), `(text-split t sep)` (`""` splits on whitespace), `(text-join
 parts sep)`; a separator may be a text or a codepoint. Maps:
 `(map-put m k v)`, `(map-get m k default)`, `(map-pairs m)`.

@@ -273,6 +273,13 @@
 ;; stored value -- there is no `map-has`, because two arbitrary values
 ;; cannot be compared in LOVA.
 
+(def map-of [pairs]
+  (fold (lambda m (lambda e (map-put m (head e) (head (tail e))))) (nil) pairs))
+(def map-count [m k] (map-put m k (inc (map-get m k 0))))
+(def map-keys [m] (map (lambda e (head e)) (map-pairs m)))
+(def map-vals [m] (map (lambda e (head (tail e))) (map-pairs m)))
+(def map-size [m] (len (map-pairs m)))
+
 ;; --- programs -------------------------------------------------------
 ;;
 ;; `hash` is the program's own integer -- its byte sequence read as a
@@ -283,13 +290,6 @@
 ;; a stable, short, near-unique id (Q80).
 
 (def digest [p] (mod (hash p) 2305843009213693951))
-
-(def map-of [pairs]
-  (fold (lambda m (lambda e (map-put m (head e) (head (tail e))))) (nil) pairs))
-(def map-count [m k] (map-put m k (inc (map-get m k 0))))
-(def map-keys [m] (map (lambda e (head e)) (map-pairs m)))
-(def map-vals [m] (map (lambda e (head (tail e))) (map-pairs m)))
-(def map-size [m] (len (map-pairs m)))
 
 ;; --- output ---------------------------------------------------------
 

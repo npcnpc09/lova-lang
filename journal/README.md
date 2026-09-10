@@ -323,6 +323,15 @@ the region ends where the boundary does. The capability error's hint
 now says so. `guess.lova`, `ping.lova` and `pong.lova` are back to
 `def`s. `tests/test_boundary_region.py`; Q86 closed.
 
+**The card is generated.** `corpus/make_card.py` renders the one-page
+card from a narrative template, the prelude's own section headers and
+`def` signatures (a one-line comment above a `def` becomes its note),
+and the token table's text family; `tests/test_card.py` fails when
+the checked-in card is stale, when a public prelude function is
+missing from it, or when an example on it does not run. The card and
+the library can no longer drift apart, which the yardstick asked for
+(`spec/ai-convenience.md`, section 4). Tests 753 → 759.
+
 ### Milestone 25 (2026-09-10) — Text is a value
 The second work under the one goal: the tax every text program paid
 for the representation. Since M10 a string was a list of codepoints,

@@ -96,9 +96,12 @@ Consequences, each a change the numbers above would reward:
 - **A program carries its examples.** A contract is a set of
   (inputs, expected) pairs the runtime can check at once, stored with
   the program and in its lineage.
-- **The language ships its own card, generated.** The prelude's
-  signatures and one line each, emitted by a command, so the card and
-  the library cannot drift apart.
+- **The language ships its own card, generated.** *(M26, done:
+  `python -m corpus.make_card` renders `corpus/language_card.md` from
+  a narrative template plus the prelude's own sections and signatures
+  and the token table's text family; `tests/test_card.py` fails when
+  the checked-in card is stale, when a public prelude function is
+  missing from it, or when an example on it does not run.)*
 - **Intent lives in the lineage.** `why` is where the reason for a
   program goes; a source comment is for the person who happens to look.
 - **Text is a value** *(M25, done: a text family at 0x40-0x4D)* and a
