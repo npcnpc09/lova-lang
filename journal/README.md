@@ -341,6 +341,16 @@ What changes first, each a tax the programs paid and measured:
 - **Q82** stays the experiment that measures the goal itself: a real
   agent, both languages, the four numbers.
 
+`spec/ai-convenience.md` is the yardstick written out: the steps a
+person's absence removes, where the cost fell for the AI that wrote
+the twelve programs (the feedback loop's re-emission, names,
+positions, not knowing what exists, not checking at once, threading
+state), the protocol that produces the numbers, and what the measure
+asks of the design -- patch-by-path editing, faults with fixes, fewer
+names and named fields, programs that carry their examples, a card
+generated from the prelude, intent in the lineage. Other languages
+are a parts bin from now on, not a precedent.
+
 ### Q33 and the M8 groundwork (2026-09-10)
 The order was decided in the M23 retrospective: the benchmark first,
 because a fine-tune on LOVABench v2 would learn a sublanguage of

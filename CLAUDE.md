@@ -127,8 +127,12 @@ preferences: Axioms 1, 2, 8, 10** -- the integer encoding is the
 serialisation format and identity, not a veto; density, the 64-slot
 ceiling and Stage 3 do not refuse a change the four numbers call for.
 First consequences: a pair type (Q84), native text (Q85), a helper
-inside a boundary (Q86). See `spec/axioms.md`, "The goal", and journal
-M23, "The ruling".
+inside a boundary (Q86). See `spec/axioms.md`, "The goal", journal
+M23, "The ruling", and **`spec/ai-convenience.md`** -- the yardstick:
+what a person's absence removes, where the cost falls for an AI, the
+measurement protocol, and what it asks of the design (patch-by-path,
+fewer names, examples carried by the program, a generated card).
+Other languages are a parts bin, not a precedent.
 
 ## Axioms (six standing; four are design preferences since 2026-09-10)
 
