@@ -306,6 +306,23 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Milestone 26 (2026-09-10) — A boundary is a region
+The third tax the twelve programs paid: a boundary is lexical (M19),
+which is what lets the compiler refuse an undeclared effect before
+the run, and `def` was a top-level form, so an effectful helper had to
+be a `let`-bound lambda inside the boundary. Three programs were
+rewritten around it. The dynamic alternative -- an effect permitted
+wherever the *call chain* is inside a boundary -- would have given up
+the static check.
+
+The form that keeps the check: **`(boundary "kind" (def ...) ... body)`**.
+The parser reads `def` forms after the capability spec and binds them
+inside the boundary, as the `let` chain the top level would have made;
+a helper written there carries the declared effect, lexically, and
+the region ends where the boundary does. The capability error's hint
+now says so. `guess.lova`, `ping.lova` and `pong.lova` are back to
+`def`s. `tests/test_boundary_region.py`; Q86 closed.
+
 ### Milestone 25 (2026-09-10) — Text is a value
 The second work under the one goal: the tax every text program paid
 for the representation. Since M10 a string was a list of codepoints,
@@ -1517,7 +1534,9 @@ the corpus grows again.
   on a capability the sandbox does not grant. Eight programs in a
   thousand are a strict `let` self-reference the compiler accepts and
   the runtime traps; the M9 letrec left that open.
-- **Q86**: A boundary is lexical, so a top-level `def` cannot use an
+- ~~**Q86**~~: *closed by M26.* A boundary is a region: `def` forms
+  may follow its capability spec and are bound inside it. The question
+  as raised: a boundary is lexical, so a top-level `def` cannot use an
   effect even when called from inside one; three of the twelve
   programs were rewritten around it. Under the goal, what is the
   cheapest form that lets a helper carry an effect -- a `def` inside a

@@ -71,7 +71,9 @@ of a `def`. `fold` calls `(f acc x)`; write a two-argument fold step as
 `(conserve k body)` traps unless body equals k. `(budget n body)` traps
 if body costs more than n nodes. `(surprise a b)` is |a - b|. `(try body
 fallback)` catches a fault. `(stdout text)`, `(stdin)`, and file, clock and
-network operators exist under `(boundary "kind" ...)`.
+network operators exist under `(boundary "kind" ...)`; a `def` that uses
+one must be written inside the boundary: `(boundary "clock" (def now []
+(clock)) body)`.
 
 ## Examples
 

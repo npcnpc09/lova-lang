@@ -102,8 +102,9 @@ Consequences, each a change the numbers above would reward:
 - **Intent lives in the lineage.** `why` is where the reason for a
   program goes; a source comment is for the person who happens to look.
 - **Text is a value** *(M25, done: a text family at 0x40-0x4D)* and a
-  helper can carry an effect (Q86): the two taxes every text program
-  and every effectful program paid.
+  helper can carry an effect *(M26, done: a boundary is a region that
+  may hold `def` forms)*: the two taxes every text program and every
+  effectful program paid.
 
 ## 5. On other languages
 

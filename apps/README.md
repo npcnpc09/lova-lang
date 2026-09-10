@@ -338,10 +338,10 @@ What the twelve programs found in M23, and what became of it:
   check).  It is evaluated once, where it is defined, so a recursive
   reference inside it is refused at compile time, by name.  A
   function that takes nothing has to take a dummy argument.
-- **A boundary is lexical.**  A top-level helper cannot use an
-  effect even when called from inside a boundary that declares it;
-  the compiler refuses it before the run.  Define the helper inside
-  the boundary, or pass the effect's value in.
+- **A boundary is lexical, and a region** (Q86, closed in M26).  A
+  helper that uses an effect is written inside the boundary that
+  declares it: `(boundary "clock" (def secret [n] ...) body)`.  The
+  compiler still refuses an undeclared use before the run.
 - **Records** (Q84, closed in M24): `(rec score s move k memo m)`
   and `(get st memo)` replaced the three-element lists
   `tictactoe.lova`'s search used to take apart by position.

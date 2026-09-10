@@ -663,6 +663,26 @@ def _parse_expr(
                 "defn is a top-level form: it introduces a binding for the "
                 "rest of the program and cannot appear as a subexpression"
             )
+        if op_name == "boundary":
+            # A boundary is a region (M26, Q86): after the capability
+            # spec, `def` forms may precede the body.  They are bound
+            # inside the boundary, so a helper defined there carries the
+            # declared effect -- lexically, which is what the compiler
+            # checks -- and the region ends where the boundary does.
+            spec, cursor = _parse_expr(tokens, pos + 2, syms)
+            definitions: List[Tuple[int, Node]] = []
+            while cursor < len(tokens) and _peek_head(tokens, cursor) == "defn":
+                name_id, fn_node, cursor = _parse_defn(tokens, cursor, syms)
+                definitions.append((name_id, fn_node))
+            body, cursor = _parse_expr(tokens, cursor, syms)
+            if cursor >= len(tokens) or tokens[cursor] != ")":
+                raise ValueError("boundary: expects a capability spec, optional `def` forms, and one body")
+            cursor += 1
+            for name_id, fn_node in reversed(definitions):
+                body = Node(op=LET, args=[Lit(name_id), fn_node, body])
+                if span_of(fn_node) is not None:
+                    body.span = fn_node.span
+            return _spanned(_macro_boundary([spec, body], syms), tokens, pos, cursor), cursor
         if op_name in MACROS:
             arity, expand = MACROS[op_name]
             macro_args, cursor = _parse_args(tokens, pos + 2, syms)

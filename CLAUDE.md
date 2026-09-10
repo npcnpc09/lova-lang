@@ -503,6 +503,10 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M26** made a boundary a region: `(boundary "kind" (def ...) ...
+body)` binds helpers inside the boundary, so an effectful helper is a
+`def` again and the static capability check stands. Q86 closed.
+
 **M25** made text a value. A text family at 0x40-0x4D -- the first
 tokens past the 64 -- with a text literal and thirteen operators
 (`text-len` `text-cat` `text-slice` `text-find` `text-split`

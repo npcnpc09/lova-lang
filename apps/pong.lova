@@ -16,11 +16,11 @@
 ;;; from the datagram: `net-recv` yields the payload alone (Q72).
 
 (boundary "net"
-  (let serve (lambda n
-               (let m (net-recv)
-                 (if (nil? m)
-                   n
-                   (seq (net-send {reply} (append "pong " m))
-                        (println (append "answered " m))
-                        (serve (inc n))))))
-    (serve 0)))
+  (def serve [n]
+    (let m (net-recv)
+      (if (nil? m)
+        n
+        (seq (net-send {reply} (append "pong " m))
+             (println (append "answered " m))
+             (serve (inc n))))))
+  (serve 0))

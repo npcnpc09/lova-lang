@@ -12,11 +12,6 @@
 ;;; clock and the host has to allow it), a line of input parsed as a
 ;;; number with the failure caught, and a loop that counts.
 
-;; The clock is read inside the boundary below, not in a helper: a
-;; boundary is lexical (M19), so a `def` at top level cannot read the
-;; clock even when it is called from inside one.  The compiler says so
-;; before the program runs.
-
 ;; The parameter is a dummy: `(def f [] ...)` is a *constant*, evaluated
 ;; once where it is defined -- this one would read a line at definition
 ;; and then fail on its own recursive reference (Q79).  A function that
@@ -36,5 +31,9 @@
           (seq (println (join (list "yes, in" (text-of (inc count)) "guesses") 32))
                (inc count)))))
 
-(seq (println (join (list "I am thinking of a number from 1 to" (text-of {n})) 32))
-     (play (inc (mod (boundary "clock" (clock)) {n})) 0))
+;; A boundary is a region (M26): the `def` inside it may read the clock,
+;; because it is written inside the boundary that declares it.
+(boundary "clock"
+  (def secret [n] (inc (mod (clock) n)))
+  (seq (println (join (list "I am thinking of a number from 1 to" (text-of {n})) 32))
+       (play (secret {n}) 0)))

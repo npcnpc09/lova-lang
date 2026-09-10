@@ -897,8 +897,11 @@ def _capability_check(node: Node, caps: int, path: Tuple[int, ...],
                 span=_span(node), position_path=path + (node.op,),
                 offending_op=node.op,
                 repair_hint=(
-                    f'wrap the use in (boundary "{needed}" ...); the host '
-                    f"must then grant it (`--allow {needed}`)"
+                    f'put this inside (boundary "{needed}" ...): a boundary is '
+                    f"lexical, so a `def` that uses {needed} must be written "
+                    f"inside one -- `(boundary \"{needed}\" (def ...) body)` "
+                    f"is allowed -- and the host must then grant it "
+                    f"(`--allow {needed}`)"
                 ),
             )
     if (node.op == EXTERNAL_BOUNDARY and len(node.args) == 2

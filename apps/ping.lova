@@ -7,15 +7,15 @@
 ;;; what came back -- or "no answer" if the receive timed out.  The
 ;;; value of the program is the number of answers received.
 ;;;
-;;; The other half of `pong.lova`.  The helper is a `let`-bound lambda
-;;; rather than a `def` because a boundary is lexical: a top-level
-;;; `def` could not send (M19).
+;;; The other half of `pong.lova`.  The helper is a `def` inside the
+;;; boundary: a boundary is lexical, and since M26 it is a region that
+;;; may hold definitions, so a helper written there carries the effect.
 
 (boundary "net"
-  (let ping (lambda i
-              (seq (net-send {server} (append "ping " (text-of i)))
-                   (let r (net-recv)
-                     (if (nil? r)
-                       (seq (println "no answer") 0)
-                       (seq (println r) 1)))))
-    (sum (map ping (range 1 (inc {k}))))))
+  (def ping [i]
+    (seq (net-send {server} (append "ping " (text-of i)))
+         (let r (net-recv)
+           (if (nil? r)
+             (seq (println "no answer") 0)
+             (seq (println r) 1)))))
+  (sum (map ping (range 1 (inc {k})))))
