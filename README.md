@@ -10,7 +10,7 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 759 tests. It is an
+LOVA, modules, a CLI, an MCP server for agents, and 765 tests. It is an
 interpreter in Python, with a stdlib-only core that runs under PyPy
 as well, and it has no floats, no namespaces and no concurrency. The
 "What LOVA still cannot do" section below is kept honest.*
@@ -180,7 +180,10 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (759 tests, stdlib unittest only)
+# run the examples a program declares about itself
+python -m core.cli check apps/tictactoe.lova 0
+
+# run the test suite (765 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # the same under PyPy, where the whole suite is also expected to pass
@@ -271,7 +274,7 @@ something and kept as a test. What they demonstrate:
   gives its programs contracts, budgets and structured faults Python
   does not have (`journal/experiment_17.md`).
 - **It runs anywhere Python does.** The core has no dependencies, so
-  the same programs run under CPython and PyPy, and the 759 tests pass
+  the same programs run under CPython and PyPy, and the 765 tests pass
   on both.
 - **Text is a value.** A string literal is one node; `words`, `split`,
   `join`, `parse-int` and the rest are one operator each; a word count
@@ -495,7 +498,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         759 unit tests, stdlib only
+tests/         765 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do

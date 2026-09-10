@@ -93,9 +93,10 @@ Consequences, each a change the numbers above would reward:
   with named access *(M24, done: `rec` / `get` / `put`)*; pipeline
   composition in the library so that intermediate values need no name;
   a scope the runtime can list on request.
-- **A program carries its examples.** A contract is a set of
-  (inputs, expected) pairs the runtime can check at once, stored with
-  the program and in its lineage.
+- **A program carries its examples.** *(M26, done: `(example expr
+  expected)` forms beside the defs, run as conservation contracts by
+  `lova check` / `lova_check`, a miss reported with expected, got,
+  span and offender.)* Recording them in the lineage is still to do.
 - **The language ships its own card, generated.** *(M26, done:
   `python -m corpus.make_card` renders `corpus/language_card.md` from
   a narrative template plus the prelude's own sections and signatures

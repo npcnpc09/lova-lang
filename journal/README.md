@@ -330,7 +330,20 @@ and the token table's text family; `tests/test_card.py` fails when
 the checked-in card is stale, when a public prelude function is
 missing from it, or when an example on it does not run. The card and
 the library can no longer drift apart, which the yardstick asked for
-(`spec/ai-convenience.md`, section 4). Tests 753 → 759.
+(`spec/ai-convenience.md`, section 4).
+
+**A program carries its examples.** `(example expr expected)` forms
+stand wherever a `def` may. They are not part of the program -- the
+run, `hash` and `explain` ignore them -- they are what the program
+says about itself. `core/examples.py` runs each as the program with
+its own expression replaced by `(conserve expected expr)`, from
+source with the example forms blanked to spaces so every span holds,
+so a miss is the conservation anomaly the substrate already reports:
+expected, got, the example's line and column, and the sub-expression
+at fault when the probe finds one. `lova check file.lova` and the MCP
+tool `lova_check` are the doors; `tictactoe.lova` carries six. The
+yardstick's "not being able to check at once" ends here: the check is
+inside the program, one command away, structured. Tests 753 → 765.
 
 ### Milestone 25 (2026-09-10) — Text is a value
 The second work under the one goal: the tax every text program paid

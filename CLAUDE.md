@@ -503,8 +503,12 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
-**M26** made a boundary a region and the card generated
-(`python -m corpus.make_card`; `tests/test_card.py` keeps it current): `(boundary "kind" (def ...) ...
+**M26** made a boundary a region, the card generated (`python -m
+corpus.make_card`; `tests/test_card.py` keeps it current), and a
+program the carrier of its own examples: `(example expr expected)`
+beside the defs, run as conservation contracts by `lova check` and
+the MCP tool `lova_check`, a miss reported with expected, got, span
+and offender. Boundaries: `(boundary "kind" (def ...) ...
 body)` binds helpers inside the boundary, so an effectful helper is a
 `def` again and the static capability check stands. Q86 closed.
 
@@ -707,7 +711,7 @@ plus the text family 0x40-0x4D since M25: 78 tokens in all. The
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-759 unit tests passing, 17 experiments (Exp 17 has its harness and dry run; its model runs wait on a key) (pb11 has a v1 pilot + v2 re-run),
+765 unit tests passing, 17 experiments (Exp 17 has its harness and dry run; its model runs wait on a key) (pb11 has a v1 pilot + v2 re-run),
 14 first-class apps, **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

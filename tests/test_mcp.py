@@ -40,8 +40,8 @@ class TestProtocol(unittest.TestCase):
     def test_tools_are_listed_with_schemas(self):
         response = handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = [t["name"] for t in response["result"]["tools"]]
-        self.assertEqual(names, ["lova_execute", "lova_patch", "lova_static_analyze",
-                                 "lova_valid_next", "lova_emit"])
+        self.assertEqual(names, ["lova_execute", "lova_patch", "lova_check",
+                                 "lova_static_analyze", "lova_valid_next", "lova_emit"])
         for tool in TOOLS:
             self.assertEqual(tool["inputSchema"]["type"], "object")
             self.assertIn(tool["name"], HANDLERS)

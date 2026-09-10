@@ -135,6 +135,25 @@ TOOLS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "lova_check",
+        "description": (
+            "Run the examples a LOVA program declares about itself -- "
+            "`(example expr expected)` forms beside its defs. Each is run as "
+            "a conservation contract; a miss reports expected, got, the "
+            "example's span and the sub-expression at fault when one is found."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                **_SOURCE_PROPS,
+                "allow": {"type": "array", "items": {"type": "string"}},
+                "max_steps": {"type": "integer", "default": 20000000},
+                "max_depth": {"type": "integer", "default": 10000},
+            },
+            "required": ["source"],
+        },
+    },
+    {
         "name": "lova_static_analyze",
         "description": (
             "Compile a LOVA program without running it. Returns the static "
@@ -327,6 +346,23 @@ def tool_patch(params: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def tool_check(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Run the program's own examples (M26)."""
+    from core.examples import check
+    try:
+        source = _source(params)
+        allow = [str(a) for a in params.get("allow", [])]
+        results = check(source, prelude=params.get("prelude", True),
+                        granted=parse_allow(allow),
+                        max_steps=int(params.get("max_steps", CLI_MAX_STEPS)),
+                        max_call_depth=int(params.get("max_depth", CLI_MAX_DEPTH)))
+    except (CompileError, ValueError, SystemExit) as exc:
+        return _failure("compile", exc, params.get("source"))
+    passed = sum(1 for r in results if r["passed"])
+    return {"ok": passed == len(results), "passed": passed, "total": len(results),
+            "examples": _jsonable(results)}
+
+
 def tool_static_analyze(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
         tree, report = _build(params)
@@ -431,6 +467,7 @@ def tool_emit(params: Dict[str, Any]) -> Dict[str, Any]:
 
 HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "lova_patch": tool_patch,
+    "lova_check": tool_check,
     "lova_execute": tool_execute,
     "lova_static_analyze": tool_static_analyze,
     "lova_valid_next": tool_valid_next,

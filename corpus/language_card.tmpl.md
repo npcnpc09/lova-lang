@@ -19,7 +19,9 @@ floats and no mutable variables.
 
 A program is zero or more `def` forms followed by exactly one expression.
 Inputs are written as `{name}` placeholders and are filled with integers
-before the program runs, e.g. `(fact {n})`.
+before the program runs, e.g. `(fact {n})`. `(example expr expected)`
+forms may stand beside the defs: they are not part of the program, they
+are what it says about itself, and `lova check` runs them.
 
 ## Arithmetic (integers only)
 

@@ -341,6 +341,26 @@ def cmd_emit(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    """Run the program's own examples (M26)."""
+    from core.examples import check, summary
+    source = substitute(read_source(args.file), args.args)
+    try:
+        granted = parse_allow(args.allow)
+    except ValueError as exc:
+        return report_error(exc)
+    try:
+        results = check(source, prelude=not args.no_prelude, granted=granted,
+                        max_steps=args.max_steps, max_call_depth=args.max_depth)
+    except (CompileError, ValueError) as exc:
+        return report_error(exc, source)
+    if not results:
+        print("  no examples: write (example expr expected) beside the defs", file=sys.stderr)
+        return EXIT_OK
+    print(summary(results))
+    return EXIT_OK if all(r["passed"] for r in results) else EXIT_TRAP
+
+
 def cmd_analyze(args: argparse.Namespace) -> int:
     source = substitute(read_source(args.file), args.args)
     try:
@@ -474,6 +494,10 @@ def build_parser() -> argparse.ArgumentParser:
     analyze = common(subparsers.add_parser(
         "analyze", help="what will this program do, without running it"))
     analyze.set_defaults(func=cmd_analyze)
+
+    check = common(subparsers.add_parser(
+        "check", help="run the program's own (example expr expected) forms"))
+    check.set_defaults(func=cmd_check)
 
     repl = common(subparsers.add_parser("repl", help="interactive session"),
                   with_file=False)

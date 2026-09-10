@@ -38,7 +38,7 @@ from __future__ import annotations
 import os
 import re
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from core.tokens import (
     ALIASES, APPLY, CONS, DEVIATION, IF_SURPRISE, LAMBDA, LET, LIT_INT,
@@ -157,6 +157,7 @@ class SymbolTable:
     def __init__(self, base: int = 0):
         self.base = base
         self._ids: Dict[str, int] = {}
+        self.examples: List[Dict[str, Any]] = []     # (example ...) forms met (M26)
 
     def intern(self, name: str) -> int:
         if name not in self._ids:
@@ -243,7 +244,13 @@ def parse(src: str) -> Node:
 
 def _parse_program(tokens: List[str], syms: SymbolTable
                    ) -> Tuple[List[Tuple[int, Node]], Optional[Node]]:
-    """The `defn` forms and the one expression of a token stream."""
+    """The `defn` forms and the one expression of a token stream.
+
+    ``(example expr expected)`` forms (M26) are read wherever a `defn`
+    may stand and collected on the parser (`syms.examples`), not into
+    the program: they are what the program says about itself, and
+    `core.examples.check` runs them.
+    """
     definitions: List[Tuple[int, Node]] = []
     body: Optional[Node] = None
     cursor = 0
@@ -251,6 +258,16 @@ def _parse_program(tokens: List[str], syms: SymbolTable
         if _peek_head(tokens, cursor) == "defn":
             name_id, fn_node, cursor = _parse_defn(tokens, cursor, syms)
             definitions.append((name_id, fn_node))
+            continue
+        if _peek_head(tokens, cursor) == "example":
+            start = cursor
+            args, cursor = _parse_args(tokens, cursor + 2, syms)
+            if len(args) != 2:
+                raise ValueError(f"example: expects (example expr expected), got {len(args)} parts")
+            first, last = tokens[start], tokens[cursor - 1]
+            span = (getattr(first, "start", None), getattr(last, "end", None))
+            syms.examples.append({"expr": args[0], "expected": args[1],
+                                  "span": span if None not in span else None})
             continue
         if body is not None:
             trailing = " ".join(tokens[cursor:])
@@ -269,6 +286,7 @@ def _wrap(definitions: List[Tuple[int, Node]], body: Optional[Node],
             f"program defines {len(definitions)} function(s) but has no "
             "expression to evaluate"
         )
+    inner = body
     for name_id, fn_node in reversed(definitions):
         body = Node(op=LET, args=[Lit(name_id), fn_node, body])
         if span_of(fn_node) is not None:
@@ -276,6 +294,11 @@ def _wrap(definitions: List[Tuple[int, Node]], body: Optional[Node],
     # The names, for whoever reports an error about one (M23, Q79).
     # The integer is the program; the spelling is a courtesy.
     body.symbols = syms
+    # What the program says about itself (M26): its examples, and
+    # where its own expression sits, so `core.examples` can put a
+    # contract in that place.
+    body.examples = list(syms.examples)
+    body.body_span = getattr(inner, "span", None)
     return body
 
 
