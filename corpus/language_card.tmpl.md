@@ -19,7 +19,7 @@ floats and no mutable variables.
 
 A program is zero or more `def` forms followed by exactly one expression.
 Inputs are written as `{name}` placeholders and are filled with integers
-before the program runs, e.g. `(fact {n})`. `(example expr expected)`
+or texts before the program runs, e.g. `(fact {n})`, `(words {s})`. `(example expr expected)`
 forms may stand beside the defs: they are not part of the program, they
 are what it says about itself, and `lova check` runs them.
 
@@ -58,7 +58,9 @@ parts sep)`; a separator may be a text or a codepoint. Maps:
 `(map-put m k v)`, `(map-get m k default)`, `(map-pairs m)`.
 
 `f` in `map`, `filter`, `fold` is a function value: a `lambda`, or the name
-of a `def`. `fold` calls `(f acc x)`; write a two-argument fold step as
+of a `def`. An operator (`merge`, `sub`, `mul`, `text-int`, ...) is not a
+value and cannot be passed by name: wrap it, `(lambda a (lambda b (merge a
+b)))`. `fold` calls `(f acc x)`; write a two-argument fold step as
 `(lambda a (lambda x ...))`.
 
 ## Contracts and effects (rarely needed for a task)

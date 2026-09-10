@@ -129,8 +129,12 @@ def build(source: str, *, prelude: bool = True, stage2: bool = False,
 def name_anomaly(anomaly: Any, symbols: Any) -> None:
     """Add the surface spelling of a name the anomaly mentions (Q79).
 
-    The anomaly names an integer, because the integer is the name; a
-    person reading the report wants the word they wrote.
+    The anomaly names an integer, because the integer is the name; the
+    reader wants the word they wrote.  For an unbound name the hint is
+    rewritten in words too (Exp 18): the names in scope rather than
+    their ids, and -- the mistake the agent loop found first -- when
+    the word is an operator or a macro used where a function value is
+    expected, say so and show the lambda that wraps it.
     """
     if symbols is None or not isinstance(anomaly, dict):
         return
@@ -138,8 +142,46 @@ def name_anomaly(anomaly: Any, symbols: Any) -> None:
     if not isinstance(detail, dict) or "name_id" not in detail:
         return
     name = symbols.name_of(detail["name_id"])
-    if name is not None:
-        detail["name"] = name
+    if name is None:
+        return
+    detail["name"] = name
+    if anomaly.get("kind") != "unbound-ref" or detail.get("reason"):
+        return
+    from core.surface import MACROS, NAME_TO_TOKEN
+    bound = [symbols.name_of(i) for i in detail.get("bound_names", [])]
+    bound = [b for b in bound if b is not None and not b.startswith("%")]
+    detail["bound"] = bound
+    detail.pop("bound_names", None)      # the ids are the same list; the names are what is read
+    arity = None
+    if name in NAME_TO_TOKEN:
+        from core.tokens import SIGNATURES
+        arity = SIGNATURES[NAME_TO_TOKEN[name]]["arity"]
+    elif name in MACROS:
+        arity = MACROS[name][0]
+    if arity is not None:
+        params = " ".join(f"x{i}" for i in range(arity or 1))
+        call = " ".join(["(" + name] + params.split()) + ")"
+        for p in reversed(params.split()):
+            call = f"(lambda {p} {call})"
+        anomaly["repair_hint"] = (
+            f"`{name}` is an operator, not a function value, so it cannot "
+            f"be passed or referenced by name; call it, or wrap it: {call}."
+        )
+    else:
+        close = [b for b in bound if _similar(name, b)][:3]
+        near = f"  Nearest: {', '.join(close)}." if close else ""
+        anomaly["repair_hint"] = (
+            f"`{name}` is not defined.  Define it with (def {name} [...] ...) "
+            f"or use a name in scope.{near}"
+        )
+
+
+def _similar(a: str, b: str) -> bool:
+    if a == b:
+        return False
+    if a in b or b in a:
+        return True
+    return sum(1 for x, y in zip(a, b) if x != y) + abs(len(a) - len(b)) <= 2
 
 
 # --- printing ----------------------------------------------------------------

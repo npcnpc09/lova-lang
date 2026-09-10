@@ -70,12 +70,22 @@ numbers per task:
 Task sets: LOVABench v3 (80, short) and the specifications of the
 twelve programs in `apps/` (long). Comparison language: Python, with
 its own best tooling (tracebacks, a subprocess sandbox). The
-experiment is Q82; the harness is `experiments/experiment_17_llm_benchmark.py`
-extended to a loop.
+experiment is Q82; the harness is `experiments/experiment_18_agent_loop.py`
+(`submit` / `patch` / `report`, a log of every attempt).
 
 Single-shot pass@1 is the special case of one attempt and is already
 at parity (Exp 17: 79/80 both). The numbers that can differ are the
 other four.
+
+**First measurement (Exp 18, 2026-09-10, ten tasks, one session per
+language):** attempts 11 against 10, the one LOVA miss a card gap
+fixed from the hint in one try; emitted 3 184 against 2 431 chars;
+feedback 1 114 chars for the one failure and none on the Python side,
+so the second number is one-sided until tasks fail in both languages
+(Q87); scaffolding a function call with a budget against a subprocess
+with a timeout; reuse not yet exercised (Q88). The lesson of the run:
+every hindrance the session named was a sentence missing from the
+generated card. The card is where the first number moves now.
 
 ## 4. What the measure asks of the design
 

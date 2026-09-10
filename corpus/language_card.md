@@ -19,7 +19,7 @@ floats and no mutable variables.
 
 A program is zero or more `def` forms followed by exactly one expression.
 Inputs are written as `{name}` placeholders and are filled with integers
-before the program runs, e.g. `(fact {n})`. `(example expr expected)`
+or texts before the program runs, e.g. `(fact {n})`, `(words {s})`. `(example expr expected)`
 forms may stand beside the defs: they are not part of the program, they
 are what it says about itself, and `lova check` runs them.
 
@@ -73,7 +73,7 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 (println v)
 ```
 
-Notes: `(words text)` The words of `text`: runs of non-space characters.  `(join parts sep)` Join `parts` with `sep` between them; `sep` a codepoint or a text.  `(text-of n)` An integer as decimal text.  `(text-lt a b)` Lexicographic order on texts or codepoint lists, so `(sort-by text-lt words)`.
+Notes: `(nth xs k)` The element of `xs` at 0-based index `k`; a fault past the end.  `(words text)` The words of `text`: runs of non-space characters.  `(join parts sep)` Join `parts` with `sep` between them; `sep` a codepoint or a text.  `(text-of n)` An integer as decimal text.  `(text-lt a b)` Lexicographic order on texts or codepoint lists, so `(sort-by text-lt words)`.  `(map-count m k)` `m` with the count under `k` one higher: the word-count step.
 
 Text operators: `text-len` `text-cat` `text-slice` `text-find` `text-split` `text-join` `text-chars` `text-of-chars` `text-cmp` `text-int` `int-text` `text?` `text-trim`. `(text-slice t start end)`, `(text-find t needle)` (-1 if
 absent), `(text-split t sep)` (`""` splits on whitespace), `(text-join
@@ -81,7 +81,9 @@ parts sep)`; a separator may be a text or a codepoint. Maps:
 `(map-put m k v)`, `(map-get m k default)`, `(map-pairs m)`.
 
 `f` in `map`, `filter`, `fold` is a function value: a `lambda`, or the name
-of a `def`. `fold` calls `(f acc x)`; write a two-argument fold step as
+of a `def`. An operator (`merge`, `sub`, `mul`, `text-int`, ...) is not a
+value and cannot be passed by name: wrap it, `(lambda a (lambda b (merge a
+b)))`. `fold` calls `(f acc x)`; write a two-argument fold step as
 `(lambda a (lambda x ...))`.
 
 ## Contracts and effects (rarely needed for a task)

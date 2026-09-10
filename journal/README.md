@@ -306,6 +306,34 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Experiment 18 (2026-09-10) — The agent loop, the four numbers
+Q82's experiment, run the day the design list it was waiting on was
+done. Ten tasks that need loops, lists and text (parentheses, reverse
+Polish, Roman numerals, binary search, coin change ...), hidden tests
+from Python oracles; two fresh Claude sessions with no repository
+access, one per language, one command -- `submit`, which prints
+`PASS` or the first failure with the structured anomaly (LOVA) or the
+traceback (Python) -- and `patch` on the LOVA side; the LOVA session
+had the generated card and nothing else. **LOVA 10/10 in 11 attempts,
+Python 10/10 in 10.** The one LOVA miss was `merge` passed by name to
+a helper -- an operator is not a value -- which the card had not said;
+the compile error named the excerpt and gave the lambda wrapper, and
+the second submission passed ("I did not have to reason about it at
+all"). Emitted 3 184 chars against 2 431; feedback read 1 114 chars
+for the one failure, none in Python because nothing failed, so the
+yardstick's second number has one side only; the fourth (reuse) was
+not exercised. The number the loop did separate is scaffolding: the
+LOVA runner is a function call with a budget and no grant, the
+Python runner a subprocess and a wall clock. Every hindrance the
+session named was a sentence missing from the card (`nth`'s base,
+operators as values, `map-count`) or a list of fifty name ids in the
+anomaly; all closed the same day, the hint for an unbound name now
+speaking in names -- an operator used as a value gets its wrapper, a
+misspelling its nearest neighbours. `journal/experiment_18.md`; Q82
+measured in part; Q87 (the loop at `apps/` size, ten sessions), Q88
+(the reuse leg), Q89 (is the bound-name list worth its bulk). Tests
+766 → 767.
+
 ### Milestone 26 (2026-09-10) — A boundary is a region
 The third tax the twelve programs paid: a boundary is lexical (M19),
 which is what lets the compiler refuse an undeclared effect before
@@ -1583,12 +1611,25 @@ the corpus grows again.
   a page can be taught to. The model most people use needs no
   teaching (79/80 from the page). Is the small-model question still
   worth the run, and what would its answer change?
-- **Q82**: Pass@1 on eighty short tasks saturates at the top (79/80
+- **Q82** *(measured in part by Exp 18, 2026-09-10)*: Pass@1 on eighty short tasks saturates at the top (79/80
   in both languages, the same miss). What separates the languages for
   a frontier model: programs the size of `tictactoe.lova` written
   blind from a specification, or a repair loop -- the model fixing its
   own failure from the structured anomaly versus from a traceback,
-  scored on attempts to green? Axiom 7's claim is the second.
+  scored on attempts to green? Axiom 7's claim is the second. Exp 18
+  ran the loop on ten tasks: 11 attempts against 10, the one miss
+  fixed from the hint in one try, scaffolding a function call against
+  a subprocess; feedback and reuse still one-sided. The rest is Q87
+  and Q88.
+- **Q87**: the loop at a size where first attempts fail in both
+  languages -- the twelve `apps/` specifications written blind, ten
+  sessions each -- so the feedback number has two sides.
+- **Q88**: the reuse leg of the yardstick: a session given
+  `tictactoe.lova` and a variant task, against the same in Python, and
+  whether `why` on the result recovers its origin.
+- **Q89**: is the list of names in scope worth its place in an
+  unbound-name anomaly, when the card lists them and the hint carries
+  the nearest? It is most of the 823 chars such a fault costs to read.
 - ~~**Q81**~~: *closed 2026-09-10.* `name=value` on the command line
   fills the placeholder it names, the rest fill positionally, and a
   missing one is named in the error. The question as raised: a
@@ -1756,6 +1797,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 18 | 2026-09-10 | The agent loop: the four numbers | Done, pilot (1 session × 2 languages × 10 tasks) | **PARTIAL.** A fresh Claude session with the card and a `submit` command: LOVA 10/10 in 11 attempts, Python 10/10 in 10; the one LOVA miss (an operator passed by name) fixed from the hint in one try; emitted 3 184 vs 2 431 chars; feedback 1 114 chars for the one failure, none on the Python side, so that number is one-sided; scaffolding a function call with a budget vs a subprocess with a timeout. Every hindrance named was a card gap, closed. Q87-Q89 raised. |
 | 17 | 2026-09-10 | A model writes LOVA from one page | In progress (Claude, blind, N=80 × 2 languages) | **PARTIAL.** A fresh Claude session with no tools, given the one-page card and 80 LOVABench v3 prompts, single-shot: **LOVA 79/80, Python 79/80**, the same miss (pb19's misleading v1 prompt, fixed). Algorithmic 20/20 in both. The language costs the model no reliability; the benchmark is at its ceiling; the case for LOVA is what a program gets at run time. Harness, corpus (3 000 verified pairs) and fine-tune driver ready; the paid runs wait on a key. Q82, Q83 raised. |
 | 16 | 2026-09-09 | Scope-aware generation | Done (N=1000 × 2) | **WIN.** `step` takes the literal payload; the machine keeps scope and offers `ref` only where a bound, type-compatible name exists. Unbound references in generated programs **704/1000 → 0**; compile-and-run **16% → 37%**; `Fn` slots filled by references 74 → 5, all bound (Q54 closed). Axiom 3 now holds at the **name level for generated programs**; the compiler's scope pass remains for hand-written and mutated trees. Boundary: mutual recursion compiles but cannot be generated left-to-right (Q64). Exp 10 with real names: +32 pp. Exp 02's 100% measured the generator with its own scope-blind validator (Q66). Q64-Q66 raised. *Re-run at M23 (Q77): 226 → 0, runnable 13% → 16%; 250 generated programs refused by the M20 arity checker (Q71).* |
 | 15 | 2026-09-09 | Populations: Exp 05 from inside LOVA | Done (10 seeds × 30 gens) | **WIN.** Axiom 6 in the language: `defpop` / `fitness` / `variant` / `select` / `retire` / `evolve` on the Evolution family's own slots, `Population` as a fifth value kind. Exp 05 rewritten as one LOVA program: **9/10 seeds improve, 3/10 converge, best seed 35 → 1 (97%), mean 85% of the worst-case gap closed** — Exp 05 had 3/10, 97%, 80%. Same rule (retire 20%, sharpness 3, clone 30%), different setting (strength 0.30 vs 0.45), so the same shape, not the same run. Winners report their own provenance via `generation` / `why`. Trapping variants score UNFIT and are recorded, not silent. **All ten axioms now realised in the language.** Q61-Q63 raised. |

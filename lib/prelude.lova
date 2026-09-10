@@ -66,6 +66,7 @@
     (text-cat xs ys)
     (rev-onto (reverse xs) ys)))
 
+;; The element of `xs` at 0-based index `k`; a fault past the end.
 (def nth [xs k]
   (head (tail (iterate (cons k xs)
                        (lambda s (or (le (head s) 0) (nil? (tail s))))
@@ -275,6 +276,7 @@
 
 (def map-of [pairs]
   (fold (lambda m (lambda e (map-put m (head e) (head (tail e))))) (nil) pairs))
+;; `m` with the count under `k` one higher: the word-count step.
 (def map-count [m k] (map-put m k (inc (map-get m k 0))))
 (def map-keys [m] (map (lambda e (head e)) (map-pairs m)))
 (def map-vals [m] (map (lambda e (head (tail e))) (map-pairs m)))

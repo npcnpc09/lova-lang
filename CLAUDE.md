@@ -119,8 +119,10 @@ and another language by: (1) attempts from writing to running
 correctly, (2) context spent understanding each failure, (3)
 scaffolding a host needs to run the code safely, (4) the cost of
 reusing, repairing and tracing code already written. Exp 17 measured
-half of (1) -- parity with Python; (2), (3) and (4) are where the
-design is strongest and have not been measured (Q82).
+half of (1) -- parity with Python; Exp 18 ran the loop on ten tasks
+(11 attempts against 10, the one miss fixed from the hint in one try,
+scaffolding a function call against a subprocess); (2) and (4) are
+where the design is strongest and are still one-sided (Q87, Q88).
 
 Standing invariants: Axioms 3, 4, 5, 6, 7, 9. **Demoted to design
 preferences: Axioms 1, 2, 8, 10** -- the integer encoding is the
@@ -711,7 +713,7 @@ plus the text family 0x40-0x4D since M25: 78 tokens in all. The
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-765 unit tests passing, 17 experiments (Exp 17 has its harness and dry run; its model runs wait on a key) (pb11 has a v1 pilot + v2 re-run),
+767 unit tests passing, 18 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot) (pb11 has a v1 pilot + v2 re-run),
 14 first-class apps, **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 
@@ -836,7 +838,10 @@ now emits lambdas, so their distributions are stale).
    Python 79/80, the same miss** (pb19's misleading prompt, fixed).
    For the model most people use the language costs no reliability
    and the benchmark saturates (Q82); the small-model fine-tune is
-   Q83.
+   Q83. **The loop (Exp 18): `experiments/experiment_18_agent_loop.py`,
+   a fresh session with the card and a `submit` command, ten tasks:
+   LOVA 10/10 in 11 attempts, Python 10/10 in 10; the one miss a card
+   gap, closed; feedback and reuse one-sided until Q87 / Q88.**
 
 Everything beyond M8 is future work conditioned on MVP traction.
 

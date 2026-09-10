@@ -224,3 +224,26 @@ class TestObservability(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnboundNameHint(unittest.TestCase):
+    """Exp 18: the unbound-name hint speaks in names, not ids."""
+
+    def _hint(self, src):
+        from core.mcp_server import tool_execute
+        r = tool_execute({"source": src})
+        self.assertEqual(r["anomaly"]["kind"], "unbound-ref")
+        return r["anomaly"]
+
+    def test_an_operator_used_as_a_value_is_named_and_wrapped(self):
+        a = self._hint('(map text-int (list "1"))')
+        self.assertIn("`text-int` is an operator, not a function value", a["repair_hint"])
+        self.assertIn("(lambda x0 (text-int x0))", a["repair_hint"])
+        a = self._hint("(fold min 0 (list 1 2))")
+        self.assertIn("(lambda x0 (lambda x1 (min x0 x1)))", a["repair_hint"])
+
+    def test_a_misspelt_name_gets_its_neighbours(self):
+        a = self._hint('(map parse-in (list "1"))')
+        self.assertIn("`parse-in` is not defined", a["repair_hint"])
+        self.assertIn("parse-int", a["repair_hint"])
+        self.assertIn("parse-int", a["detail"]["bound"])
