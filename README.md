@@ -17,13 +17,15 @@ as well, and it has no floats, no namespaces and no concurrency. The
 
 ## The one-paragraph pitch
 
-Current programming languages (Python, TypeScript, Rust) were designed
-for human readers. As AI takes over code authorship, those design
-constraints become overhead. LOVA is designed from the opposite
-assumption: **AI is the first-class reader, writer, and executor**.
-Code is not text — it is a typed integer sequence living in a
-conservation-preserving substrate. The semantics, type system, error
-model, and evolution machinery are all built around what AI does well.
+LOVA has one goal: **an AI uses it more conveniently than any other
+language.** Not denser, not stranger: fewer attempts from writing to
+running, less context spent on each failure, no scaffolding needed to
+run the code safely, and code that can be reused, repaired and traced
+by the program that comes after it. The error model, the contracts, the
+declared effects, the lineage and the evolution machinery exist for
+that; the integer encoding underneath is the format and the identity
+of a program, not the point. **AI is the first-class reader, writer,
+and executor** -- and the people who work with it are the second.
 
 ```lova
 (defn square [n] (⊗ n n))

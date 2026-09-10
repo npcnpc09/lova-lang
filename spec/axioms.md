@@ -9,9 +9,55 @@ now on. If a proposed feature violates any of these, either the feature
 is rejected or the axiom is revisited with a written justification
 (which becomes this document's revision history).
 
+## The goal (owner's ruling, 2026-09-10)
+
+LOVA has one goal: **an AI uses it more conveniently than it uses any
+other language -- and so, later, do we.** Everything else in this
+document is a means, and a means yields to the goal when they
+conflict.
+
+Convenience is measured, not asserted, by four numbers on the same
+tasks in LOVA and in another language:
+
+1. attempts from "the model starts writing" to "the code runs
+   correctly";
+2. context the model spends understanding each failure;
+3. scaffolding a host needs to run the model's code safely
+   (containers, timeouts, permissions);
+4. the cost of reusing, repairing and tracing code already written.
+
+What the twelve programs and Exp 17 established (journal M23): the
+run-time half of the design -- structured faults with repair hints,
+budgets and termination, declared and granted effects, programs as
+values with lineage, populations and surprise-guided repair -- serves
+the goal directly and is what the other languages lack. The
+representation half -- integers, density, no human readability,
+Stage 3 -- was the founding *hypothesis* about how to reach the goal,
+and three measurements now say it does not contribute: a frontier
+model writes the text surface as reliably as Python (Exp 17); the
+Stage-1 surface costs more tokens than Python on algorithmic tasks
+(Exp 12); every friction the programs met came from a decision made
+for the representation (M23). So:
+
+- **Axioms 3, 4, 5, 6, 7, 9 stand** as invariants: they are the goal's
+  mechanisms.
+- **Axioms 1, 2, 8 and 10 are demoted to design preferences.** The
+  integer encoding stays as the serialisation format and the identity
+  of a program; density, the 64-slot ceiling, "no human readability"
+  and Stage 3 no longer veto a change that makes an AI's use easier.
+  A new operator, a pair type, native text, a helper inside a boundary
+  are decided on the four numbers above, not on slot count or byte
+  density.
+
+The drift protocol below still applies to the six that stand.
+
 ---
 
 ## Axiom 1 — Programs are integers, not text
+
+> *Demoted to a design preference, 2026-09-10 (see "The goal").
+> The integer is the program's serialisation and identity; it is no
+> longer a reason to refuse a change that makes an AI's use easier.*
 
 **Statement.** The canonical representation of a LOVA program is a
 `PartitionedFile<n>` — a typed integer with heat, lineage, and
@@ -39,6 +85,10 @@ other way around.
 ---
 
 ## Axiom 2 — Human readability is a non-goal of the substrate
+
+> *Demoted to a design preference, 2026-09-10. Readability is not a
+> goal; it is also no longer a reason to reject a form that an AI
+> writes more reliably.*
 
 **Statement.** The substrate's design (token choices, semantics, type
 system, runtime behavior) is not constrained by "what is pleasant for a
@@ -207,6 +257,11 @@ surprise-minimising. There is no `breakpoint`, no `print`, no `gdb`.
 
 ## Axiom 8 — Small core, dense tokens
 
+> *Demoted to a design preference, 2026-09-10. The core stays small by
+> taste; the 64-slot ceiling and byte density no longer veto an
+> operator or a value kind that the four measures call for. The first
+> candidates are a pair type and native text (journal M23, Q84, Q85).*
+
 **Statement.** The core operator set is exactly 64 tokens (1 byte each),
 grouped into 8 semantic families. Every token carries semantic weight;
 no token is sugar.
@@ -258,6 +313,11 @@ contracts and surprise budgets; the substrate enforces compliance.
 
 ## Axiom 10 — Stage-coherent design
 
+> *Demoted to a design preference, 2026-09-10. Stage 3 -- programs as
+> pure integer sequences with no text -- is kept as a direction, not a
+> constraint: a feature that serves an AI at Stage 1 is not rejected
+> for being hard to imagine at Stage 3.*
+
 **Statement.** Every design decision must remain coherent across all
 three stages (text-surface / AI-primary / pure-integer). If a feature
 makes Stage 1 nicer but breaks Stage 3's integer-only representation,
@@ -295,6 +355,13 @@ design work reveals it was wrong), the revision procedure is:
 
 ## Revision history
 
+- 2026-09-10 — **The goal stated above the axioms; Axioms 1, 2, 8 and
+  10 demoted to design preferences.** Owner's ruling after the M23
+  review (journal M23, "The ruling"): the project has one goal, an
+  AI's convenience, measured by four numbers; the representation
+  axioms were the founding hypothesis about how to reach it, and Exp
+  12, Exp 16's re-run and Exp 17 say they do not contribute. Axioms
+  3, 4, 5, 6, 7 and 9 stand as the goal's mechanisms.
 - 2026-04-23 — initial draft. All ten axioms stated. Project
   bootstrap. No revisions yet.
 - 2026-04-24 — **10 / 10 axioms operational in code.** Validated by

@@ -110,14 +110,35 @@ vocabulary. Key transferred concepts:
 | Evolution engine (dedup, clone, mutate) | `defpop` / variant dispatch |
 | Lineage (uid/parent/root, Exp 55) | Program provenance chain |
 
-## Axioms (design invariants — DO NOT violate)
+## The goal (owner's ruling, 2026-09-10)
 
-These are the load-bearing commitments. See `spec/axioms.md` for the
-full argument behind each.
+**LOVA has one goal: an AI uses it more conveniently than any other
+language, and so, later, do we.** Every axiom below is a means to it
+and yields to it. Convenience is measured on the same tasks in LOVA
+and another language by: (1) attempts from writing to running
+correctly, (2) context spent understanding each failure, (3)
+scaffolding a host needs to run the code safely, (4) the cost of
+reusing, repairing and tracing code already written. Exp 17 measured
+half of (1) -- parity with Python; (2), (3) and (4) are where the
+design is strongest and have not been measured (Q82).
 
-1. **Programs are integers, not text.** Text is a projection layer.
+Standing invariants: Axioms 3, 4, 5, 6, 7, 9. **Demoted to design
+preferences: Axioms 1, 2, 8, 10** -- the integer encoding is the
+serialisation format and identity, not a veto; density, the 64-slot
+ceiling and Stage 3 do not refuse a change the four numbers call for.
+First consequences: a pair type (Q84), native text (Q85), a helper
+inside a boundary (Q86). See `spec/axioms.md`, "The goal", and journal
+M23, "The ruling".
+
+## Axioms (six standing; four are design preferences since 2026-09-10)
+
+These were the load-bearing commitments. See `spec/axioms.md` for the
+full argument behind each and for the ruling that demoted 1, 2, 8 and
+10.
+
+1. *(preference)* **Programs are integers, not text.** Text is a projection layer.
    The substrate manipulates `PartitionedFile<n>` directly.
-2. **Human readability is a non-goal of the substrate.** Stage 1 text
+2. *(preference)* **Human readability is a non-goal of the substrate.** Stage 1 text
    syntax is a bootstrap, not an invariant. Do not entrench
    human-pleasing syntax into the semantics.
 3. **Type-constrained generation.** For any partial program, the set of
@@ -144,14 +165,14 @@ full argument behind each.
 7. **Surprise is the debugger.** No stack traces in the substrate.
    Runtime deviation is emitted as structured surprise traces;
    AI-driven repair mutates at the offending token position.
-8. **Small core, dense tokens.** Core operator set ≤ 64 (1 byte each).
+8. *(preference)* **Small core, dense tokens.** Core operator set ≤ 64 (1 byte each).
    Every byte carries semantic weight. Sugar is a Stage-1 bootstrap
    concession, not a language feature.
 9. **No PnL / reward objective.** The language is neutral to
    optimization targets. Users declare their objectives (via
    conservation contracts and surprise budgets); the substrate enforces
    compliance.
-10. **Stage-coherent design.** Every design decision must be coherent
+10. *(preference)* **Stage-coherent design.** Every design decision must be coherent
     under all three stages. If a feature makes Stage 1 nicer but
     breaks Stage 3's pure-integer representation, reject it.
 
@@ -305,7 +326,7 @@ Claude should operate autonomously on this project.
 
 - Deleting existing journal files or experiment results
 - Pushing to a remote
-- Any design change that modifies the 10 axioms above
+- Any design change that modifies the six standing axioms above
 - Importing DNA OS v3 code directly (should be reimplemented, not forked)
 
 ## Constraints (DO NOT break)

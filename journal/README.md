@@ -306,6 +306,41 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### The ruling (2026-09-10) — one goal, four numbers
+An outsider's review of the architecture at the end of M23 found that
+the project's goal had been two goals folded together since the first
+day: (a) an AI uses the language more conveniently, and (b) programs
+are integer sequences, dense, unreadable by design, converging on
+Stage 3. The axioms wrote (b) as the means to (a) and nobody measured
+whether it was. The measurements now in hand say it is not: a
+frontier model writes the text surface as reliably as Python (Exp 17,
+79/80 vs 79/80); the Stage-1 surface costs 1.5× Python's tokens on
+algorithmic tasks (Exp 12); the generator's programs are refused by
+the type checker a quarter of the time (Exp 16's re-run); and every
+friction the twelve programs met -- strings as codepoint lists, no
+pairs, lexical boundaries, the full table -- was a tax paid to (b).
+The implementation did not drift; it executed the axioms faithfully.
+The drift was in the axioms.
+
+**The owner ruled: one goal.** *An AI uses it more conveniently than
+any other language, and so, later, do we.* Measured by four numbers on
+the same tasks in LOVA and in another language: attempts from writing
+to running correctly; context spent understanding each failure;
+scaffolding a host needs to run the code safely; the cost of reusing,
+repairing and tracing what was written. Axioms 3, 4, 5, 6, 7, 9 stand
+as the goal's mechanisms. **Axioms 1, 2, 8, 10 are demoted to design
+preferences**: the integer stays as the format and the identity, and
+stops being a veto. `spec/axioms.md` carries the ruling above the
+axioms; CLAUDE.md carries it above everything.
+
+What changes first, each a tax the programs paid and measured:
+- **Q84** — a pair or record type, so a fold's state is not `(nth st 2)`.
+- **Q85** — native text, so a word count is not twenty nodes a character.
+- **Q86** — a helper inside a boundary, so an effectful `def` need not
+  be rewritten as a `let`-bound lambda.
+- **Q82** stays the experiment that measures the goal itself: a real
+  agent, both languages, the four numbers.
+
 ### Q33 and the M8 groundwork (2026-09-10)
 The order was decided in the M23 retrospective: the benchmark first,
 because a fine-tune on LOVABench v2 would learn a sublanguage of
@@ -1395,6 +1430,21 @@ the corpus grows again.
   on a capability the sandbox does not grant. Eight programs in a
   thousand are a strict `let` self-reference the compiler accepts and
   the runtime traps; the M9 letrec left that open.
+- **Q86**: A boundary is lexical, so a top-level `def` cannot use an
+  effect even when called from inside one; three of the twelve
+  programs were rewritten around it. Under the goal, what is the
+  cheapest form that lets a helper carry an effect -- a `def` inside a
+  boundary, a boundary on the `def`, or dynamic scope for the grant?
+- **Q85**: Text is a list of codepoints, so `words` costs about twenty
+  nodes and three calls a character and every text program pays for
+  the representation. Under the goal: a native text value (one slot,
+  or a `Value` kind with no slot), with the list view kept for
+  programs that want it?
+- **Q84**: There are no pairs; two results come back as a list and are
+  taken apart by position, and `tictactoe.lova` threads a three-element
+  state through a fold that way -- the least readable code in the
+  repository and the kind an AI gets wrong. Under the goal: a pair or a
+  record, and destructuring in the surface?
 - **Q83**: Exp 17's fine-tune half (`m8_finetune.py`, ~$2.31 on
   gpt-4o-mini) would answer whether a model that cannot write LOVA from
   a page can be taught to. The model most people use needs no
