@@ -306,6 +306,34 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Experiment 19 (2026-09-10 / 11) — The loop where first attempts fail
+Q87. Eight bigger tasks -- a calculator with precedence, reports, the
+best tic-tac-toe move under perfect play, shortest paths, ledgers --
+three fresh sessions per language, twice. **Run 1** (Fable) found
+the instrument's defects before it found the language's: the input
+`"7"` arrived as the integer 7 (three sessions lost their first
+attempt to it), the LOVA budget was thirty times tighter than the
+Python clock, the step trap's hint asserted non-termination when
+eleven of fourteen trapped programs were correct, and parse errors
+had no position. All four fixed: `s="7"` is a text on any command
+line, budget parity, an honest hint, `ParseError` with a span.
+**Run 2** (Opus, both languages): LOVA 24/24 green in 35 attempts,
+Python 24/24 in 26. On seven of the eight tasks the languages do not
+separate (LOVA 20 of 21 first-try, Python 22 of 24); on the game-tree
+search LOVA took 6, 3 and 4 attempts against 1, 1, 1, every extra one
+a rewrite for cost after a step trap that said where it stopped and
+not where the budget went -- Q76's speed floor, measured as attempts.
+Every compile fault (five) was fixed at the next submission; the
+sessions called the diagnostics "excellent" and the step trap "the
+one place the language gives an outcome but no diagnosis". So the
+trap now attributes: `hot`, the most-called functions by name with
+counts, in the anomaly and the hint; `PASS` reports the largest run's
+steps against the budget; the card shows a zero-parameter `def`'s
+call site, the gap all three sessions hit. `journal/experiment_19.md`;
+Q87 answered; Q90 (speed as attempts: PyPy, a native evaluator), Q91
+(does attribution turn two blind rewrites into one), Q92 (ten
+sessions on one model). Tests 767 → 784.
+
 ### Experiment 18 (2026-09-10) — The agent loop, the four numbers
 Q82's experiment, run the day the design list it was waiting on was
 done. Ten tasks that need loops, lists and text (parentheses, reverse
@@ -1621,9 +1649,19 @@ the corpus grows again.
   fixed from the hint in one try, scaffolding a function call against
   a subprocess; feedback and reuse still one-sided. The rest is Q87
   and Q88.
-- **Q87**: the loop at a size where first attempts fail in both
-  languages -- the twelve `apps/` specifications written blind, ten
-  sessions each -- so the feedback number has two sides.
+- ~~**Q87**~~: *answered by Exp 19, 2026-09-11.* Eight bigger tasks,
+  three sessions per language, two runs: parity on seven tasks; on the
+  game-tree search LOVA took two to five more attempts, all rewrites
+  for cost after a step trap with no attribution. The trap now names
+  where the budget went. Ten sessions is Q92.
+- **Q90**: the interpreter's speed as an attempts number. The natural
+  minimax over a list board costs 40 million steps, an hour of CPython
+  against a second of Python; what does it cost on PyPy, and is a
+  native evaluator the change the numbers now call for?
+- **Q91**: does `hot` in the step trap turn the two blind rewrites
+  into one? Same tasks, three more sessions.
+- **Q92**: ten sessions per language on one model, Exp 18's and 19's
+  tasks together, so the per-task attempt distribution is load-bearing.
 - **Q88**: the reuse leg of the yardstick: a session given
   `tictactoe.lova` and a variant task, against the same in Python, and
   whether `why` on the result recovers its origin.
@@ -1797,6 +1835,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 19 | 2026-09-11 | The loop where first attempts fail | Done (3 sessions × 2 languages × 2 runs, 8 tasks) | **PARTIAL.** Run 1 found four instrument defects (a numeric-looking text as an integer, a budget 30× tighter than the Python clock, a hint asserting non-termination, parse errors without a position), fixed. Run 2: LOVA 24/24 in 35 attempts, Python 24/24 in 26; parity on seven tasks, the game-tree search 6/3/4 vs 1/1/1, every extra attempt a rewrite for cost. Compile faults fixed in one attempt every time. The step trap now attributes cost by function. Q90-Q92. |
 | 18 | 2026-09-10 | The agent loop: the four numbers | Done, pilot (1 session × 2 languages × 10 tasks) | **PARTIAL.** A fresh Claude session with the card and a `submit` command: LOVA 10/10 in 11 attempts, Python 10/10 in 10; the one LOVA miss (an operator passed by name) fixed from the hint in one try; emitted 3 184 vs 2 431 chars; feedback 1 114 chars for the one failure, none on the Python side, so that number is one-sided; scaffolding a function call with a budget vs a subprocess with a timeout. Every hindrance named was a card gap, closed. Q87-Q89 raised. |
 | 17 | 2026-09-10 | A model writes LOVA from one page | In progress (Claude, blind, N=80 × 2 languages) | **PARTIAL.** A fresh Claude session with no tools, given the one-page card and 80 LOVABench v3 prompts, single-shot: **LOVA 79/80, Python 79/80**, the same miss (pb19's misleading v1 prompt, fixed). Algorithmic 20/20 in both. The language costs the model no reliability; the benchmark is at its ceiling; the case for LOVA is what a program gets at run time. Harness, corpus (3 000 verified pairs) and fine-tune driver ready; the paid runs wait on a key. Q82, Q83 raised. |
 | 16 | 2026-09-09 | Scope-aware generation | Done (N=1000 × 2) | **WIN.** `step` takes the literal payload; the machine keeps scope and offers `ref` only where a bound, type-compatible name exists. Unbound references in generated programs **704/1000 → 0**; compile-and-run **16% → 37%**; `Fn` slots filled by references 74 → 5, all bound (Q54 closed). Axiom 3 now holds at the **name level for generated programs**; the compiler's scope pass remains for hand-written and mutated trees. Boundary: mutual recursion compiles but cannot be generated left-to-right (Q64). Exp 10 with real names: +32 pp. Exp 02's 100% measured the generator with its own scope-blind validator (Q66). Q64-Q66 raised. *Re-run at M23 (Q77): 226 → 0, runnable 13% → 16%; 250 generated programs refused by the M20 arity checker (Q71).* |

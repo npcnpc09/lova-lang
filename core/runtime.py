@@ -865,6 +865,10 @@ class Runtime:
     # independent of whether the program declares a BUDGET.
     call_depth: int = 0
     steps: int = 0
+    # Exp 19: calls per named function, so a step trap can say which
+    # functions the budget went to.  One dict increment per call of a
+    # named closure; the inner closures of a curried def are unnamed.
+    calls: Dict[int, int] = field(default_factory=dict)
     # The compiled closure of the node a LET is about to evaluate as its
     # *body*, and None otherwise.  A LET that finds its own closure here
     # is directly nested in another's body, so the two belong to one
@@ -1093,6 +1097,12 @@ def _enrich_trap(trap, rt: Runtime) -> None:
         valid_alternatives=alternatives,
         op_name_for=lambda tok: SIGNATURES.get(tok, {"name": "?"}).get("name", "?"),
     )
+    # Exp 19: a step trap names where the budget went.  Six sessions
+    # hit the ceiling on a game-tree search and had to guess which of
+    # their functions was the cost; the counts make it a reading.
+    if trap.anomaly.get("kind") in ("step-limit-exceeded", "recursion-depth-exceeded") and rt.calls:
+        hot = sorted(rt.calls.items(), key=lambda kv: -kv[1])[:8]
+        trap.anomaly["detail"]["calls"] = [[name_id, count] for name_id, count in hot]
     # Kind-specific repair hints.  Only overwrite the generic hint if no
     # body-level offender was identified by the probe — when one IS set
     # (Q20), the CONSERVE handler has already written a more specific hint
@@ -1351,6 +1361,10 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
             "apply a `lambda` or a `loop-until`, or a name bound to one",
         )
 
+    name = fn.name
+    if name is not None:
+        calls = rt.calls
+        calls[name] = calls.get(name, 0) + 1
     rt.call_depth += 1
     if rt.call_depth > rt.max_call_depth:
         depth = rt.call_depth

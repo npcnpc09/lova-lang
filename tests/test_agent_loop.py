@@ -105,3 +105,42 @@ class Exp19Feedback(unittest.TestCase):
     def test_the_budget_is_at_parity_with_the_wall_clock(self):
         self.assertEqual(e18.BUDGET, 7_000_000)
         self.assertEqual(e18.PY_TIMEOUT, 10.0)
+
+
+class CostAttribution(unittest.TestCase):
+    """Exp 19, run 2: a step trap says where the budget went."""
+
+    SRC = ("(def fib [n] (if (lt n 2) n (merge (fib (sub n 1)) (fib (sub n 2)))))\n"
+           "(def twice [x] (mul 2 x))\n(twice (fib 30))")
+
+    def test_the_step_trap_lists_the_most_called_functions(self):
+        from core.mcp_server import tool_execute
+        a = tool_execute({"source": self.SRC, "max_steps": 300000})["anomaly"]
+        self.assertEqual(a["kind"], "step-limit-exceeded")
+        self.assertEqual(a["detail"]["hot"][0][0], "fib")
+        self.assertGreater(a["detail"]["hot"][0][1], 1000)
+        self.assertIn("Most called: fib (", a["repair_hint"])
+        self.assertNotIn("calls", a["detail"])
+
+    def test_the_cli_names_them_too(self):
+        import contextlib, io, os, tempfile
+        from core.cli import main
+        fd, path = tempfile.mkstemp(suffix=".lova")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(self.SRC)
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                main(["run", path, "--max-steps", "300000"])
+        finally:
+            os.remove(path)
+        self.assertIn("Most called: fib (", err.getvalue())
+
+    def test_a_passing_run_reports_its_cost(self):
+        r = e18.run_lova("(merge {s} 0)", e18.BY_ID["t01"])
+        self.assertIn("most_steps", r)
+        r = e18.run_lova("(def walk [cs d] (cond (lt d 0) 0 (nil? cs) (eq d 0) "
+                         "(walk (tail cs) (if (eq (head cs) 40) (inc d) (sub d 1)))))\n(walk {s} 0)",
+                         e18.BY_ID["t01"])
+        self.assertTrue(r["passed"])
+        self.assertIn("of 7000000 steps", e18.feedback_text("lova", r))

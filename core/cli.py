@@ -153,6 +153,12 @@ def name_anomaly(anomaly: Any, symbols: Any) -> None:
     if symbols is None or not isinstance(anomaly, dict):
         return
     detail = anomaly.get("detail")
+    if isinstance(detail, dict) and detail.get("calls"):
+        # Exp 19: where a step or depth budget went, by function name.
+        hot = [(symbols.name_of(i) or f"#{i}", n) for i, n in detail.pop("calls")]
+        detail["hot"] = [[name, n] for name, n in hot]
+        anomaly["repair_hint"] = (anomaly.get("repair_hint", "") +
+            "  Most called: " + ", ".join(f"{name} ({n})" for name, n in hot) + ".")
     if not isinstance(detail, dict) or "name_id" not in detail:
         return
     name = symbols.name_of(detail["name_id"])
@@ -356,6 +362,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         value = evaluate(tree, runtime)
     except (BudgetTrap, DeltaTrap) as trap:
         sys.stdout.flush()
+        name_anomaly(trap.anomaly, getattr(tree, "symbols", None))
         return report_error(trap, source)
     except (ValueError, NotImplementedError) as exc:
         sys.stdout.flush()

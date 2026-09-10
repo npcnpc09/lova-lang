@@ -87,6 +87,19 @@ with a timeout; reuse not yet exercised (Q88). The lesson of the run:
 every hindrance the session named was a sentence missing from the
 generated card. The card is where the first number moves now.
 
+**Second measurement (Exp 19, 2026-09-11, eight bigger tasks, three
+sessions per language, Opus):** attempts 35 against 26, LOVA 24/24
+green and Python 24/24; on seven tasks the languages are at parity
+(20 of 21 first-try against 22 of 24), on the game-tree search LOVA
+took 6, 3, 4 attempts against 1, 1, 1 -- every extra attempt a rewrite
+for cost after a step trap. Feedback per failure 594 chars against 71,
+the two sides failing on different things (anomalies against wrong
+values). Emitted 45 372 against 18 013. Compile faults: five of five
+fixed at the next submission. The number that moved the design: a
+step trap now says where the budget went (`hot`), and a run reports
+its cost on success. The number that names the next change: the
+interpreter's speed, now measured as attempts (Q90).
+
 ## 4. What the measure asks of the design
 
 Consequences, each a change the numbers above would reward:

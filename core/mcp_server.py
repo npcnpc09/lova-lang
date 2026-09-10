@@ -33,8 +33,8 @@ from dataclasses import asdict
 from typing import Any, Callable, Dict, List, Optional
 
 from core.cli import (
-    CLI_MAX_DEPTH, CLI_MAX_STEPS, build, format_value, parse_allow,
-    parse_net_allow, substitute,
+    CLI_MAX_DEPTH, CLI_MAX_STEPS, build, format_value, name_anomaly,
+    parse_allow, parse_net_allow, substitute,
 )
 from core.compiler import CompileError
 from core.conservation import BudgetTrap, DeltaTrap
@@ -298,6 +298,7 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
         value = evaluate(tree, runtime)
     except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError) as exc:
+        name_anomaly(getattr(exc, "anomaly", None), getattr(tree, "symbols", None))
         result = _failure("run", exc, source)
         result["output"] = runtime.written()
         result["steps"] = runtime.steps

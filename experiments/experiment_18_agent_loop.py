@@ -181,12 +181,14 @@ BY_ID = {t.id: t for t in TASKS}
 def run_lova(program: str, task: Task) -> Dict[str, Any]:
     from core.mcp_server import tool_execute
     failures = []
+    most_steps = 0
     for test in task.tests:
         # A text is quoted so that "7" stays a text (Exp 19's first finding).
         args = [f'{k}="{v}"' if isinstance(v, str) else f"{k}={v}" for k, v in test["inputs"].items()]
         r = tool_execute({"source": program, "args": args, "allow": [], "max_steps": BUDGET})
         expected = test["expected"]
         got_key = "value_text" if isinstance(expected, str) else "value_int"
+        most_steps = max(most_steps, int(r.get("steps", 0)))
         if r["ok"] and r.get(got_key) == expected:
             continue
         failure: Dict[str, Any] = {"inputs": test["inputs"], "expected": test["expected"]}
@@ -199,7 +201,7 @@ def run_lova(program: str, task: Task) -> Dict[str, Any]:
                                   if k in a} | {"stage": r["stage"]}
         failures.append(failure)
         break                       # the first failure is the feedback, as a test runner gives it
-    return {"passed": not failures, "failures": failures}
+    return {"passed": not failures, "failures": failures, "most_steps": most_steps}
 
 
 def run_python(code: str, task: Task) -> Dict[str, Any]:
@@ -267,6 +269,9 @@ def cmd_tasks(args) -> int:
 
 def feedback_text(lang: str, result: Dict[str, Any]) -> str:
     if result["passed"]:
+        if "most_steps" in result:
+            # Exp 19: the cost on success, so an agent sees it before the wall.
+            return f"PASS: all tests pass (largest run {result['most_steps']} of {BUDGET} steps)."
         return "PASS: all tests pass."
     f = result["failures"][0]
     if lang == "lova":

@@ -121,8 +121,11 @@ scaffolding a host needs to run the code safely, (4) the cost of
 reusing, repairing and tracing code already written. Exp 17 measured
 half of (1) -- parity with Python; Exp 18 ran the loop on ten tasks
 (11 attempts against 10, the one miss fixed from the hint in one try,
-scaffolding a function call against a subprocess); (2) and (4) are
-where the design is strongest and are still one-sided (Q87, Q88).
+scaffolding a function call against a subprocess); Exp 19 ran it on
+eight bigger ones (35 against 26: parity on seven tasks, the game-tree
+search 6/3/4 against 1/1/1, every extra attempt a rewrite for cost --
+the interpreter's speed as an attempts number, Q90; compile faults
+fixed in one attempt every time). (4) is still unmeasured (Q88).
 
 Standing invariants: Axioms 3, 4, 5, 6, 7, 9. **Demoted to design
 preferences: Axioms 1, 2, 8, 10** -- the integer encoding is the
@@ -713,7 +716,7 @@ plus the text family 0x40-0x4D since M25: 78 tokens in all. The
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-774 unit tests passing, 19 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot) (pb11 has a v1 pilot + v2 re-run),
+784 unit tests passing, 19 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language) (pb11 has a v1 pilot + v2 re-run),
 14 first-class apps, **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

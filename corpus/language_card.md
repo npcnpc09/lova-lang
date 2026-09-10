@@ -8,7 +8,7 @@ floats and no mutable variables.
 
 ```
 (def name [param ...] body)      ; a function; several may precede the expression
-(def k [] value)                 ; no parameters: a constant, computed once
+(def k [] value)                 ; no parameters: a constant, computed once; use it as k, not (k)
 (f a b)                          ; call a defined function (curried under the hood)
 (lambda x body)                  ; an anonymous function of ONE parameter
 (let name value body)            ; bind name in body (recursive under a lambda)
