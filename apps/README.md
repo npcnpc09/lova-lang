@@ -269,6 +269,27 @@ stopped, caught and counted, and the batch reports what finished.
 python -m core.cli run apps/batch.lova 300 2000     # finished: 219, over budget: 81
 ```
 
+### `shell/policy_app.py`
+
+The division of labour LOVA is for, as a running application.  The
+shell -- an HTTP server, a page, a form -- is ordinary Python, standard
+library only.  The one thing that decides anything, a loyalty-points
+rule, is a LOVA program you can edit in the browser.  The shell runs
+it through the same call the MCP server exposes, under a budget of
+50 000 nodes and with no capability granted, and shows what comes
+back: the value, or the structured fault when you make the rule
+divide by zero, loop for ever, read a file it never declared, or use a
+name that does not exist.  The page also shows the rule as the integer
+it is.  A shell in another language would call `lova mcp` and get the
+same JSON.
+
+```
+python apps/shell/policy_app.py      # then open http://127.0.0.1:8765
+```
+
+![the rule runs](shell/screenshot_ok.png)
+![the rule is refused a file](shell/screenshot_fault.png)
+
 ## Arguments
 
 A `{placeholder}` is filled from the command line in the order of

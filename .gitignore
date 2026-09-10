@@ -35,3 +35,4 @@ scratch/
 # M8 corpus: the card-bearing chat files are derivable (python -m corpus.finetune --rewrite-chat) and ten megabytes
 corpus/finetune/chat_card_*.jsonl
 experiments/results_17/reference.json
+.playwright-mcp/

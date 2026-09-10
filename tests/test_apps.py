@@ -224,5 +224,37 @@ class StageTwoRoundTrip(unittest.TestCase):
         self.assertIn("=> 1", got_err)
 
 
+class PolicyShell(unittest.TestCase):
+    """`apps/shell/policy_app.py`: a Python shell whose only decision is a
+    LOVA rule.  The shell's one call into the language, without the
+    HTTP around it."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        from pathlib import Path
+        path = Path("apps/shell/policy_app.py")
+        spec = importlib.util.spec_from_file_location("policy_app", path)
+        cls.app = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.app)
+
+    def test_the_default_rule_scores_a_purchase(self):
+        r = self.app.run_rule(self.app.DEFAULT_RULE, {"amount": 12345, "tier": 2, "items": 6})
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["value_int"], 296)          # 123 points, doubled, plus 50
+        self.assertIn("digest", r)
+        self.assertNotIn("(", r["projection"])
+
+    def test_every_sabotage_is_a_structured_fault_and_the_shell_survives(self):
+        expected = {"divide": "domain-error", "loop": "recursion-depth-exceeded",
+                    "file": "capability-denied", "unbound": "unbound-ref"}
+        for name, kind in expected.items():
+            with self.subTest(name=name):
+                r = self.app.run_rule(self.app.SABOTAGE[name], {"amount": 12345, "tier": 2, "items": 6})
+                self.assertFalse(r["ok"])
+                self.assertEqual(r["anomaly"]["kind"], kind)
+                self.assertTrue(r["anomaly"].get("repair_hint"))
+
+
 if __name__ == "__main__":
     unittest.main()

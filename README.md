@@ -165,6 +165,9 @@ python -m core.cli run apps/evolve.lova 42 60
 # repair a program that violates its contract, guided by surprise
 python -m core.cli run apps/repair.lova 42 30 200
 
+# a Python web shell whose only decision is a LOVA rule you can edit and break
+python apps/shell/policy_app.py       # http://127.0.0.1:8765
+
 # an interactive session, with the standard library loaded
 python -m core.cli repl
 
