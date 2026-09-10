@@ -11,10 +11,9 @@ that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
 LOVA, modules, a CLI, an MCP server for agents, and 697 tests. It is an
-interpreter in Python and it is slow — a 10 000-line word count takes
-28 s on CPython, 5.5 s on PyPy — and it has no floats, no
-namespaces and no concurrency. The "What LOVA still cannot do" section below is kept
-honest.*
+interpreter in Python, with a stdlib-only core that runs under PyPy
+as well, and it has no floats, no namespaces and no concurrency. The
+"What LOVA still cannot do" section below is kept honest.*
 
 ## The one-paragraph pitch
 
@@ -336,12 +335,10 @@ tests/         697 unit tests, stdlib only
 
 Stated plainly, because the list is short and the omissions are large:
 
-- **It is slow.** An interpreter in Python — the tree compiled to
-  closures, since M23 — at ~700 000 steps a second on CPython, ~4
-  million under PyPy: a word count of 10 000 lines takes 28 s on
-  CPython, 5.5 s under PyPy (`apps/wordfreq.lova`; journal M22
-  and M23 have the profiles). Thousands of lines are seconds; millions are not this
-  language yet (Q76).
+- **It is an interpreter.** The tree is compiled to closures (M23)
+  and runs at ~700 000 steps a second on CPython, ~4 million under
+  PyPy (journal M22 and M23 have the profiles). Thousands of lines of
+  input are seconds; millions are not this language yet (Q76).
 - **IO is whole values.** `fs-read` reads a whole file, `net-recv` one
   datagram: there are no handles and no streams (Q72). The terminal is
   ambient rather than declared (Q68).
