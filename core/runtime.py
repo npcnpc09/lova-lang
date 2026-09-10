@@ -737,9 +737,28 @@ def _as_list(v: Any, ctx: str) -> Any:
         "type-violation",
         f"{ctx}: expected a List, got {v!r}; only `nil`, `cons` and `tail` "
         "produce list values",
-        {"operator": ctx, "expected": "List"},
-        "use `nil`, `cons` or `tail` to produce a list",
+        {"operator": ctx, "expected": "List", "got": _kind_of(v), "got_value": format_repr(v)},
+        f"`{ctx}` wants a list or a text and got {_kind_of(v)} {format_repr(v)}; "
+        "if this came from an input, the argument arrived as an integer -- quote it "
+        "on the command line to pass a text",
     )
+
+
+def _kind_of(v: Any) -> str:
+    if isinstance(v, bool) or isinstance(v, int):
+        return "an integer"
+    if isinstance(v, str):
+        return "a text"
+    if is_list_value(v):
+        return "a list"
+    if callable(v):
+        return "a function"
+    return "a value"
+
+
+def format_repr(v: Any) -> str:
+    text = repr(v)
+    return text if len(text) <= 40 else text[:37] + "..."
 
 
 @dataclass

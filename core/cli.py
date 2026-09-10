@@ -65,6 +65,11 @@ def substitute(source: str, args: List[str]) -> str:
     their first appearance in the code -- which a reader cannot see,
     so a program that takes more than one is best read with its
     arguments declared first, or run with them named.
+
+    A value written in double quotes is a text whatever it contains
+    (Exp 19: three sessions in a row lost their first attempt because
+    the input ``"7"`` arrived as the integer 7): ``s="7"`` is the text,
+    ``s=7`` the number.
     """
     import re
 
@@ -95,14 +100,23 @@ def substitute(source: str, args: List[str]) -> str:
     filled = list(named.items()) + list(zip(unnamed, positional))
     out = source
     for name, value in filled:
+        out = out.replace("{" + name + "}", argument_literal(value))
+    return out
+
+
+def argument_literal(value: str) -> str:
+    """The literal an argument becomes: an integer as itself, anything
+    else as a text; a value in double quotes is a text, quotes off."""
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        value = value[1:-1]
+    else:
         try:
             int(value, 0)
-            literal = value
+            return value
         except ValueError:
-            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-            literal = f'"{escaped}"'
-        out = out.replace("{" + name + "}", literal)
-    return out
+            pass
+    escaped = value.replace("\\", "\\\\").replace('"', "\\" + '"')
+    return f'"{escaped}"' 
 
 
 def build(source: str, *, prelude: bool = True, stage2: bool = False,

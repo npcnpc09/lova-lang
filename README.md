@@ -10,7 +10,7 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 767 tests. It is an
+LOVA, modules, a CLI, an MCP server for agents, and 774 tests. It is an
 interpreter in Python, with a stdlib-only core that runs under PyPy
 as well, and it has no floats, no namespaces and no concurrency. The
 "What LOVA still cannot do" section below is kept honest.*
@@ -154,6 +154,7 @@ export PYTHONPATH="$PWD"
 # run a program
 python -m core.cli run apps/is_prime.lova 1999      # => 1
 python -m core.cli run apps/palindrome.lova racecar # => 1
+python -m core.cli run apps/palindrome.lova 's="7"'  # a quoted argument is a text, even "7"
 
 # play noughts and crosses against a negamax that never loses
 python -m core.cli run apps/tictactoe.lova 0
@@ -183,7 +184,7 @@ python -m core.cli analyze apps/collatz.lova 27
 # run the examples a program declares about itself
 python -m core.cli check apps/tictactoe.lova 0
 
-# run the test suite (767 tests, stdlib unittest only)
+# run the test suite (774 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # the same under PyPy, where the whole suite is also expected to pass
@@ -282,7 +283,7 @@ something and kept as a test. What they demonstrate:
   under a budget with nothing granted; the Python answers needed a
   subprocess and a timeout (`journal/experiment_18.md`).
 - **It runs anywhere Python does.** The core has no dependencies, so
-  the same programs run under CPython and PyPy, and the 767 tests pass
+  the same programs run under CPython and PyPy, and the 774 tests pass
   on both.
 - **Text is a value.** A string literal is one node; `words`, `split`,
   `join`, `parse-int` and the rest are one operator each; a word count
@@ -506,7 +507,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         767 unit tests, stdlib only
+tests/         774 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do

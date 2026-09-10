@@ -178,9 +178,12 @@ def run_lova(program: str, task: Task) -> Dict[str, Any]:
     from core.mcp_server import tool_execute
     failures = []
     for test in task.tests:
-        args = [f"{k}={v}" for k, v in test["inputs"].items()]
+        # A text is quoted so that "7" stays a text (Exp 19's first finding).
+        args = [f'{k}="{v}"' if isinstance(v, str) else f"{k}={v}" for k, v in test["inputs"].items()]
         r = tool_execute({"source": program, "args": args, "allow": [], "max_steps": BUDGET})
-        if r["ok"] and r.get("value_int") == test["expected"]:
+        expected = test["expected"]
+        got_key = "value_text" if isinstance(expected, str) else "value_int"
+        if r["ok"] and r.get(got_key) == expected:
             continue
         failure: Dict[str, Any] = {"inputs": test["inputs"], "expected": test["expected"]}
         if r["ok"]:
@@ -282,7 +285,8 @@ def _submit(lang: str, task_id: str, program: str, emitted: int, how: str) -> in
     attempt = 1 + sum(1 for r in _records(lang) if r["task"] == task_id)
     _append(lang, {"task": task_id, "attempt": attempt, "how": how, "emitted_chars": emitted,
                    "feedback_chars": len(text), "passed": result["passed"], "program": program,
-                   "seconds": round(time.perf_counter() - started, 3), "time": time.time()})
+                   "feedback": text, "seconds": round(time.perf_counter() - started, 3),
+                   "time": time.time()})
     print(f"[{task_id} attempt {attempt}] {text}")
     return 0 if result["passed"] else 1
 
