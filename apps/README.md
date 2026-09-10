@@ -287,8 +287,7 @@ same JSON.
 python apps/shell/policy_app.py      # then open http://127.0.0.1:8765
 ```
 
-![the rule runs](shell/screenshot_ok.png)
-![the rule is refused a file](shell/screenshot_fault.png)
+![the policy console, a rule refused a file it never declared](shell/screenshot.png)
 
 ## Arguments
 
