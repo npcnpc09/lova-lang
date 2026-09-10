@@ -1,0 +1,138 @@
+;;; tictactoe.lova  --  noughts and crosses against the substrate
+;;;
+;;;   lova run apps/tictactoe.lova 0
+;;;   printf '5\n1\n9\n' | lova run apps/tictactoe.lova 0
+;;;
+;;; The argument is the board to start from, in the integer form
+;;; described below; 0 is the empty board.
+;;;
+;;; You are X and move first; the computer is O and plays a memoised
+;;; negamax, so it never loses.  Type the number of a free square, as
+;;; shown on the board.  An empty line, or the end of the input, ends
+;;; the game.  The value of the program is the winner: 1 you, 2 the
+;;; computer, 0 a draw or a quit.
+;;;
+;;; The second real program (M23; wordfreq was the first), written to
+;;; find out what a turn-based game needs from the language.  What it
+;;; found is in journal M23.
+;;;
+;;; The board is one integer in base 3: square k (0..8) is digit k, and
+;;; a digit is 0 empty, 1 X, 2 O.  A program that is an integer plays
+;;; on a board that is one, and the board is a map key for free.
+
+(def powers [] (list 1 3 9 27 81 243 729 2187 6561))
+
+(def cell [b k] (mod (div b (nth powers k)) 3))
+
+;; Only ever called on an empty square, so adding is setting.
+(def put [b k v] (merge b (mul v (nth powers k))))
+
+(def lines [] (list (list 0 1 2) (list 3 4 5) (list 6 7 8)
+                    (list 0 3 6) (list 1 4 7) (list 2 5 8)
+                    (list 0 4 8) (list 2 4 6)))
+
+;; Who holds all three squares of a line, or 0.
+(def line-owner [b l]
+  (let a (cell b (nth l 0))
+    (if (and (eq a (cell b (nth l 1))) (eq a (cell b (nth l 2)))) a 0)))
+
+(def winner [b]
+  (fold (lambda w (lambda l (or w (line-owner b l)))) 0 lines))
+
+(def empties [b] (filter (lambda k (not (cell b k))) (range 0 9)))
+
+(def full [b] (nil? (empties b)))
+
+(def other [p] (sub 3 p))
+
+;; --- the search -----------------------------------------------------
+;;
+;; `solve` scores a position for the player about to move: 1 a forced
+;; win, 0 a draw, -1 a forced loss.  Positions are memoised in a map
+;; keyed by board and player, and the map is threaded through the
+;; search as a value, because there is no other way: `(list score
+;; memo)` comes back from every call.  The first move searches the
+;; whole game; every later move finds its answers already there.
+
+(def memo-key [b p] (merge (mul b 3) p))
+
+(def solve [b p memo]
+  (let known (map-get memo (memo-key b p) 5)
+    (if (ne known 5)
+      (list known memo)
+      (let r (cond (winner b) (list -1 memo)        ; the other side just won
+                   (full b)   (list 0 memo)
+                   (best b p memo))
+        (list (head r) (map-put (head (tail r)) (memo-key b p) (head r)))))))
+
+;; The best score `p` can reach from `b`, with the memo it built.
+(def best [b p memo]
+  (fold (lambda st (lambda k
+          (let r (solve (put b k p) (other p) (head (tail st)))
+            (list (max (head st) (neg (head r))) (head (tail r))))))
+        (list -2 memo)
+        (empties b)))
+
+;; The square to play: (list score square memo).
+(def choose [b p memo]
+  (fold (lambda st (lambda k
+          (let r (solve (put b k p) (other p) (nth st 2))
+            (let sc (neg (head r))
+              (if (gt sc (head st))
+                (list sc k (head (tail r)))
+                (list (head st) (nth st 1) (head (tail r))))))))
+        (list -2 -1 memo)
+        (empties b)))
+
+;; --- the table ------------------------------------------------------
+
+(def glyph [b k]
+  (cond (eq (cell b k) 1) "X"
+        (eq (cell b k) 2) "O"
+        (text-of (inc k))))
+
+(def row [b r]
+  (join (list (glyph b (mul r 3)) (glyph b (inc (mul r 3))) (glyph b (merge (mul r 3) 2))) 32))
+
+(def show [b]
+  (seq (println (row b 0)) (println (row b 1)) (println (row b 2)) (println "")))
+
+(def announce [b]
+  (let w (winner b)
+    (seq (show b)
+         (cond (eq w 1) (println "you win")
+               (eq w 2) (println "the computer wins")
+               (println "a draw"))
+         w)))
+
+;; A move from the player: a free square, or -1 to stop.  A blank line
+;; stops too, and not by choice: `stdin` yields the empty list both at
+;; end of input and for an empty line, because "" *is* `nil` (Q78).
+;; Anything else -- text, a taken square -- is asked again.
+(def read-move [b]
+  (let line (stdin)
+    (if (nil? line)
+      -1
+      (let k (try (sub (parse-int (head (words line))) 1) -2)
+        (if (and (ge k 0) (and (lt k 9) (not (cell b k))))
+          k
+          (seq (println "pick the number of a free square")
+               (read-move b)))))))
+
+(def play [b memo]
+  (seq (show b)
+       (let k (read-move b)
+         (if (lt k 0)
+           (seq (println "bye") 0)
+           (let b2 (put b k 1)
+             (if (or (winner b2) (full b2))
+               (announce b2)
+               (let r (choose b2 2 memo)
+                 (let b3 (put b2 (nth r 1) 2)
+                   (seq (println (join (list "the computer plays" (text-of (inc (nth r 1)))) 32))
+                        (if (or (winner b3) (full b3))
+                          (announce b3)
+                          (play b3 (nth r 2))))))))))))
+
+(seq (println "you are X and move first; type the number of a square (an empty line quits)")
+     (play {start} (nil)))

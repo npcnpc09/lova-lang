@@ -411,10 +411,91 @@ thousand lines, 3.57 → 3.39 s.
 
 Ten thousand lines now: **CPython 28 s, PyPy 5.5 s**.
 
+**Two programs, to see what a program finds.** After the speed work
+the question was usability, and the only way to measure it is to
+write something. `apps/tictactoe.lova` (memoised negamax, the memo a
+persistent map threaded through the search as a value, the board one
+base-3 integer) and `apps/guess.lova` (the clock under a boundary, a
+parsed line, a counting loop). Both worked at the first run of the
+game logic; what stopped were the edges, and each stop is a finding:
+
+- **`stdin` cannot tell a blank line from the end of input** (Q78).
+  Both are the empty list, because `""` *is* `nil`. An interactive
+  program cannot ask again on Enter; the games treat an empty line as
+  quitting and say so. The M11 choice -- end of input is `nil`, never
+  a fault -- was made for generated programs that must not block, and
+  it costs every interactive one this.
+- **A zero-parameter `def` is a constant, evaluated at definition**
+  (Q79). `(def read-guess [] (... (read-guess)))` read a line of input
+  *while being defined*, then trapped on its own name: the strict
+  letrec self-reference Exp 16's re-run had just counted at 8/1000 in
+  generated programs, met by hand within the hour. The compiler
+  accepts it; the runtime reports `unbound ref: 86`, an integer, at
+  the first use. A function that takes nothing has to take something.
+- **A boundary is lexical, so a helper cannot hold an effect.**
+  `(def secret [n] (inc (mod (clock) n)))` at top level, called from
+  inside `(boundary "clock" ...)`, is refused by the compiler --
+  correctly, per M19, and with a repair hint that says to wrap the
+  use. The cost is that every effectful helper must be defined inside
+  the boundary or take its effect's value as an argument; the guess
+  program does the latter.
+- **No pairs, so state is `(nth st 2)`.** Threading a memo and a best
+  move through a fold means every step builds and takes apart a
+  three-element list by position. It works; it is the least readable
+  code in the repository, and it is what Axiom 8's one cons cell
+  buys.
+- **Cost.** The first computer move solves the game: 11.07 million
+  steps, 18.5 s on CPython, ~3 s under PyPy; every later move is a
+  lookup. Twenty games against random legal play under PyPy: 19 wins,
+  1 draw, no loss, 103 s in all. A test cannot afford the first move,
+  so the program takes its starting board as an argument and the
+  tests play endgames (`tests/test_apps.py`, 6 tests).
+
+**Three more scenarios**, one per claim the project makes about where
+LOVA fits:
+
+- *Data pipeline* -- `apps/logstats.lova`: a request log, parsed,
+  grouped per service in a map, aggregated (count, mean, max,
+  errors), sorted, printed. 2 000 lines plus 7 bad ones: 4.6 million
+  steps, 8 s on CPython, every figure right. Worked at the first run.
+  The one thing it cannot print is a mean with a decimal point:
+  integers only, so `div` rounds down. Not a fault; a fact to know.
+- *Two processes on the network* -- `apps/pong.lova` answers every
+  datagram, `apps/ping.lova` sends k and prints the answers. Three
+  pings, three answers, 1 369 and 1 773 steps, by hand. The unit test
+  then found a race the hand run had been too slow to hit: the
+  listening socket was bound lazily by the first `net-recv`, so an
+  answer that came back between `net-send` and `net-recv` had nowhere
+  to land and was lost. **Fixed**: the listener is bound by the first
+  network operation of either kind, and `net-send` sends *from* it
+  when one is granted, so a peer sees the port an answer can go to --
+  a first step toward Q72 without a new value kind.
+- *The agent's sandbox* -- `apps/sandbox.lova`: one untrusted program
+  per line of input, `read` into a value, run under a `budget`, and
+  reported by hash and value or by fault name. Fourteen lines
+  including an infinite loop (budget exceeded), a file read without a
+  boundary (capability denied), a division by zero, text that is not a
+  program, a `signal 42`, a `def`-sugared program -- every one
+  reported, nothing reached the sandbox, and the sandbox itself needs
+  no grant. 488 112 steps. This is the scenario the project's pitch
+  rests on, and it is the one that worked with the least friction:
+  `when-anomaly` + `budget` + `read` + `eval` compose exactly as the
+  axioms say.
+
+Two more things the three found. **`hash` is the program's encoding,
+not a digest** (Q80): the hash of `(stdout "hi from inside\n")` is a
+150-digit integer, because a string is a cons chain of literals and
+the integer *is* the byte sequence. Exp 01 wanted that identity; a
+sandbox's log wants a fixed-width id. And a `def` cannot appear
+inside a boundary, so the effectful helper of `ping.lova` is a
+`let`-bound lambda -- the third time the lexical boundary asked for a
+rewrite in five programs.
+
 Where it stands on CPython: `_call` at ~1.5 µs (a frame, six
 attribute saves and restores, the depth check) is the largest single
-item, then the per-node prologue at ~0.3 µs. Tests 665 → 684. Q75
-answered; Q76 asks what the next floor is.
+item, then the per-node prologue at ~0.3 µs. Tests 665 → 697. Q75
+answered; Q76 asks what the next floor is; Q78, Q79 and Q80 are what
+the five programs found.
 
 ### Milestone 7 (2026-09-09) — LOVA as a tool for agents
 Named at M6 and delivered after M21, because everything it exposes had
@@ -1189,6 +1270,29 @@ the corpus grows again.
   on a capability the sandbox does not grant. Eight programs in a
   thousand are a strict `let` self-reference the compiler accepts and
   the runtime traps; the M9 letrec left that open.
+- **Q80**: `hash` yields the program's own integer -- Exp 01's
+  identity, `(merge (p 3) (tau 12))` = 55916975560956379404 -- which
+  for a program holding a fifteen-character string is 150 digits.
+  A sandbox's report, a lineage record, a population's roster all
+  want a fixed-width id. A digest is a second notion of identity;
+  is it worth having, and if so is it an operator (the table is
+  full: Q74) or a library function over the bytes `hash` gives?
+- **Q79**: `(def f [] body)` is a constant evaluated where it is
+  defined, and a recursive reference inside it is a strict letrec
+  self-reference: accepted by the compiler, an `unbound-ref` naming
+  an integer at run time (found by hand in `guess.lova`; counted at
+  8/1000 generated programs by Exp 16's re-run). Should the scope
+  pass distinguish a self-reference under a lambda from one evaluated
+  strictly and refuse the latter at compile time, with the name?  And
+  should a zero-parameter `def` be a thunk -- which needs a way to
+  apply a function to nothing, and `(apply f)` already means `f`?
+- **Q78**: `stdin` yields `nil` both at end of input and for an empty
+  line, because the empty string is the empty list. An interactive
+  program cannot ask again on Enter. Keep the newline on the line (a
+  blank line is then `(10)`, and every consumer strips), signal end
+  of input as an anomaly a program can catch, or accept that Enter
+  quits? The M11 choice served generated programs; the two games pay
+  for it.
 - **Q76**: After M23 the interpreter runs ~650 000 steps a second. The
   remaining floor is `_call` (~1.5 µs: a frame, the capability and
   environment saves and restores, the depth check) and the per-node

@@ -1,0 +1,51 @@
+;;; sandbox.lova  --  run untrusted programs, one per line, and report
+;;;
+;;;   lova run apps/sandbox.lova 5000 < programs.txt
+;;;
+;;; Each line of the input is a LOVA program in the text surface.  The
+;;; sandbox reads it into a program value, runs it under a budget of
+;;; the given number of nodes, and prints one line: the program's
+;;; hash, and either its value or the fault it raised, by name.  A
+;;; program that loops for ever meets the budget; one that reads a
+;;; file meets the boundary it did not declare; one that is not even
+;;; a program is reported as such.  Nothing a line can do reaches the
+;;; sandbox: every fault is an anomaly with a code, and the handler
+;;; turns the code into a word.  The value of the program is the
+;;; number of lines that produced a value.
+;;;
+;;; Written at M23 as the agent scenario: the host that runs code an
+;;; agent wrote is itself a LOVA program, and needs no grant at all.
+
+(def fault-name [code]
+  (cond (eq code 1) "budget exceeded"
+        (eq code 2) "recursion too deep"
+        (eq code 3) "conservation violated"
+        (eq code 4) "domain error"
+        (eq code 5) "type violation"
+        (eq code 6) "unbound reference"
+        (eq code 7) "not a program"
+        (eq code 9) "capability denied"
+        (eq code 10) "signalled"
+        (append "signal " (text-of code))))
+
+;; The value as text; a list or a function has none, and says so.
+(def value-text [v]
+  (try (text-of v) "a value that is not a number"))
+
+;; One line: 1 if the program produced a value, else 0.
+(def run-line [line]
+  (let report (when-anomaly
+                (let p (read line)
+                  (let v (budget {nodes} (eval p))
+                    (list 1 (append (text-of (hash p)) (append " => " (value-text v))))))
+                (lambda code (list 0 (append "fault: " (fault-name code)))))
+    (seq (println (head (tail report)))
+         (head report))))
+
+(def run-all [count]
+  (let line (stdin)
+    (if (nil? line)
+      count
+      (run-all (merge count (run-line line))))))
+
+(run-all 0)

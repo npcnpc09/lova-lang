@@ -1,0 +1,55 @@
+;;; logstats.lova  --  a request log, summarised per service
+;;;
+;;;   lova run apps/logstats.lova access.log --allow fs-read
+;;;
+;;; Each line of the log is "service status milliseconds", for example
+;;; "api 200 123".  The program prints, per service and most requests
+;;; first, the request count, the mean and maximum latency, and how
+;;; many requests failed (status 400 and up).  Lines that are not
+;;; three fields with two numbers are skipped.  The value of the
+;;; program is the number of lines it counted.
+;;;
+;;; Written at M23 as the data-pipeline scenario: read, parse, group,
+;;; aggregate, sort, print.  The one thing it cannot say is a mean
+;;; with a decimal point: LOVA has integers only, so `div` rounds
+;;; down, and a mean of 149.9 prints as 149.
+
+;; "api 200 123" -> (list "api" 200 123), or nil for anything else.
+(def parse [line]
+  (let ws (words line)
+    (if (lt (len ws) 3)
+      (nil)
+      (try (list (nth ws 0) (parse-int (nth ws 1)) (parse-int (nth ws 2)))
+           (nil)))))
+
+;; The running figures for a service: (list count total-ms max-ms errors).
+(def update [stats r]
+  (let old (map-get stats (head r) (list 0 0 0 0))
+    (let status (nth r 1)
+      (let ms (nth r 2)
+        (map-put stats (head r)
+                 (list (inc (head old))
+                       (merge (nth old 1) ms)
+                       (max (nth old 2) ms)
+                       (merge (nth old 3) (if (ge status 400) 1 0))))))))
+
+;; Most requests first.  A map pair is (list key value).
+(def by-count [a b]
+  (ge (head (head (tail a))) (head (head (tail b)))))
+
+(def show [e]
+  (let v (head (tail e))
+    (println (join (list (head e)
+                         (text-of (head v))
+                         (text-of (div (nth v 1) (head v)))
+                         (text-of (nth v 2))
+                         (text-of (nth v 3)))
+                   32))))
+
+(boundary "fs-read"
+  (let records (filter (lambda r (not (nil? r)))
+                       (map parse (lines (fs-read {path}))))
+    (let stats (fold update (nil) records)
+      (seq (println "service requests mean-ms max-ms errors")
+           (map show (sort-by by-count (map-pairs stats)))
+           (len records)))))

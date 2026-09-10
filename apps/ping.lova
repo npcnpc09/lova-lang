@@ -1,0 +1,21 @@
+;;; ping.lova  --  send k datagrams and print each answer
+;;;
+;;;   lova run apps/ping.lova 127.0.0.1:9001 3 --allow net=127.0.0.1:9001,net=:9002
+;;;
+;;; Sends "ping 1" .. "ping k" to the server address, waits for each
+;;; answer on the port the host granted for listening, and prints
+;;; what came back -- or "no answer" if the receive timed out.  The
+;;; value of the program is the number of answers received.
+;;;
+;;; The other half of `pong.lova`.  The helper is a `let`-bound lambda
+;;; rather than a `def` because a boundary is lexical: a top-level
+;;; `def` could not send (M19).
+
+(boundary "net"
+  (let ping (lambda i
+              (seq (net-send {server} (append "ping " (text-of i)))
+                   (let r (net-recv)
+                     (if (nil? r)
+                       (seq (println "no answer") 0)
+                       (seq (println r) 1)))))
+    (sum (map ping (range 1 (inc {k}))))))

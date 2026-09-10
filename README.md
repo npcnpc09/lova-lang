@@ -10,7 +10,7 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 688 tests. It is an
+LOVA, modules, a CLI, an MCP server for agents, and 697 tests. It is an
 interpreter in Python and it is slow — a 10 000-line word count takes
 28 s on CPython, 5.5 s on PyPy — and it has no floats, no
 namespaces and no concurrency. The "What LOVA still cannot do" section below is kept
@@ -154,6 +154,12 @@ export PYTHONPATH="$PWD"
 python -m core.cli run apps/is_prime.lova 1999      # => 1
 python -m core.cli run apps/palindrome.lova racecar # => 1
 
+# play noughts and crosses against a negamax that never loses
+python -m core.cli run apps/tictactoe.lova 0
+
+# run untrusted programs, one per line, under a budget; report each by name
+python -m core.cli run apps/sandbox.lova 5000 < programs.txt
+
 # an interactive session, with the standard library loaded
 python -m core.cli repl
 
@@ -164,7 +170,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (688 tests, stdlib unittest only)
+# run the test suite (697 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # the same under PyPy, where the whole suite is also expected to pass
@@ -323,7 +329,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         688 unit tests, stdlib only
+tests/         697 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do

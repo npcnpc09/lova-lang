@@ -2581,6 +2581,26 @@ def _op_FS_WRITE(node: Node, rt: Runtime, chained: bool) -> Any:
     return len(text)
 
 
+def _listen_socket(rt: Runtime) -> Any:
+    """The socket bound to the lowest granted listening port, or None.
+
+    Bound on first use by either `net-send` or `net-recv` (M23): a
+    reply to a datagram this run sent has to have somewhere to land
+    *before* the run gets round to receiving it.  Bound only by
+    `net-recv`, an answer that came back quickly was lost.
+    """
+    ports = sorted(rt.net_listen_on or ())
+    if not ports:
+        return None
+    port = ports[0]                 # the lowest granted port listens
+    sock = rt.net_sockets.get(port)
+    if sock is None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("", port))
+        rt.net_sockets[port] = sock
+    return sock
+
+
 def _op_NET_SEND(node: Node, rt: Runtime, chained: bool) -> Any:
     op = node.op
     _require_capability(rt, NET_SEND, "net-send")
@@ -2598,8 +2618,15 @@ def _op_NET_SEND(node: Node, rt: Runtime, chained: bool) -> Any:
         )
     data = payload.encode("utf-8")
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.sendto(data, (host, port))
+        # From the listening socket when one is granted, so the peer
+        # sees the port an answer can go to and the answer has a socket
+        # to land in; otherwise from a socket that lives for the send.
+        listener = _listen_socket(rt)
+        if listener is not None:
+            listener.sendto(data, (host, port))
+        else:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.sendto(data, (host, port))
     except OSError as exc:
         raise DomainTrap(
             "domain-error", f"net-send: {host}:{port}: {exc}",
@@ -2613,21 +2640,16 @@ def _op_NET_SEND(node: Node, rt: Runtime, chained: bool) -> Any:
 def _op_NET_RECV(node: Node, rt: Runtime, chained: bool) -> Any:
     op = node.op
     _require_capability(rt, NET_RECV, "net-recv")
-    ports = sorted(rt.net_listen_on or ())
-    if not ports:
+    if not rt.net_listen_on:
         raise DomainTrap(
             "capability-denied",
             "net-recv: no listening port was granted",
             {"operator": "net-recv", "granted": []},
             "run with `--allow net=:PORT`",
         )
-    port = ports[0]                 # the lowest granted port listens
-    sock = rt.net_sockets.get(port)
+    port = min(rt.net_listen_on)
     try:
-        if sock is None:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.bind(("", port))
-            rt.net_sockets[port] = sock
+        sock = _listen_socket(rt)
         sock.settimeout(rt.net_timeout)
         data, _peer = sock.recvfrom(65535)
     except socket.timeout:

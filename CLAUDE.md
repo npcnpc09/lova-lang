@@ -493,8 +493,20 @@ fold, where M22 was O(keys)), and `words` saves a call per character.
 under **PyPy** unchanged, where the same count takes **~5.5 s** (~4
 million steps a second); `evaluate` runs on a sized-stack thread
 there, because PyPy spends C stack per frame and Windows gives the
-main thread a megabyte. Q75 answered; Q76 (the next floor), Q77 (Exp
-16's figures have drifted from its script).
+main thread a megabyte. Two programs written to measure usability --
+`apps/tictactoe.lova` (memoised negamax, never lost in 20 random
+games) and `apps/guess.lova` -- found that `stdin` cannot tell a blank
+line from end of input (Q78) and that a zero-parameter `def` is a
+constant whose recursive reference the compiler accepts and the
+runtime traps (Q79). Three more -- `apps/logstats.lova` (a log
+grouped and summarised), `apps/ping.lova` / `apps/pong.lova` (two
+processes over UDP), `apps/sandbox.lova` (untrusted programs run
+under a budget and reported by fault name, the agent scenario) --
+worked, found a lost-datagram race (fixed: the listener is bound by
+the first network operation of either kind) and that `hash` is a
+150-digit integer for a program holding a string (Q80). Q75
+answered; Q76 (the next floor), Q77 (Exp 16's figures have drifted
+from its script; closed by re-running).
 
 **M22** made LOVA a language a real program can stand on, measured by
 one: `apps/wordfreq.lova`. Ceilings raised (depth 10 000; CLI/MCP
@@ -632,8 +644,8 @@ density by 70%; node count is a poor proxy in both directions.
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-688 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
-5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
+697 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+11 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 
 **All 14 experiments run** as of 2026-09-09. Exp 03 and Exp 07 had

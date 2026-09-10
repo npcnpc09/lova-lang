@@ -164,6 +164,76 @@ Three things it demonstrates:
 - **The short spellings** (`if`, `dist`, `def`) are the one-token
   aliases Exp 13 measured: identical program, 30% fewer LLM tokens.
 
+### `wordfreq.lova`
+
+The M22 acceptance program: read a file under a declared boundary,
+split it into words, count them in a map, sort, print the top n.  The
+program that measured the interpreter's speed (journal M22, M23).
+
+```
+python -m core.cli run apps/wordfreq.lova notes.txt 10 --allow fs-read
+```
+
+### `tictactoe.lova`
+
+Noughts and crosses against a memoised negamax.  The board is one
+base-3 integer; the memo is a persistent map threaded through the
+search as a value, because there is no other way to carry one.  You
+are X; the computer never loses (20 random games under PyPy: 19 wins,
+1 draw).  The argument is the board to start from, 0 for empty, so a
+test can play an endgame instead of the first move's eleven-million-
+step search.
+
+```
+python -m core.cli run apps/tictactoe.lova 0
+printf '5\n1\n9\n' | python -m core.cli run apps/tictactoe.lova 0
+```
+
+### `guess.lova`
+
+Guess the number.  The secret comes off the clock, under a boundary
+the host has to grant; twelve lines, and two of the language's edges
+found in writing them (Q78, Q79 -- see below).
+
+```
+python -m core.cli run apps/guess.lova 100 --allow clock
+```
+
+### `logstats.lova`
+
+A request log ("service status milliseconds" per line) summarised
+per service: requests, mean and maximum latency, errors, most
+requests first.  Read, parse, group in a map, aggregate, sort, print;
+bad lines skipped.  Means are integers, because everything is.
+
+```
+python -m core.cli run apps/logstats.lova access.log --allow fs-read
+```
+
+### `ping.lova` / `pong.lova`
+
+Two LOVA processes over UDP.  `pong` answers every datagram it
+receives; `ping` sends k and prints the answers.  Each declares the
+kind of effect (`net`); the host names the places:
+
+```
+python -m core.cli run apps/pong.lova 127.0.0.1:9002 --allow net=:9001,net=127.0.0.1:9002 &
+python -m core.cli run apps/ping.lova 127.0.0.1:9001 3 --allow net=127.0.0.1:9001,net=:9002
+```
+
+### `sandbox.lova`
+
+The agent scenario: untrusted programs, one per line of input, each
+`read` into a value, run under a `budget`, and reported by hash and
+value or by the name of its fault.  An infinite loop meets the
+budget, a file read meets the boundary it did not declare, text that
+is not a program is said to be one, and nothing reaches the sandbox,
+which itself needs no grant.
+
+```
+python -m core.cli run apps/sandbox.lova 5000 < programs.txt
+```
+
 ## Why these particular programs?
 
 `is_perfect` and `coprime` use the four pieces that make LOVA actually
@@ -184,22 +254,36 @@ and the surprise trace is available to any AI post-hoc inspector.
 
 ## What's missing (so you know what these programs cannot do yet)
 
-- No string or list output — the drivers format results in Python.
-  Once the IO effects family (0x30-0x37) lands, LOVA programs will
-  emit their own output.
-- No lists of lists.  `cons` takes an integer, so strings (flat lists
-  of codepoints) work but trees do not.
-- No modules.  `lib/prelude.lova` is prepended textually, which works
-  for one library and will not scale to two.
-- No way for a program to name its own provenance.  `why`, `explain`
-  and `lineage-query` are reserved slots; provenance is queryable from
-  Python only.
+The list this section used to carry -- no output, no lists of lists,
+no modules, no provenance from inside -- landed between M11 and M18.
+What the two games found in M23 is what is missing now:
 
-Functions, recursion and iteration arrived in M9, and data in M10; the
-first two programs here predate both and remain single expressions
-because they do not need more.  `collatz.lova` still threads its
-counter through a curried parameter rather than a pair — worth
-rewriting now that a cons cell is a pair.
+- **`stdin` cannot tell a blank line from the end of input** (Q78):
+  both are `nil`, because `""` is the empty list.  An interactive
+  program cannot ask again on Enter; the games quit on it and say so.
+- **`(def f [] body)` is a constant, not a thunk** (Q79).  It is
+  evaluated once, where it is defined; a recursive reference inside
+  it compiles and traps at run time with an integer for a name.  A
+  function that takes nothing has to take a dummy argument.
+- **A boundary is lexical.**  A top-level helper cannot use an
+  effect even when called from inside a boundary that declares it;
+  the compiler refuses it before the run.  Define the helper inside
+  the boundary, or pass the effect's value in.
+- **No pairs.**  Two results come back as a two-element list and are
+  taken apart with `head` and `nth`; `tictactoe.lova`'s search
+  threads a three-element state through a fold that way.
+- **Speed.**  Solving the game is eleven million steps: 18 s on
+  CPython, 3 s under PyPy.
+- **`hash` is the program's integer, not a digest** (Q80): 150
+  digits for a program holding a short string.  `sandbox.lova`'s
+  report shows it.
+- **`net-recv` yields the payload alone** (Q72): a server answers to
+  an address it was given, not to whoever wrote.  Since M23 a send
+  goes out from the listening socket when one is granted, so the peer
+  at least sees a port to answer to.
+
+`collatz.lova` still threads its counter through a curried parameter
+rather than a pair -- worth rewriting now that a cons cell is a pair.
 
 These are the first programs; they are intentionally narrow.  As
 the language grows, the programs here will grow with it.

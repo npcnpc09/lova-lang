@@ -1,0 +1,41 @@
+;;; guess.lova  --  guess the number
+;;;
+;;;   lova run apps/guess.lova 100 --allow clock
+;;;
+;;; The computer takes a number from 1 to n off the clock; you guess,
+;;; it says higher or lower.  The value of the program is the number
+;;; of guesses it took, or 0 if you gave up (an empty line, or the end
+;;; of the input -- the two are one to `stdin`, Q78).
+;;;
+;;; Twelve lines, written alongside tictactoe.lova to see what the
+;;; smallest interactive program needs: a source of randomness (the
+;;; clock, under a declared boundary -- the program says it reads the
+;;; clock and the host has to allow it), a line of input parsed as a
+;;; number with the failure caught, and a loop that counts.
+
+;; The clock is read inside the boundary below, not in a helper: a
+;; boundary is lexical (M19), so a `def` at top level cannot read the
+;; clock even when it is called from inside one.  The compiler says so
+;; before the program runs.
+
+;; The parameter is a dummy: `(def f [] ...)` is a *constant*, evaluated
+;; once where it is defined -- this one would read a line at definition
+;; and then fail on its own recursive reference (Q79).  A function that
+;; takes nothing still has to take something.
+(def read-guess [again]
+  (let line (stdin)
+    (if (nil? line)
+      0
+      (try (parse-int (head (words line)))
+           (seq (println "a number, please") (read-guess 0))))))
+
+(def play [target count]
+  (let g (read-guess 0)
+    (cond (eq g 0) (seq (println "bye") 0)
+          (lt g target) (seq (println "higher") (play target (inc count)))
+          (gt g target) (seq (println "lower") (play target (inc count)))
+          (seq (println (join (list "yes, in" (text-of (inc count)) "guesses") 32))
+               (inc count)))))
+
+(seq (println (join (list "I am thinking of a number from 1 to" (text-of {n})) 32))
+     (play (inc (mod (boundary "clock" (clock)) {n})) 0))

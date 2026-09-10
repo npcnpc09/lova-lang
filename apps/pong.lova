@@ -1,0 +1,26 @@
+;;; pong.lova  --  answer every datagram that arrives
+;;;
+;;;   lova run apps/pong.lova 127.0.0.1:9002 --allow net=:9001,net=127.0.0.1:9002
+;;;
+;;; Listens on the port the host granted (`net=:9001`), and answers
+;;; each datagram with "pong " and the text it received, sent to the
+;;; address given as the argument -- the one place the host allowed
+;;; sending to.  Stops when nothing has arrived for the receive
+;;; timeout (five seconds).  The value of the program is the number of
+;;; datagrams answered.
+;;;
+;;; `ping.lova` is the other half.  Written at M23 as the network
+;;; scenario: two LOVA processes talking, each under a boundary that
+;;; names the kind of effect while the host names the places (Q69).
+;;; Note that the reply address is an argument, not something learned
+;;; from the datagram: `net-recv` yields the payload alone (Q72).
+
+(boundary "net"
+  (let serve (lambda n
+               (let m (net-recv)
+                 (if (nil? m)
+                   n
+                   (seq (net-send {reply} (append "pong " m))
+                        (println (append "answered " m))
+                        (serve (inc n))))))
+    (serve 0)))
