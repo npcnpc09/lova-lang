@@ -738,9 +738,10 @@ def _as_list(v: Any, ctx: str) -> Any:
         f"{ctx}: expected a List, got {v!r}; only `nil`, `cons` and `tail` "
         "produce list values",
         {"operator": ctx, "expected": "List", "got": _kind_of(v), "got_value": format_repr(v)},
-        f"`{ctx}` wants a list or a text and got {_kind_of(v)} {format_repr(v)}; "
-        "if this came from an input, the argument arrived as an integer -- quote it "
-        "on the command line to pass a text",
+        f"`{ctx}` wants a list or a text and got {_kind_of(v)} {format_repr(v)}"
+        + ("; if this came from an input, the argument arrived as an integer -- "
+           "quote it on the command line to pass a text"
+           if isinstance(v, int) and not isinstance(v, bool) else ""),
     )
 
 

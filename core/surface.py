@@ -271,9 +271,10 @@ def _parse_program(tokens: List[str], syms: SymbolTable
             continue
         if body is not None:
             trailing = " ".join(tokens[cursor:])
-            raise ValueError(
+            raise ParseError(
                 "a program is a sequence of `defn` forms followed by one "
-                f"expression; found a second top-level expression: {trailing!r}"
+                f"expression; found a second top-level expression: {trailing!r}",
+                _token_span(tokens, cursor),
             )
         body, cursor = _parse_expr(tokens, cursor, syms)
     return definitions, body
@@ -317,6 +318,17 @@ def _parse_defn(
     Zero parameters is legal and yields the body itself -- a named
     constant rather than a function.
     """
+    try:
+        return _parse_defn_inner(tokens, pos, syms)
+    except ParseError:
+        raise
+    except ValueError as exc:
+        raise ParseError(str(exc), _token_span(tokens, pos)) from None
+
+
+def _parse_defn_inner(
+    tokens: List[str], pos: int, syms: SymbolTable
+) -> Tuple[int, Node, int]:
     cursor = pos + 2  # past the open paren and `defn`
     if cursor >= len(tokens) or not _is_identifier(tokens[cursor]):
         raise ValueError("defn: expected a name after `defn`")
@@ -340,7 +352,12 @@ def _parse_defn(
     cursor += 1  # past the closing bracket
     body, cursor = _parse_expr(tokens, cursor, syms)
     if cursor >= len(tokens) or tokens[cursor] != ")":
-        raise ValueError(f"defn {label!r}: expected a closing paren after the body")
+        raise ParseError(
+            f"defn {label!r}: expected a closing paren after the body, "
+            f"got {tokens[cursor]!r}" if cursor < len(tokens) else
+            f"defn {label!r}: expected a closing paren after the body, got the end of the source",
+            _token_span(tokens, cursor),
+        )
     cursor += 1
     # Curry: (defn f [a b] body) is (lambda a (lambda b body)).
     fn = body
@@ -665,7 +682,55 @@ MACROS = {
 }
 
 
+class ParseError(ValueError):
+    """A parse fault that says where (Exp 19).
+
+    Three sessions in a row read "unexpected closing paren at token
+    330" and "expects 2 args, got 7" with no line to go to.  A
+    ``ValueError`` still, so every handler keeps working; ``anomaly``
+    carries the span of the token or form at fault, which the CLI and
+    the MCP server turn into a line, a column and an excerpt.
+    """
+
+    def __init__(self, message: str, span: Optional[Tuple[int, int]] = None):
+        super().__init__(message)
+        self.anomaly: Dict[str, Any] = {
+            "kind": "parse-error",
+            "detail": {"message": message},
+            "position_path": (),
+            "offending_op": None,
+            "offending_op_name": "",
+            "valid_alternatives": (),
+            "repair_hint": message,
+        }
+        if span is not None:
+            self.anomaly["span"] = span
+
+
+def _token_span(tokens: List[str], start: int, end: Optional[int] = None) -> Optional[Tuple[int, int]]:
+    """The source span from token ``start`` to token ``end`` (exclusive)."""
+    if not tokens:
+        return None
+    first = tokens[min(start, len(tokens) - 1)]
+    last = tokens[min((end if end is not None else start + 1) - 1, len(tokens) - 1)]
+    if isinstance(first, Tok) and isinstance(last, Tok):
+        return (first.start, max(last.end, first.end))
+    return None
+
+
 def _parse_expr(
+    tokens: List[str], pos: int, syms: Optional[SymbolTable] = None
+) -> Tuple[Node, int]:
+    try:
+        return _parse_expr_inner(tokens, pos, syms)
+    except ParseError:
+        raise
+    except ValueError as exc:
+        # The innermost frame converts, so the span is the token in hand.
+        raise ParseError(str(exc), _token_span(tokens, pos)) from None
+
+
+def _parse_expr_inner(
     tokens: List[str], pos: int, syms: Optional[SymbolTable] = None
 ) -> Tuple[Node, int]:
     if syms is None:
@@ -710,8 +775,9 @@ def _parse_expr(
             arity, expand = MACROS[op_name]
             macro_args, cursor = _parse_args(tokens, pos + 2, syms)
             if arity is not None and len(macro_args) != arity:
-                raise ValueError(
-                    f"{op_name}: expects {arity} args, got {len(macro_args)}"
+                raise ParseError(
+                    f"{op_name}: expects {arity} args, got {len(macro_args)}",
+                    _token_span(tokens, pos, cursor),
                 )
             return _spanned(expand(macro_args, syms), tokens, pos, cursor), cursor
         if op_name not in NAME_TO_TOKEN:
@@ -739,8 +805,9 @@ def _parse_expr(
         # arity check
         sig = SIGNATURES[op_tok]
         if sig["arity"] != "variadic" and len(args) != sig["arity"]:
-            raise ValueError(
-                f"{op_name}: expects {sig['arity']} args, got {len(args)}"
+            raise ParseError(
+                f"{op_name}: expects {sig['arity']} args, got {len(args)}",
+                _token_span(tokens, pos, cursor),
             )
         return _spanned(Node(op=op_tok, args=args), tokens, pos, cursor), cursor
     if t == ")":

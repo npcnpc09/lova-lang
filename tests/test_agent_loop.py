@@ -70,3 +70,38 @@ class QuotedArgument(unittest.TestCase):
         self.assertEqual(a["kind"], "type-violation")
         self.assertEqual(a["detail"]["got"], "an integer")
         self.assertIn("quote it", a["repair_hint"])
+
+
+class Exp19Feedback(unittest.TestCase):
+    """Exp 19, run 1: what three sessions read and could not use."""
+
+    def test_a_parse_error_says_where(self):
+        from core.mcp_server import tool_execute
+        for src, line, col, excerpt in (
+            ("(merge 1 2))", 1, 12, ")"),
+            ("(def won [b] (merge 1 2)\n(won 3)", 2, 1, "("),
+            ("(loop-until 1 2 3 4 5 6 7)", 1, 1, "(loop-until 1 2 3 4 5 6 7)"),
+            ("(lt 1)", 1, 1, "(lt 1)"),
+        ):
+            a = tool_execute({"source": src})["anomaly"]
+            self.assertEqual(a["kind"], "parse-error", src)
+            self.assertEqual((a["line"], a["col"], a["excerpt"]), (line, col, excerpt), src)
+
+    def test_a_parse_error_is_still_a_value_error(self):
+        from core.surface import ParseError, parse
+        with self.assertRaises(ValueError) as ctx:
+            parse("(lt 1)")
+        self.assertIsInstance(ctx.exception, ParseError)
+        self.assertEqual(ctx.exception.anomaly["span"], (0, 6))
+
+    def test_the_step_trap_does_not_claim_non_termination(self):
+        from core.mcp_server import tool_execute
+        a = tool_execute({"source": "(def f [n] (if n (merge 1 (f (sub n 1))) 0))\n(f 5000)",
+                          "max_steps": 1000})["anomaly"]
+        self.assertEqual(a["kind"], "step-limit-exceeded")
+        self.assertIn("or the work is larger than the budget", a["repair_hint"])
+        self.assertNotIn("does not terminate within", a["repair_hint"])
+
+    def test_the_budget_is_at_parity_with_the_wall_clock(self):
+        self.assertEqual(e18.BUDGET, 7_000_000)
+        self.assertEqual(e18.PY_TIMEOUT, 10.0)

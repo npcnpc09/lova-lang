@@ -126,8 +126,8 @@ class DepthTrap(BudgetTrap):
             "valid_alternatives": (),
             "repair_hint": (
                 "the recursion has no reachable base case, or needs more "
-                f"than {limit} frames; add / fix the `if-surprise` guard "
-                "that terminates it, or shrink the input"
+                f"than {limit} frames; add or fix the `if` that terminates "
+                "it, or make the loop an accumulator recursion, or shrink the input"
             ),
         }
 
@@ -158,9 +158,13 @@ class StepTrap(BudgetTrap):
             "offending_op_name": "",
             "valid_alternatives": (),
             "repair_hint": (
-                "the program does not terminate within the substrate step "
-                f"ceiling ({limit}); check the loop-until predicate or the "
-                "recursive base case"
+                f"the run spent its whole budget of {limit} steps and was "
+                "stopped here.  Either the program does not terminate -- "
+                "check the base case of the recursion -- or the work is "
+                "larger than the budget, which is the host's setting "
+                "(`--max-steps`, `max_steps`), not a fault in the program; "
+                "a search over a game tree or a large input can cost "
+                "millions of steps"
             ),
         }
 

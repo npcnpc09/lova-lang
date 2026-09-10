@@ -24,9 +24,9 @@ the size of the replacement.  Every call is logged to
 what was read back; `report` adds it up.
 
 Scaffolding is recorded, not measured: a LOVA answer runs in-process
-under a 200 000-node budget with no capability granted; a Python
-answer needs a subprocess and a wall-clock timeout, because nothing in
-the language bounds it.
+under a step budget with no capability granted; a Python answer needs
+a subprocess and a wall-clock timeout, because nothing in the language
+bounds it.  The two limits are set to the same amount of work.
 """
 
 from __future__ import annotations
@@ -44,8 +44,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "experiments" / "results_18"
-BUDGET = 200_000
+# Budget parity (Exp 19, run 1): a LOVA answer gets the steps CPython
+# runs in the wall-clock seconds a Python answer gets, ~700 000 a second.
+# Run 1 gave LOVA 200 000 steps against ten seconds, thirty times less,
+# and eleven of fourteen step traps were correct programs.
 PY_TIMEOUT = 10.0
+BUDGET = 7_000_000
 
 
 # --- the tasks ---------------------------------------------------------------
