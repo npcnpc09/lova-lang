@@ -239,8 +239,8 @@ TASKS: Tuple[Task, ...] = (
     Task(
         id="pb19",
         name="seq_last_is_p",
-        prompt=("Evaluate p(3), then p(4), then p(5) in sequence; return "
-                "the last value (p(5))."),
+        prompt=("Evaluate p(3), then p(4), then p(n) in sequence; return "
+                "the last value, p(n)."),
         template="(seq (p 3) (p 4) (p {n}))",
         tests=(({"n": 5}, 7),      # p(5)=7
                ({"n": 10}, 42),    # p(10)=42

@@ -770,10 +770,15 @@ now emits lambdas, so their distributions are stale).
    --status` drives a hosted OpenAI-style fine-tune (~$2.31 for three
    epochs of gpt-4o-mini without the card). An open 7B model on a GPU
    is the alternative; the chat JSONL is the standard format.
-3. ⏳ Measure: `experiments/experiment_17_llm_benchmark.py --model X`
+3. ◐ Measure: `experiments/experiment_17_llm_benchmark.py --model X`
    gives pass@1 in LOVA and Python per category, base or fine-tuned
-   (`--no-card` for the latter). Target unchanged: the fine-tuned
-   model's LOVA pass@1 > its own Python pass@1 on the same tasks.
+   (`--no-card` for the latter; `--answers` scores answers made
+   elsewhere). **First data point (Exp 17): a fresh Claude session,
+   no tools, one page of LOVA, 80 tasks single-shot: LOVA 79/80,
+   Python 79/80, the same miss** (pb19's misleading prompt, fixed).
+   For the model most people use the language costs no reliability
+   and the benchmark saturates (Q82); the small-model fine-tune is
+   Q83.
 
 Everything beyond M8 is future work conditioned on MVP traction.
 

@@ -1,0 +1,322 @@
+{
+ "pb01": {
+  "lova": "(p {n})",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(n):\n    return part(n)\n"
+ },
+ "pb02": {
+  "lova": "(tau {n})",
+  "python": "def tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return tau(n)\n"
+ },
+ "pb03": {
+  "lova": "(sigma {n})",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(n):\n    return sigma(n)\n"
+ },
+ "pb04": {
+  "lova": "(gcd {a} {b})",
+  "python": "from math import gcd\n\ndef solve(a, b):\n    return gcd(a, b)\n"
+ },
+ "pb05": {
+  "lova": "(mobius {n})",
+  "python": "def mu(n):\n    n = abs(n)\n    if n == 1:\n        return 1\n    r = 1\n    d = 2\n    while d * d <= n:\n        if n % d == 0:\n            n //= d\n            if n % d == 0:\n                return 0\n            r = -r\n        d += 1\n    if n > 1:\n        r = -r\n    return r\n\ndef solve(n):\n    return mu(n)\n"
+ },
+ "pb06": {
+  "lova": "(p (tau {n}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return part(tau(n))\n"
+ },
+ "pb07": {
+  "lova": "(tau (p {n}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return tau(part(n))\n"
+ },
+ "pb08": {
+  "lova": "(sigma (tau {n}))",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return sigma(tau(n))\n"
+ },
+ "pb09": {
+  "lova": "(merge (p {n}) (tau {n}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return part(n) + tau(n)\n"
+ },
+ "pb10": {
+  "lova": "(gcd (sigma {a}) (sigma {b}))",
+  "python": "from math import gcd\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(a, b):\n    return gcd(sigma(a), sigma(b))\n"
+ },
+ "pb11": {
+  "lova": "(p (p {n}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(n):\n    return part(part(n))\n"
+ },
+ "pb12": {
+  "lova": "(tau (gcd {a} {b}))",
+  "python": "from math import gcd\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(a, b):\n    return tau(gcd(a, b))\n"
+ },
+ "pb13": {
+  "lova": "(merge (sigma (gcd {a} {b})) (tau {a}))",
+  "python": "from math import gcd\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(a, b):\n    return sigma(gcd(a, b)) + tau(a)\n"
+ },
+ "pb14": {
+  "lova": "(mobius (p {n}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef mu(n):\n    n = abs(n)\n    if n == 1:\n        return 1\n    r = 1\n    d = 2\n    while d * d <= n:\n        if n % d == 0:\n            n //= d\n            if n % d == 0:\n                return 0\n            r = -r\n        d += 1\n    if n > 1:\n        r = -r\n    return r\n\ndef solve(n):\n    return mu(part(n))\n"
+ },
+ "pb15": {
+  "lova": "(merge (sigma {n}) (mobius {n}))",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef mu(n):\n    n = abs(n)\n    if n == 1:\n        return 1\n    r = 1\n    d = 2\n    while d * d <= n:\n        if n % d == 0:\n            n //= d\n            if n % d == 0:\n                return 0\n            r = -r\n        d += 1\n    if n > 1:\n        r = -r\n    return r\n\ndef solve(n):\n    return sigma(n) + mu(n)\n"
+ },
+ "pb16": {
+  "lova": "(let x {n} (merge (tau x) (sigma x)))",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    x = n\n    return tau(x) + sigma(x)\n"
+ },
+ "pb17": {
+  "lova": "(p (gcd {a} {b}))",
+  "python": "from math import gcd\n\ndef part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(a, b):\n    return part(gcd(a, b))\n"
+ },
+ "pb18": {
+  "lova": "(gcd (gcd {a} {b}) {c})",
+  "python": "from math import gcd\n\ndef solve(a, b, c):\n    return gcd(gcd(a, b), c)\n"
+ },
+ "pb19": {
+  "lova": "(seq (p 3) (p 4) (p 5))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(n):\n    part(3)\n    part(4)\n    return part(5)\n"
+ },
+ "pb20": {
+  "lova": "(surprise {p} (p {n}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(n, p):\n    return abs(p - part(n))\n"
+ },
+ "pb21": {
+  "lova": "(p (tau (sigma {n})))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return part(tau(sigma(n)))\n"
+ },
+ "pb22": {
+  "lova": "(sigma (gcd (p {a}) (p {b})))",
+  "python": "from math import gcd\n\ndef part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(a, b):\n    return sigma(gcd(part(a), part(b)))\n"
+ },
+ "pb23": {
+  "lova": "(tau (tau (tau {n})))",
+  "python": "def tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return tau(tau(tau(n)))\n"
+ },
+ "pb24": {
+  "lova": "(mobius (gcd (sigma {a}) (tau {b})))",
+  "python": "from math import gcd\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef mu(n):\n    n = abs(n)\n    if n == 1:\n        return 1\n    r = 1\n    d = 2\n    while d * d <= n:\n        if n % d == 0:\n            n //= d\n            if n % d == 0:\n                return 0\n            r = -r\n        d += 1\n    if n > 1:\n        r = -r\n    return r\n\ndef solve(a, b):\n    return mu(gcd(sigma(a), tau(b)))\n"
+ },
+ "pb25": {
+  "lova": "(p (p (tau {n})))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return part(part(tau(n)))\n"
+ },
+ "pb26": {
+  "lova": "(merge (p (tau {a})) (sigma (gcd {a} {b})))",
+  "python": "from math import gcd\n\ndef part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(a, b):\n    return part(tau(a)) + sigma(gcd(a, b))\n"
+ },
+ "pb27": {
+  "lova": "(gcd (sigma (p {n})) (tau (p {n})))",
+  "python": "from math import gcd\n\ndef part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    x = part(n)\n    return gcd(sigma(x), tau(x))\n"
+ },
+ "pb28": {
+  "lova": "(tau (merge (sigma {a}) (sigma {b})))",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(a, b):\n    return tau(sigma(a) + sigma(b))\n"
+ },
+ "pb29": {
+  "lova": "(sigma (p (gcd {a} {b})))",
+  "python": "from math import gcd\n\ndef part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(a, b):\n    return sigma(part(gcd(a, b)))\n"
+ },
+ "pb30": {
+  "lova": "(merge (sigma (tau {n})) (p (mobius {n})))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef mu(n):\n    n = abs(n)\n    if n == 1:\n        return 1\n    r = 1\n    d = 2\n    while d * d <= n:\n        if n % d == 0:\n            n //= d\n            if n % d == 0:\n                return 0\n            r = -r\n        d += 1\n    if n > 1:\n        r = -r\n    return r\n\ndef solve(n):\n    return sigma(tau(n)) + part(mu(n))\n"
+ },
+ "pb31": {
+  "lova": "(conserve {k} (p {n}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(k, n):\n    v = part(n)\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb32": {
+  "lova": "(conserve {k} (tau {n}))",
+  "python": "def tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(k, n):\n    v = tau(n)\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb33": {
+  "lova": "(conserve {k} (gcd {a} {b}))",
+  "python": "from math import gcd\n\ndef solve(a, b, k):\n    v = gcd(a, b)\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb34": {
+  "lova": "(conserve {k} (merge (p {n}) (tau {n})))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(k, n):\n    v = part(n) + tau(n)\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb35": {
+  "lova": "(conserve {k} (sigma (gcd {a} {b})))",
+  "python": "from math import gcd\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(a, b, k):\n    v = sigma(gcd(a, b))\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb36": {
+  "lova": "(conserve {k} (mobius {n}))",
+  "python": "def mu(n):\n    n = abs(n)\n    if n == 1:\n        return 1\n    r = 1\n    d = 2\n    while d * d <= n:\n        if n % d == 0:\n            n //= d\n            if n % d == 0:\n                return 0\n            r = -r\n        d += 1\n    if n > 1:\n        r = -r\n    return r\n\ndef solve(k, n):\n    v = mu(n)\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb37": {
+  "lova": "(conserve {k} (p (tau {n})))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(k, n):\n    v = part(tau(n))\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb38": {
+  "lova": "(conserve {k} (let x {n} (merge (tau x) (sigma x))))",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(k, n):\n    x = n\n    v = tau(x) + sigma(x)\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb39": {
+  "lova": "(let x {a} (conserve {k} (gcd x {b})))",
+  "python": "from math import gcd\n\ndef solve(a, b, k):\n    slot0 = a\n    v = gcd(slot0, b)\n    if v != k:\n        raise ValueError('conserve violated')\n    return v\n"
+ },
+ "pb40": {
+  "lova": "(merge (conserve {k1} (p {n})) (conserve {k2} (tau {n})))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(k1, k2, n):\n    v1 = part(n)\n    if v1 != k1:\n        raise ValueError('conserve violated')\n    v2 = tau(n)\n    if v2 != k2:\n        raise ValueError('conserve violated')\n    return v1 + v2\n"
+ },
+ "pb41": {
+  "lova": "(surprise {k} (p {n}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(k, n):\n    return abs(k - part(n))\n"
+ },
+ "pb42": {
+  "lova": "(surprise {k} (tau {n}))",
+  "python": "def tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(k, n):\n    return abs(k - tau(n))\n"
+ },
+ "pb43": {
+  "lova": "(surprise (p {n}) (p {m}))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(m, n):\n    return abs(part(n) - part(m))\n"
+ },
+ "pb44": {
+  "lova": "(surprise (sigma {n}) (mul 2 {n}))",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(n):\n    return abs(sigma(n) - 2 * n)\n"
+ },
+ "pb45": {
+  "lova": "(eq (p {n}) {k})",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(k, n):\n    return 1 if part(n) == k else 0\n"
+ },
+ "pb46": {
+  "lova": "(eq (gcd {a} {b}) 1)",
+  "python": "from math import gcd\n\ndef solve(a, b):\n    return 1 if gcd(a, b) == 1 else 0\n"
+ },
+ "pb47": {
+  "lova": "(eq (sigma {n}) {k})",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(k, n):\n    return 1 if sigma(n) == k else 0\n"
+ },
+ "pb48": {
+  "lova": "(surprise (tau (sigma {n})) (sigma (tau {n})))",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    return abs(tau(sigma(n)) - sigma(tau(n)))\n"
+ },
+ "pb49": {
+  "lova": "(ne (mobius {n}) 0)",
+  "python": "def mu(n):\n    n = abs(n)\n    if n == 1:\n        return 1\n    r = 1\n    d = 2\n    while d * d <= n:\n        if n % d == 0:\n            n //= d\n            if n % d == 0:\n                return 0\n            r = -r\n        d += 1\n    if n > 1:\n        r = -r\n    return r\n\ndef solve(n):\n    return 1 if mu(n) != 0 else 0\n"
+ },
+ "pb50": {
+  "lova": "(let x {a} (let y {b} (surprise (p x) (p y))))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(a, b):\n    x = a\n    y = b\n    return abs(part(x) - part(y))\n"
+ },
+ "pb51": {
+  "lova": "(let x {n} (merge (p x) (tau x)))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    x = n\n    return part(x) + tau(x)\n"
+ },
+ "pb52": {
+  "lova": "(let x (gcd {a} {b}) (merge (p x) (tau x)))",
+  "python": "from math import gcd\n\ndef part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(a, b):\n    x = gcd(a, b)\n    return part(x) + tau(x)\n"
+ },
+ "pb53": {
+  "lova": "(let x {n} (gcd (sigma x) (tau x)))",
+  "python": "from math import gcd\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    x = n\n    return gcd(sigma(x), tau(x))\n"
+ },
+ "pb54": {
+  "lova": "(let x (p {n}) (merge x (tau x)))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    x = part(n)\n    return x + tau(x)\n"
+ },
+ "pb55": {
+  "lova": "(let x {n} (let y (tau x) (merge x y)))",
+  "python": "def tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(n):\n    x = n\n    y = tau(x)\n    return x + y\n"
+ },
+ "pb56": {
+  "lova": "(let x {a} (let y {b} (gcd (sigma x) (tau y))))",
+  "python": "from math import gcd\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef tau(n):\n    n = abs(n)\n    c = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            c += 1 if i * i == n else 2\n        i += 1\n    return c\n\ndef solve(a, b):\n    x = a\n    y = b\n    return gcd(sigma(x), tau(y))\n"
+ },
+ "pb57": {
+  "lova": "(let x (sigma {n}) (merge x x))",
+  "python": "def sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(n):\n    x = sigma(n)\n    return x + x\n"
+ },
+ "pb58": {
+  "lova": "(let x (sigma {a}) (let y (sigma {b}) (gcd x y)))",
+  "python": "from math import gcd\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(a, b):\n    x = sigma(a)\n    y = sigma(b)\n    return gcd(x, y)\n"
+ },
+ "pb59": {
+  "lova": "(let x {n} (merge (p x) (sigma x)))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef sigma(n):\n    n = abs(n)\n    s = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            s += i\n            if i * i != n:\n                s += n // i\n        i += 1\n    return s\n\ndef solve(n):\n    x = n\n    return part(x) + sigma(x)\n"
+ },
+ "pb60": {
+  "lova": "(let x (merge {a} {b}) (p x))",
+  "python": "def part(n):\n    if n < 0:\n        return 0\n    a = [1] + [0] * n\n    for k in range(1, n + 1):\n        for i in range(k, n + 1):\n            a[i] += a[i - k]\n    return a[n]\n\ndef solve(a, b):\n    x = a + b\n    return part(x)\n"
+ },
+ "pb61": {
+  "lova": "(def fact [n] (if n (mul n (fact (sub n 1))) 1))(fact {n})",
+  "python": "def solve(n):\n    r = 1\n    for i in range(2, n + 1):\n        r *= i\n    return r\n"
+ },
+ "pb62": {
+  "lova": "(def fib [a b n] (if n (fib b (merge a b) (sub n 1)) a))(fib 0 1 {n})",
+  "python": "def solve(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n"
+ },
+ "pb63": {
+  "lova": "(def hf [d n] (if (gt (mul d d) n) 0 (if (mod n d) (hf (inc d) n) 1)))(if (lt {n} 2) 0 (not (hf 2 {n})))",
+  "python": "def solve(n):\n    if n < 2:\n        return 0\n    i = 2\n    while i * i <= n:\n        if n % i == 0:\n            return 0\n        i += 1\n    return 1\n"
+ },
+ "pb64": {
+  "lova": "(def col [n s] (if (eq n 1) s (col (if (even n) (div n 2) (merge (mul 3 n) 1)) (inc s))))(col {n} 0)",
+  "python": "def solve(n):\n    steps = 0\n    while n != 1:\n        if n % 2 == 0:\n            n //= 2\n        else:\n            n = 3 * n + 1\n        steps += 1\n    return steps\n"
+ },
+ "pb65": {
+  "lova": "(div (mul {n} (inc {n})) 2)",
+  "python": "def solve(n):\n    return n * (n + 1) // 2\n"
+ },
+ "pb66": {
+  "lova": "(pow {b} {e})",
+  "python": "def solve(b, e):\n    r = 1\n    for _ in range(e):\n        r *= b\n    return r\n"
+ },
+ "pb67": {
+  "lova": "(def euc [a b] (if b (euc b (mod a b)) a))(euc {a} {b})",
+  "python": "def solve(a, b):\n    a = abs(a)\n    b = abs(b)\n    while b != 0:\n        a, b = b, a % b\n    return a\n"
+ },
+ "pb68": {
+  "lova": "(len (filter (lambda d (not (mod {n} d))) (range 1 (inc {n}))))",
+  "python": "def solve(n):\n    c = 0\n    for d in range(1, n + 1):\n        if n % d == 0:\n            c += 1\n    return c\n"
+ },
+ "pb69": {
+  "lova": "(sum (digits {n}))",
+  "python": "def solve(n):\n    s = 0\n    while n > 0:\n        s += n % 10\n        n //= 10\n    return s\n"
+ },
+ "pb70": {
+  "lova": "(fold (lambda a (lambda d (merge (mul a 10) d))) 0 (reverse (digits {n})))",
+  "python": "def solve(n):\n    r = 0\n    while n > 0:\n        r = r * 10 + n % 10\n        n //= 10\n    return r\n"
+ },
+ "pb71": {
+  "lova": "(sum (map (lambda k (mul k k)) (range 1 (inc {n}))))",
+  "python": "def solve(n):\n    return n * (n + 1) * (2 * n + 1) // 6\n"
+ },
+ "pb72": {
+  "lova": "(def hf [d n] (if (gt (mul d d) n) 0 (if (mod n d) (hf (inc d) n) 1)))(def pr [k] (and (ge k 2) (not (hf 2 k))))(len (filter pr (range 0 {n})))",
+  "python": "def solve(n):\n    if n <= 2:\n        return 0\n    sieve = [True] * n\n    sieve[0] = False\n    sieve[1] = False\n    i = 2\n    while i * i < n:\n        if sieve[i]:\n            for j in range(i * i, n, i):\n                sieve[j] = False\n        i += 1\n    return sum(1 for v in sieve if v)\n"
+ },
+ "pb73": {
+  "lova": "(fold (lambda a (lambda d (max a d))) 0 (digits {n}))",
+  "python": "def solve(n):\n    m = 0\n    if n == 0:\n        return 0\n    while n > 0:\n        d = n % 10\n        if d > m:\n            m = d\n        n //= 10\n    return m\n"
+ },
+ "pb74": {
+  "lova": "(def bits [n] (if n (merge (mod n 2) (bits (div n 2))) 0))(bits {n})",
+  "python": "def solve(n):\n    return bin(n).count('1')\n"
+ },
+ "pb75": {
+  "lova": "(let ds (digits {n}) (same ds (reverse ds)))",
+  "python": "def solve(n):\n    s = str(n)\n    return 1 if s == s[::-1] else 0\n"
+ },
+ "pb76": {
+  "lova": "(def h [n c] (if (lt n 2) c (h (div n 2) (inc c))))(h {n} 0)",
+  "python": "def solve(n):\n    c = 0\n    while n >= 2:\n        n //= 2\n        c += 1\n    return c\n"
+ },
+ "pb77": {
+  "lova": "(eq (sub (sigma {n}) {n}) {n})",
+  "python": "def solve(n):\n    s = 0\n    for d in range(1, n):\n        if n % d == 0:\n            s += d\n    return 1 if s == n else 0\n"
+ },
+ "pb78": {
+  "lova": "(len (filter (lambda k (or (not (mod k 3)) (not (mod k 5)))) (range 1 (inc {n}))))",
+  "python": "def solve(n):\n    return n // 3 + n // 5 - n // 15\n"
+ },
+ "pb79": {
+  "lova": "(len (text-of {n}))",
+  "python": "def solve(n):\n    return len(str(n))\n"
+ },
+ "pb80": {
+  "lova": "(fold (lambda a (lambda d (merge (mul a 10) d))) 0 (sort (digits {n})))",
+  "python": "def solve(n):\n    return int(''.join(sorted(str(n))))\n"
+ }
+}

@@ -258,6 +258,13 @@ something and kept as a test. What they demonstrate:
 - **Programs are integers.** Every one of the twelve, re-run from its
   Stage-2 projection, gives the identical output and value, the
   3 000-character game included.
+- **A model writes it from one page.** A fresh Claude session given
+  `corpus/language_card.md` and the 80 tasks of LOVABench v3, one
+  answer each and no execution, wrote **79 of 80 correct**, exactly
+  its score in Python on the same tasks; the algorithmic category was
+  20 of 20 in both. The language costs a model nothing to write, and
+  gives its programs contracts, budgets and structured faults Python
+  does not have (`journal/experiment_17.md`).
 - **It runs anywhere Python does.** The core has no dependencies, so
   the same programs run under CPython and PyPy, and the 725 tests pass
   on both.

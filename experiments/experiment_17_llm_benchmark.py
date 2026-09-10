@@ -176,18 +176,26 @@ def select(tasks, spec: Optional[str]):
 
 
 def run(model: Optional[Model], tasks: List[Task], languages: List[str], verbose: bool,
-        card: bool = True) -> dict:
+        card: bool = True, answers: Optional[Dict[str, dict]] = None) -> dict:
+    """``answers`` (task id -> {"lova": text, "python": text}) scores
+    answers produced elsewhere -- a model asked by hand, a session with
+    no tools -- through the same pipeline."""
     rows = []
     for task in tasks:
         row = {"id": task.id, "category": category(task)}
+        given = (answers or {}).get(task.id, {})
         if "lova" in languages:
-            if model is None:
+            if answers is not None:
+                program = extract_lova(given.get("lova", ""))
+            elif model is None:
                 program = task.template
             else:
                 program = extract_lova(model.ask(lova_messages(task, card)))
             row["lova"] = {"program": program, **run_lova(program, task)}
         if "python" in languages:
-            if model is None:
+            if answers is not None:
+                code = strip_fence(given.get("python", "")) or None
+            elif model is None:
                 code = reference_python(task)
             else:
                 code = strip_fence(model.ask(python_messages(task)))
@@ -232,17 +240,22 @@ def main(argv=None) -> int:
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--no-card", action="store_true",
                     help="a one-sentence system prompt, as a fine-tuned model was trained with")
+    ap.add_argument("--answers", help="a JSON file of answers to score: {task id: {lova, python}}")
+    ap.add_argument("--label", help="a name for the results file (default: the model)")
     args = ap.parse_args(argv)
-    if not args.dry_run and not args.model:
-        ap.error("give --model, or --dry-run")
+    if not args.dry_run and not args.model and not args.answers:
+        ap.error("give --model, --answers, or --dry-run")
     languages = [x.strip() for x in args.languages.split(",")]
     tasks = select(TASKS_V3, args.tasks)
-    model = None if args.dry_run else Model(args.model, args.base_url, args.temperature)
-    label = "reference" if args.dry_run else args.model
+    answers = json.loads(Path(args.answers).read_text(encoding="utf-8")) if args.answers else None
+    model = None if (args.dry_run or answers is not None) else Model(args.model, args.base_url, args.temperature)
+    label = args.label or ("reference" if args.dry_run else args.model or Path(args.answers).stem)
     print(f"Experiment 17 -- {label} on {len(tasks)} LOVABench v3 tasks, pass@1, {', '.join(languages)}")
-    result = run(model, tasks, languages, verbose=not args.quiet, card=not args.no_card)
+    result = run(model, tasks, languages, verbose=not args.quiet, card=not args.no_card,
+                 answers=answers)
     print(summarise(result, languages))
     RESULTS.mkdir(parents=True, exist_ok=True)
+    result["model"] = label
     out = RESULTS / (re.sub(r"[^\w.-]+", "_", label) + ".json")
     out.write_text(json.dumps(result, indent=1), encoding="utf-8")
     print(f"  results -> {out}")

@@ -358,12 +358,22 @@ base and copies its definitions in: 68 ms → 6.7 ms a parse,
 identical trees on 98 sources; the evaluator is now the compiler's
 time, 48 ms.
 
-**Blocked on a key.** The OpenAI key in this environment returns
-401. What remains of M8 is three commands and a few dollars: a base
-model's pass@1 (LOVA vs Python, 80 tasks), the fine-tune, the
-fine-tuned model's pass@1. The question M8 exists to answer -- does
-a model write LOVA better than Python once it knows LOVA? -- waits on
-that, and on nothing else. Tests 716 → 725.
+**The first data point, without a key (Exp 17).** The owner's
+framing -- most people write code with Claude, so the model that
+matters is Claude -- put the run within reach: a fresh Claude session
+with no tools and no repository, given the one-page card (its
+examples first changed so none is a benchmark task) and the 80
+prompts, one answer each, no execution. A second session wrote
+Python. **LOVA 79/80, Python 79/80**, the same miss in both: pb19's
+v1 prompt said "return p(5)" while its tests vary n, and a blind
+reader read the prompt (now fixed). The algorithmic category is 20/20
+in both. For this model the language costs no reliability and the
+benchmark is at its ceiling; the case for LOVA moves to what a program
+gets at run time. `journal/experiment_17.md`; Q82 (a benchmark that
+separates the languages for a frontier model), Q83 (is the small-model
+fine-tune still the question). The OpenAI key in this environment
+returns 401; the fine-tune path stays three commands away. Tests 716
+→ 725.
 
 ### Milestone 23 (2026-09-10) — The tree walk removed
 Q75 asked which of two levers pays first: frame chains, or compiling
@@ -1385,6 +1395,17 @@ the corpus grows again.
   on a capability the sandbox does not grant. Eight programs in a
   thousand are a strict `let` self-reference the compiler accepts and
   the runtime traps; the M9 letrec left that open.
+- **Q83**: Exp 17's fine-tune half (`m8_finetune.py`, ~$2.31 on
+  gpt-4o-mini) would answer whether a model that cannot write LOVA from
+  a page can be taught to. The model most people use needs no
+  teaching (79/80 from the page). Is the small-model question still
+  worth the run, and what would its answer change?
+- **Q82**: Pass@1 on eighty short tasks saturates at the top (79/80
+  in both languages, the same miss). What separates the languages for
+  a frontier model: programs the size of `tictactoe.lova` written
+  blind from a specification, or a repair loop -- the model fixing its
+  own failure from the structured anomaly versus from a traceback,
+  scored on attempts to green? Axiom 7's claim is the second.
 - ~~**Q81**~~: *closed 2026-09-10.* `name=value` on the command line
   fills the placeholder it names, the rest fill positionally, and a
   missing one is named in the error. The question as raised: a
@@ -1552,6 +1573,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 17 | 2026-09-10 | A model writes LOVA from one page | In progress (Claude, blind, N=80 × 2 languages) | **PARTIAL.** A fresh Claude session with no tools, given the one-page card and 80 LOVABench v3 prompts, single-shot: **LOVA 79/80, Python 79/80**, the same miss (pb19's misleading v1 prompt, fixed). Algorithmic 20/20 in both. The language costs the model no reliability; the benchmark is at its ceiling; the case for LOVA is what a program gets at run time. Harness, corpus (3 000 verified pairs) and fine-tune driver ready; the paid runs wait on a key. Q82, Q83 raised. |
 | 16 | 2026-09-09 | Scope-aware generation | Done (N=1000 × 2) | **WIN.** `step` takes the literal payload; the machine keeps scope and offers `ref` only where a bound, type-compatible name exists. Unbound references in generated programs **704/1000 → 0**; compile-and-run **16% → 37%**; `Fn` slots filled by references 74 → 5, all bound (Q54 closed). Axiom 3 now holds at the **name level for generated programs**; the compiler's scope pass remains for hand-written and mutated trees. Boundary: mutual recursion compiles but cannot be generated left-to-right (Q64). Exp 10 with real names: +32 pp. Exp 02's 100% measured the generator with its own scope-blind validator (Q66). Q64-Q66 raised. *Re-run at M23 (Q77): 226 → 0, runnable 13% → 16%; 250 generated programs refused by the M20 arity checker (Q71).* |
 | 15 | 2026-09-09 | Populations: Exp 05 from inside LOVA | Done (10 seeds × 30 gens) | **WIN.** Axiom 6 in the language: `defpop` / `fitness` / `variant` / `select` / `retire` / `evolve` on the Evolution family's own slots, `Population` as a fifth value kind. Exp 05 rewritten as one LOVA program: **9/10 seeds improve, 3/10 converge, best seed 35 → 1 (97%), mean 85% of the worst-case gap closed** — Exp 05 had 3/10, 97%, 80%. Same rule (retire 20%, sharpness 3, clone 30%), different setting (strength 0.30 vs 0.45), so the same shape, not the same run. Winners report their own provenance via `generation` / `why`. Trapping variants score UNFIT and are recorded, not silent. **All ten axioms now realised in the language.** Q61-Q63 raised. |
 | 14 | 2026-09-09 | Stage-2 surface, built and measured | Done (2150 round-trips; 3 corpora) | **WIN (STRONG).** Closes Q37. Built `core/surface2.py`: the text projection of the byte encoding, one character per byte, **no delimiters — because the encoding never had any**, `decode` recovering the tree from arity alone. Losslessness **2150/2150** (trees *and* bytes, incl. 1000 generated programs, with and without the reference digram). **Algorithmic density 0.66x -> 1.13x: LOVA is denser than Python on real programs for the first time**, past the 0.76x ceiling Exp 13 proved no table change could reach. **LOVABench 2.00x -> 5.38x vs sympy, 8.51x -> 22.89x vs pure.** Parentheses 25% -> **0%** of token cost. One compression rule (`(ref k)`, 22% of nodes) was worth **27%**, three times what two new token slots were worth. **Exp 11's Stage-2 projection understated density by 70%** (546 predicted vs 322 measured) having erred the *other* way in Exp 12 — node count is a poor proxy in both directions. First time Axiom 2 was cashed in rather than asserted. Untested and now load-bearing: whether a model can emit it (Q47). Q46-Q49 raised. |

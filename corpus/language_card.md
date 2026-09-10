@@ -68,12 +68,13 @@ network operators exist under `(boundary "kind" ...)`.
 ## Examples
 
 ```
-(def fact [n] (if n (mul n (fact (sub n 1))) 1))(fact {n})
-(def prime? [n] (if (lt n 2) 0 (check 2 n)))
-(def check [d n] (if (gt (mul d d) n) 1 (if (mod n d) (check (inc d) n) 0)))(prime? {n})
-(sum (map (lambda k (mul k k)) (range 1 (inc {n}))))
-(fold (lambda a (lambda d (merge (mul a 10) d))) 0 (sort (digits {n})))
-(let x (sigma {n}) (merge x x))
+(def cubes [n] (if n (merge (mul n (mul n n)) (cubes (sub n 1))) 0))(cubes {n})   ; 1^3 + ... + n^3
+(def has-factor [d n] (if (gt (mul d d) n) 0 (if (mod n d) (has-factor (inc d) n) 1)))
+(has-factor 2 {n})                                                                  ; 1 if n has a divisor in 2..sqrt(n)
+(len (filter odd (filter (lambda d (not (mod {n} d))) (range 1 (inc {n})))))        ; odd divisors of n
+(product (map (lambda k (merge k 1)) (range 1 (inc {n}))))                          ; 2 * 3 * ... * (n+1)
+(fold (lambda a (lambda d (merge (mul a 10) d))) 0 (take 2 (digits {n})))           ; the first two digits as a number
+(let x (tau {n}) (mul x x))
 ```
 
 Rules of thumb: recursion is fine (depth 10 000); a loop is recursion with

@@ -1,0 +1,1925 @@
+{
+ "model": "claude-blind-lova",
+ "rows": [
+  {
+   "id": "pb01",
+   "category": "v1-core",
+   "lova": {
+    "program": "(p {n})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "77"
+     },
+     {
+      "passed": true,
+      "got": "7"
+     },
+     {
+      "passed": true,
+      "got": "42"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb02",
+   "category": "v1-core",
+   "lova": {
+    "program": "(tau {n})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "9"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb03",
+   "category": "v1-core",
+   "lova": {
+    "program": "(sigma {n})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "28"
+     },
+     {
+      "passed": true,
+      "got": "12"
+     },
+     {
+      "passed": true,
+      "got": "18"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb04",
+   "category": "v1-core",
+   "lova": {
+    "program": "(gcd {a} {b})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "25"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb05",
+   "category": "v1-core",
+   "lova": {
+    "program": "(mobius {n})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "-1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb06",
+   "category": "v1-core",
+   "lova": {
+    "program": "(p (tau {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "11"
+     },
+     {
+      "passed": true,
+      "got": "30"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb07",
+   "category": "v1-core",
+   "lova": {
+    "program": "(tau (p {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     },
+     {
+      "passed": true,
+      "got": "8"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb08",
+   "category": "v1-core",
+   "lova": {
+    "program": "(sigma (tau {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "12"
+     },
+     {
+      "passed": true,
+      "got": "13"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb09",
+   "category": "v1-core",
+   "lova": {
+    "program": "(merge (p {n}) (tau {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "83"
+     },
+     {
+      "passed": true,
+      "got": "9"
+     },
+     {
+      "passed": true,
+      "got": "15"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb10",
+   "category": "v1-core",
+   "lova": {
+    "program": "(gcd (sigma {a}) (sigma {b}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb11",
+   "category": "v1-core",
+   "lova": {
+    "program": "(p (p {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "15"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "7"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb12",
+   "category": "v1-core",
+   "lova": {
+    "program": "(tau (gcd {a} {b}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb13",
+   "category": "v1-core",
+   "lova": {
+    "program": "(merge (sigma (gcd {a} {b})) (tau {a}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "18"
+     },
+     {
+      "passed": true,
+      "got": "7"
+     },
+     {
+      "passed": true,
+      "got": "4"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb14",
+   "category": "v1-core",
+   "lova": {
+    "program": "(mobius (p {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "-1"
+     },
+     {
+      "passed": true,
+      "got": "-1"
+     },
+     {
+      "passed": true,
+      "got": "-1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb15",
+   "category": "v1-core",
+   "lova": {
+    "program": "(merge (sigma {n}) (mobius {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "28"
+     },
+     {
+      "passed": true,
+      "got": "71"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb16",
+   "category": "v1-core",
+   "lova": {
+    "program": "(let x {n} (merge (tau x) (sigma x)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "22"
+     },
+     {
+      "passed": true,
+      "got": "16"
+     },
+     {
+      "passed": true,
+      "got": "34"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb17",
+   "category": "v1-core",
+   "lova": {
+    "program": "(p (gcd {a} {b}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "11"
+     },
+     {
+      "passed": true,
+      "got": "1958"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb18",
+   "category": "v1-core",
+   "lova": {
+    "program": "(gcd (gcd {a} {b}) {c})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "25"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb19",
+   "category": "v1-core",
+   "lova": {
+    "program": "(seq (p 3) (p 4) (p 5))",
+    "passed": false,
+    "n_passed": 1,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "7"
+     },
+     {
+      "passed": false,
+      "got": "7"
+     },
+     {
+      "passed": false,
+      "got": "7"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb20",
+   "category": "v1-core",
+   "lova": {
+    "program": "(surprise {p} (p {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "67"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb21",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(p (tau (sigma {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "11"
+     },
+     {
+      "passed": true,
+      "got": "11"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb22",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(sigma (gcd (p {a}) (p {b})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb23",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(tau (tau (tau {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb24",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(mobius (gcd (sigma {a}) (tau {b})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "-1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb25",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(p (p (tau {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "7"
+     },
+     {
+      "passed": true,
+      "got": "56"
+     },
+     {
+      "passed": true,
+      "got": "7"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb26",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(merge (p (tau {a})) (sigma (gcd {a} {b})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "17"
+     },
+     {
+      "passed": true,
+      "got": "11"
+     },
+     {
+      "passed": true,
+      "got": "4"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb27",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(gcd (sigma (p {n})) (tau (p {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "2"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb28",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(tau (merge (sigma {a}) (sigma {b})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "2"
+     },
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "4"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb29",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(sigma (p (gcd {a} {b})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "12"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb30",
+   "category": "deep-compose",
+   "lova": {
+    "program": "(merge (sigma (tau {n})) (p (mobius {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "8"
+     },
+     {
+      "passed": true,
+      "got": "8"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb31",
+   "category": "conserve",
+   "lova": {
+    "program": "(conserve {k} (p {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "7"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "42"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb32",
+   "category": "conserve",
+   "lova": {
+    "program": "(conserve {k} (tau {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "9"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb33",
+   "category": "conserve",
+   "lova": {
+    "program": "(conserve {k} (gcd {a} {b}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "25"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb34",
+   "category": "conserve",
+   "lova": {
+    "program": "(conserve {k} (merge (p {n}) (tau {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "9"
+     },
+     {
+      "passed": true,
+      "got": "46"
+     },
+     {
+      "passed": true,
+      "got": "83"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb35",
+   "category": "conserve",
+   "lova": {
+    "program": "(conserve {k} (sigma (gcd {a} {b})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "12"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb36",
+   "category": "conserve",
+   "lova": {
+    "program": "(conserve {k} (mobius {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "-1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb37",
+   "category": "conserve",
+   "lova": {
+    "program": "(conserve {k} (p (tau {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "11"
+     },
+     {
+      "passed": true,
+      "got": "30"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb38",
+   "category": "conserve",
+   "lova": {
+    "program": "(conserve {k} (let x {n} (merge (tau x) (sigma x))))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "22"
+     },
+     {
+      "passed": true,
+      "got": "16"
+     },
+     {
+      "passed": true,
+      "got": "34"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb39",
+   "category": "conserve",
+   "lova": {
+    "program": "(let x {a} (conserve {k} (gcd x {b})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "25"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb40",
+   "category": "conserve",
+   "lova": {
+    "program": "(merge (conserve {k1} (p {n})) (conserve {k2} (tau {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "9"
+     },
+     {
+      "passed": true,
+      "got": "46"
+     },
+     {
+      "passed": true,
+      "got": "83"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb41",
+   "category": "surprise",
+   "lova": {
+    "program": "(surprise {k} (p {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb42",
+   "category": "surprise",
+   "lova": {
+    "program": "(surprise {k} (tau {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb43",
+   "category": "surprise",
+   "lova": {
+    "program": "(surprise (p {n}) (p {m}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "70"
+     },
+     {
+      "passed": true,
+      "got": "39"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb44",
+   "category": "surprise",
+   "lova": {
+    "program": "(surprise (sigma {n}) (mul 2 {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb45",
+   "category": "surprise",
+   "lova": {
+    "program": "(eq (p {n}) {k})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb46",
+   "category": "surprise",
+   "lova": {
+    "program": "(eq (gcd {a} {b}) 1)",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb47",
+   "category": "surprise",
+   "lova": {
+    "program": "(eq (sigma {n}) {k})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb48",
+   "category": "surprise",
+   "lova": {
+    "program": "(surprise (tau (sigma {n})) (sigma (tau {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb49",
+   "category": "surprise",
+   "lova": {
+    "program": "(ne (mobius {n}) 0)",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb50",
+   "category": "surprise",
+   "lova": {
+    "program": "(let x {a} (let y {b} (surprise (p x) (p y))))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "8"
+     },
+     {
+      "passed": true,
+      "got": "35"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb51",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x {n} (merge (p x) (tau x)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "15"
+     },
+     {
+      "passed": true,
+      "got": "9"
+     },
+     {
+      "passed": true,
+      "got": "46"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb52",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x (gcd {a} {b}) (merge (p x) (tau x)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "15"
+     },
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb53",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x {n} (gcd (sigma x) (tau x)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb54",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x (p {n}) (merge x (tau x)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "9"
+     },
+     {
+      "passed": true,
+      "got": "50"
+     },
+     {
+      "passed": true,
+      "got": "81"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb55",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x {n} (let y (tau x) (merge x y)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "10"
+     },
+     {
+      "passed": true,
+      "got": "14"
+     },
+     {
+      "passed": true,
+      "got": "18"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb56",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x {a} (let y {b} (gcd (sigma x) (tau y))))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "2"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb57",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x (sigma {n}) (merge x x))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "24"
+     },
+     {
+      "passed": true,
+      "got": "56"
+     },
+     {
+      "passed": true,
+      "got": "36"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb58",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x (sigma {a}) (let y (sigma {b}) (gcd x y)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb59",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x {n} (merge (p x) (sigma x)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "23"
+     },
+     {
+      "passed": true,
+      "got": "13"
+     },
+     {
+      "passed": true,
+      "got": "60"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb60",
+   "category": "let-heavy",
+   "lova": {
+    "program": "(let x (merge {a} {b}) (p x))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "7"
+     },
+     {
+      "passed": true,
+      "got": "22"
+     },
+     {
+      "passed": true,
+      "got": "22"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb61",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(def fact [n] (if n (mul n (fact (sub n 1))) 1))(fact {n})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "120"
+     },
+     {
+      "passed": true,
+      "got": "3628800"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb62",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(def fib [a b n] (if n (fib b (merge a b) (sub n 1)) a))(fib 0 1 {n})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "13"
+     },
+     {
+      "passed": true,
+      "got": "610"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb63",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(def hf [d n] (if (gt (mul d d) n) 0 (if (mod n d) (hf (inc d) n) 1)))(if (lt {n} 2) 0 (not (hf 2 {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb64",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(def col [n s] (if (eq n 1) s (col (if (even n) (div n 2) (merge (mul 3 n) 1)) (inc s))))(col {n} 0)",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "8"
+     },
+     {
+      "passed": true,
+      "got": "111"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb65",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(div (mul {n} (inc {n})) 2)",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "55"
+     },
+     {
+      "passed": true,
+      "got": "5050"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb66",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(pow {b} {e})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1024"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "125"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb67",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(def euc [a b] (if b (euc b (mod a b)) a))(euc {a} {b})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "5"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb68",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(len (filter (lambda d (not (mod {n} d))) (range 1 (inc {n}))))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "6"
+     },
+     {
+      "passed": true,
+      "got": "6"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb69",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(sum (digits {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "10"
+     },
+     {
+      "passed": true,
+      "got": "45"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb70",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(fold (lambda a (lambda d (merge (mul a 10) d))) 0 (reverse (digits {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4321"
+     },
+     {
+      "passed": true,
+      "got": "21"
+     },
+     {
+      "passed": true,
+      "got": "7"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb71",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(sum (map (lambda k (mul k k)) (range 1 (inc {n}))))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "14"
+     },
+     {
+      "passed": true,
+      "got": "385"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb72",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(def hf [d n] (if (gt (mul d d) n) 0 (if (mod n d) (hf (inc d) n) 1)))(def pr [k] (and (ge k 2) (not (hf 2 k))))(len (filter pr (range 0 {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "10"
+     },
+     {
+      "passed": true,
+      "got": "25"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb73",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(fold (lambda a (lambda d (max a d))) 0 (digits {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "4"
+     },
+     {
+      "passed": true,
+      "got": "9"
+     },
+     {
+      "passed": true,
+      "got": "5"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb74",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(def bits [n] (if n (merge (mod n 2) (bits (div n 2))) 0))(bits {n})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "8"
+     },
+     {
+      "passed": true,
+      "got": "6"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb75",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(let ds (digits {n}) (same ds (reverse ds)))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb76",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(def h [n c] (if (lt n 2) c (h (div n 2) (inc c))))(h {n} 0)",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "0"
+     },
+     {
+      "passed": true,
+      "got": "3"
+     },
+     {
+      "passed": true,
+      "got": "9"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb77",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(eq (sub (sigma {n}) {n}) {n})",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "0"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb78",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(len (filter (lambda k (or (not (mod k 3)) (not (mod k 5)))) (range 1 (inc {n}))))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "5"
+     },
+     {
+      "passed": true,
+      "got": "7"
+     },
+     {
+      "passed": true,
+      "got": "47"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb79",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(len (text-of {n}))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1"
+     },
+     {
+      "passed": true,
+      "got": "5"
+     },
+     {
+      "passed": true,
+      "got": "7"
+     }
+    ]
+   }
+  },
+  {
+   "id": "pb80",
+   "category": "algorithmic",
+   "lova": {
+    "program": "(fold (lambda a (lambda d (merge (mul a 10) d))) 0 (sort (digits {n})))",
+    "passed": true,
+    "n_passed": 3,
+    "n_total": 3,
+    "results": [
+     {
+      "passed": true,
+      "got": "1234"
+     },
+     {
+      "passed": true,
+      "got": "5"
+     },
+     {
+      "passed": true,
+      "got": "99"
+     }
+    ]
+   }
+  }
+ ]
+}
