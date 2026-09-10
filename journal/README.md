@@ -332,7 +332,7 @@ steps against the budget; the card shows a zero-parameter `def`'s
 call site, the gap all three sessions hit. `journal/experiment_19.md`;
 Q87 answered; Q90 (speed as attempts: PyPy, a native evaluator), Q91
 (does attribution turn two blind rewrites into one), Q92 (ten
-sessions on one model). Tests 767 → 784.
+sessions on one model). Tests 767 → 781.
 
 ### Experiment 18 (2026-09-10) — The agent loop, the four numbers
 Q82's experiment, run the day the design list it was waiting on was
