@@ -277,6 +277,78 @@ something and kept as a test. What they demonstrate:
   function or a command-line form before the day ended, with a test
   for every shape. The journal keeps the record.
 
+## Where LOVA fits
+
+Every language has a place. Python is the glue and the notebook, Rust
+the systems layer, JavaScript the browser, Erlang the switch that never
+goes down. LOVA's place is **code that an AI writes, a machine runs, and
+a person need not read**: the small programs agents produce all day,
+the rules and policies a system lets its users or its models change,
+the routines a long-running service tunes by itself. What it gives that
+place is a set of guarantees no general-purpose language carries.
+
+### Against other languages
+
+| What a program gets | Python | Rust | Haskell | Clojure | Unison | **LOVA** |
+|---|---|---|---|---|---|---|
+| Faults as structured data, not text | no | partly (`Result`; panics are text) | partly | no | no | **yes** -- every fault carries a kind, a position path and a repair hint, compile time and run time alike |
+| Ill-formed programs unrepresentable to a generator | no | no | no | no | no | **yes** -- `valid_next` gives the legal next tokens at every step; a generated program cannot be syntactically or scope-invalid |
+| Effects declared by the program, granted by the host | no | no | in the type, not granted | no | partly (abilities) | **yes** -- `(boundary "fs-read" ...)` declares the kind, `--allow` names the places; an undeclared effect is a compile error |
+| Termination guaranteed | no | no | no | no | no | **yes** -- step and depth ceilings are built in; a loop that never ends is a structured anomaly, never a hang |
+| Cost contracts inside the program | no | no | no | no | no | **yes** -- `(budget n ...)` per call, per job, per untrusted line; the program catches its own overrun |
+| Programs as first-class data | no | no | no | yes (macros, `quote`) | yes (content-addressed) | **yes** -- `quote`, `eval`, `read`, `explain`, `hash`; a program is one integer |
+| Provenance queryable from inside | no | no | no | no | partly | **yes** -- `why`, `generation`, `lineage-query` are operators |
+| A function as an evolving population | no | no | no | no | no | **yes** -- `defpop`, `evolve`, `select`; the winner explains its descent |
+| Repair guided by the program's own deviation | no | no | no | no | no | **yes** -- `conserve` states the contract, `surprise` measures the miss, `mutate` proposes; three targets repaired in 39, 37 and 20 attempts, reproducibly |
+| Written by a frontier model from one page, as reliably as Python | -- | -- | -- | -- | -- | **yes** -- a fresh Claude session: 79/80 in LOVA, 79/80 in Python, same tasks |
+| Zero dependencies, same core on CPython and PyPy | core only | no | no | needs the JVM | needs its runtime | **yes** -- 727 tests pass on both |
+
+Three of these exist elsewhere, scattered: effects in types (Haskell,
+Koka), code as data (Lisp, Unison), a system that heals itself
+(Erlang). None of them has all three, and none has the other seven.
+LOVA is the language where they meet, in 64 operators.
+
+### Scenarios
+
+**The agent's sandbox.** An agent that works needs to compute
+constantly -- a sum, a transform, a check -- and today it writes Python
+into a container. In LOVA the program cannot hang, cannot touch a file
+or the network it did not declare, and reports every failure as data.
+`apps/sandbox.lova` runs untrusted programs one per line, under a
+budget, reporting each by digest and value or by fault name, and is
+itself twelve lines of LOVA needing no grant. The MCP server (`lova
+mcp`) serves this to any host.
+
+**The rule layer of an application.** Interface, storage and network
+in the language you already use; the one piece that *decides* -- a
+pricing rule, a policy, a user's or a model's script -- in LOVA, edited
+live, run under a budget with no capability, and unable to hurt the
+application that hosts it. `apps/shell/policy_app.py` is a Python web
+shell whose only decision is a LOVA rule you can edit and break in the
+browser.
+
+**Generated code that must be auditable.** A program is an integer
+that carries its lineage: which model, when, from which parent, why.
+`apps/repair.lova` and `apps/evolve.lova` print the descent of the
+program they produced. Where AI-written code has to be traced before it
+ships, the record is in the value, not in a side channel.
+
+**Routines that tune themselves.** A service's heuristics -- retry
+policy, ranking weights, thresholds -- as a `defpop` population:
+variants compete, losers retire, winners are cloned and mutated, and
+every version can say why it exists. The contracts (`conserve`,
+`budget`) bound what evolution may do.
+
+**A target for constrained decoding.** For a smaller or on-device
+model that must emit code that compiles, `valid_next` is the grammar:
+at every step, only the legal tokens are offered. The fine-tuning corpus
+(`corpus/finetune.py`, 3 000 verified pairs) and the one-page language
+card are ready.
+
+What LOVA is not for: interfaces, graphics, real-time input, floating
+point, or code a person will maintain by hand. Those are the trades it
+made for the guarantees above.
+
 ## Measurements
 
 All numbers come from `journal/`; each links to a reproducible script in
