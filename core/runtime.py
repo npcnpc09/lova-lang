@@ -79,8 +79,10 @@ Those arrive in Milestone 2+.
 from __future__ import annotations
 
 import os
+import platform
 import socket
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from math import gcd as _gcd
@@ -138,6 +140,18 @@ MAX_STEPS = 1_000_000
 # model.
 _PY_FRAMES_PER_CALL = 14
 _PY_RECURSION_HEADROOM = 1_000
+
+# M23 -- PyPy.  CPython 3.11+ runs a Python-to-Python call without
+# consuming C stack, so the recursion limit alone bounds a run.  PyPy
+# spends real stack per frame, and on Windows the main thread has a
+# megabyte of it: ten thousand LOVA frames overflow it and the process
+# dies without a traceback.  `evaluate` therefore runs on a thread
+# with a stack sized to the depth ceiling when the host is PyPy.  The
+# figure is ~1.6 KB per LOVA frame measured, taken at 4 KB.
+_NEEDS_BIG_STACK = platform.python_implementation() == "PyPy"
+_STACK_BYTES_PER_FRAME = 4_096
+_STACK_FLOOR = 64 * 1024 * 1024
+_big_stack = threading.local()
 
 
 def partition_number(n: int) -> int:
@@ -269,6 +283,10 @@ class Closure:
     # That is what the compiler checks, so it is what the runtime does.
     caps: int = 0
     enclosed: bool = False       # written inside some boundary (Q70)
+    # M23 -- the body, compiled to a Python closure once (see `_code`).
+    # ``body`` stays the Node: `explain`, `mutate` and the lineage work
+    # on the tree; only `_call` runs the code.
+    code: Any = None
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         tag = f" name={self.name}" if self.name is not None else ""
@@ -287,7 +305,7 @@ class _Nil:
 NIL_VALUE = _Nil()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, unsafe_hash=True)
 class Cons:
     """A cons cell -- ``(cons x xs)``.
 
@@ -297,6 +315,9 @@ class Cons:
     usable and not.
     """
 
+    # Never mutated after construction -- which is what the hash needs
+    # and what ``frozen`` used to enforce at the price of a slower
+    # constructor (M23: `object.__setattr__` per field, per cell).
     head: Any
     tail: Any            # Cons or NIL_VALUE
 
@@ -319,16 +340,64 @@ class Cons:
 
 
 class Scope(dict):
-    """An environment frame opened by ``LET``.
+    """An environment frame opened by ``LET`` or by a call.
 
     A plain dict would do, except that the runtime needs to tell a frame
     it may *extend* from one it may not.  A chain of ``LET``s -- which is
     exactly what a group of ``def``s desugars to -- shares one frame, so
     that a closure built for the first binding can see the last.  That
     is what makes mutual recursion work; see the LET handler.
+
+    M23: a frame holds only its own bindings and points at the frame it
+    extends.  A lookup that misses here falls through to ``parent``
+    (``__missing__``), so opening a frame is O(1) where it used to copy
+    the whole environment -- ninety entries per call, in the prelude.
+    ``in`` tests this frame alone; `bound` asks the whole chain.
     """
 
-    __slots__ = ()
+    __slots__ = ("parent",)
+
+    # No ``__init__``: a Python-level constructor is a call per frame,
+    # and a frame is opened per LOVA call.  ``open`` is the constructor.
+
+    @staticmethod
+    def open(parent: Any) -> "Scope":
+        scope = Scope()
+        scope.parent = parent
+        return scope
+
+    def __missing__(self, key: int) -> Any:
+        # One Python call per miss however deep the chain: walk the
+        # frames here rather than recurse through each one's miss.
+        env = self.parent
+        while env.__class__ is Scope:
+            if key in env:
+                return dict.__getitem__(env, key)
+            env = env.parent
+        if env is None:
+            raise KeyError(key)
+        return env[key]          # a plain dict at the root, or its KeyError
+
+    def bound(self, key: int) -> bool:
+        """True iff ``key`` is bound in this frame or one it extends."""
+        env: Any = self
+        while env is not None:
+            if key in env:
+                return True
+            env = env.parent if isinstance(env, Scope) else None
+        return False
+
+
+def flatten_env(env: Any) -> Dict[int, Any]:
+    """Every binding visible from ``env``, inner frames winning, as one dict."""
+    frames = []
+    while env is not None:
+        frames.append(env)
+        env = env.parent if isinstance(env, Scope) else None
+    out: Dict[int, Any] = {}
+    for frame in reversed(frames):
+        out.update(frame)
+    return out
 
 
 def is_list_value(v: Any) -> bool:
@@ -414,17 +483,86 @@ def _as_text(v: Any, ctx: str) -> str:
     )
 
 
-@dataclass
+_MISSING = object()
+
+
 class MapValue:
     """A persistent map (M22): the sixth value kind.
 
     ``entries`` is keyed by a hashable rendering of the LOVA key and
     holds the original key with the value, so `map-pairs` gives keys
-    back as they were.  `map-put` copies the dict -- persistence by
-    copying, which is O(n) per put in C and was measured to be fast
-    enough by a factor of a hundred over the alternative.
+    back as they were.
+
+    M22 made `map-put` persistent by copying the dict, O(n) a put,
+    which was fast enough by a factor of a hundred over the
+    association list -- and quadratic in the number of keys. On
+    CPython the copy is a memcpy and hides behind the interpreter at
+    any size measured; under PyPy it was half the time of a count over
+    a large vocabulary (journal M23). M23 keeps one dict per family of
+    versions and moves it to
+    whichever version is asked for (Baker's rerooting, as OCaml's
+    persistent arrays): the newest version owns the dict; an older
+    one holds the single difference that leads back toward it, and is
+    made the owner again by undoing that chain when it is read. A
+    program that threads one map through a fold -- the shape every
+    count has -- never reroots, and pays O(1) a put and a get. A
+    program that keeps old versions and reads them alternately pays
+    the length of the chain between them each time, which is what the
+    copy cost before, at worst.
     """
-    entries: Dict[Any, Tuple[Any, Any]] = field(default_factory=dict)
+
+    __slots__ = ("_entries", "_diff")
+
+    def __init__(self, entries: Optional[Dict[Any, Tuple[Any, Any]]] = None):
+        self._entries: Optional[Dict[Any, Tuple[Any, Any]]] = (
+            {} if entries is None else entries)
+        # For a version that does not own the dict: (hashed key, the
+        # entry this version has there or _MISSING, the version one
+        # step nearer the owner).
+        self._diff: Optional[Tuple[Any, Any, "MapValue"]] = None
+
+    @property
+    def entries(self) -> Dict[Any, Tuple[Any, Any]]:
+        if self._diff is not None:
+            self._reroot()
+        return self._entries          # type: ignore[return-value]
+
+    def _reroot(self) -> None:
+        """Make this version the owner of the dict."""
+        path = []
+        version: MapValue = self
+        while version._diff is not None:
+            path.append(version)
+            version = version._diff[2]
+        entries = version._entries
+        owner = version
+        for version in reversed(path):
+            hashed, wanted, _ = version._diff      # type: ignore[misc]
+            current = entries.get(hashed, _MISSING)
+            if wanted is _MISSING:
+                del entries[hashed]
+            else:
+                entries[hashed] = wanted
+            owner._entries, owner._diff = None, (hashed, current, version)
+            version._entries, version._diff = entries, None
+            owner = version
+
+    def put(self, hashed: Any, key: Any, value: Any) -> "MapValue":
+        """A new version with ``key`` bound; this one keeps its meaning."""
+        entries = self.entries
+        previous = entries.get(hashed, _MISSING)
+        entries[hashed] = (key, value)
+        successor = MapValue(entries)
+        self._entries, self._diff = None, (hashed, previous, successor)
+        return successor
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, MapValue) and self.entries == other.entries
+
+    __hash__ = None                   # type: ignore[assignment]
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return f"MapValue({self.entries!r})"
 
 
 def is_map_value(v: Any) -> bool:
@@ -671,21 +809,28 @@ class Runtime:
     # (M14).  Was a placeholder list from M1 to M13 while Axiom 5 lived
     # in core/lineage.py; now the Meta operators query it from inside.
     lineage: LineageStore = field(default_factory=LineageStore)
-    # Stack of nodes currently being evaluated — used to enrich trap
-    # anomalies with positional info (L2 observability).
-    node_stack: List[Any] = field(default_factory=list)
+    # M23 -- each node's compiled closure, keyed by the node's id and
+    # holding the node so the id cannot be reused while cached.  Per
+    # run, not per node: a tree edited in place between runs (`mutate`
+    # copies first, but a Python caller need not) is recompiled.  The
+    # node path of a trap is read off the Python stack at trap time
+    # (`_node_path`) instead of being maintained per node.
+    code_cache: Dict[int, Any] = field(default_factory=dict)
     # M9 — abstraction ceilings.  ``call_depth`` counts LOVA-level
     # function applications currently on the stack; ``steps`` counts
     # every evaluated node in the run.  Both ceilings are always on,
     # independent of whether the program declares a BUDGET.
     call_depth: int = 0
     steps: int = 0
-    # True while evaluating the *body* of a LET, and only there.  A LET
-    # that finds it set is directly nested in another's body, so the two
-    # belong to one binding group and share a frame.  Anything else --
-    # a LET in an argument position, a LET inside a lambda body -- finds
-    # it cleared and opens its own frame.
-    let_chain: bool = False
+    # The compiled closure of the node a LET is about to evaluate as its
+    # *body*, and None otherwise.  A LET that finds its own closure here
+    # is directly nested in another's body, so the two belong to one
+    # binding group and share a frame.  Anything else -- a LET in an
+    # argument position, a LET inside a lambda body -- finds another
+    # node's closure, or None, and opens its own frame.  Until M23 this
+    # was a flag that every node had to clear; naming the node lets the
+    # flag be left alone by everything but LET.
+    let_chain: Any = None
     max_call_depth: int = MAX_CALL_DEPTH
     max_steps: int = MAX_STEPS
     # M11 -- IO.  Output is always collected here so a caller can inspect
@@ -788,6 +933,12 @@ def evaluate(node: Node, rt: Optional[Runtime] = None) -> Any:
     """
     if rt is None:
         rt = Runtime()
+    if _NEEDS_BIG_STACK and not getattr(_big_stack, "on", False):
+        return _evaluate_on_big_stack(node, rt)
+    # A run compiles what it meets (M23).  A tree the caller edited in
+    # place since the last run must not meet its old closures, so the
+    # cache is a run's, not the runtime's.
+    rt.code_cache.clear()
     needed = rt.max_call_depth * _PY_FRAMES_PER_CALL + _PY_RECURSION_HEADROOM
     previous = sys.getrecursionlimit()
     if needed > previous:
@@ -800,17 +951,86 @@ def evaluate(node: Node, rt: Optional[Runtime] = None) -> Any:
         sys.setrecursionlimit(previous)
 
 
+def _evaluate_on_big_stack(node: Node, rt: Runtime) -> Any:
+    """Run `evaluate` on a thread whose stack fits ``rt.max_call_depth``.
+
+    The thread is a daemon so an interrupted host process can still
+    exit; the result or the exception crosses back to the caller.
+    """
+    outcome: List[Any] = []
+
+    def go() -> None:
+        _big_stack.on = True
+        try:
+            outcome.append((True, evaluate(node, rt)))
+        except BaseException as exc:      # re-raised below, on the caller's thread
+            outcome.append((False, exc))
+
+    wanted = max(_STACK_FLOOR, rt.max_call_depth * _STACK_BYTES_PER_FRAME)
+    previous = threading.stack_size()
+    try:
+        try:
+            threading.stack_size(wanted)
+        except ValueError:                # more than the host allows
+            threading.stack_size(_STACK_FLOOR)
+        worker = threading.Thread(target=go, daemon=True)
+        worker.start()
+    finally:
+        threading.stack_size(previous)
+    # A join with no timeout cannot be interrupted on Windows; polling
+    # keeps Ctrl-C working in the CLI and the REPL.
+    while worker.is_alive():
+        worker.join(0.05)
+    ok, value = outcome[0]
+    if ok:
+        return value
+    raise value
+
+
+def _node_path(rt: Runtime) -> List[Node]:
+    """The nodes being evaluated under ``rt``, outermost first.
+
+    Read off the Python stack: every compiled node closure is named
+    ``_n_*`` and closes over its ``node``, so the path a trap needs is
+    already there and costs nothing until a trap asks for it (M23).
+    Frames of another runtime -- a body-offender probe, a `trace`
+    sandbox -- are skipped by identity.
+    """
+    path: List[Node] = []
+    frame = sys._getframe(1)
+    while frame is not None:
+        if frame.f_code.co_name.startswith("_n_"):
+            local = frame.f_locals
+            if local.get("rt") is rt and "node" in local:
+                path.append(local["node"])
+        frame = frame.f_back
+    path.reverse()
+    return path
+
+
+def _trapped(trap: Any, rt: Runtime, node: Node) -> None:
+    """Enrich a trap on its first catch (the innermost node); no-op after.
+
+    ``node`` is unused here: it is named by the caller so that the
+    caller's frame carries it for `_node_path`.
+    """
+    if not trap.anomaly.get("_enriched"):
+        _enrich_trap(trap, rt)
+        trap.anomaly["_enriched"] = True
+
+
 def _enrich_trap(trap, rt: Runtime) -> None:
     """Attach positional + repair-hint fields to an in-flight trap."""
     from core.conservation import enrich_anomaly
     from core.observability import suggest_alternatives
 
-    top = rt.node_stack[-1] if rt.node_stack else None
+    path = _node_path(rt)
+    top = path[-1] if path else None
     op = top.op if top is not None else None
     alternatives = suggest_alternatives(op) if op is not None else ()
     enrich_anomaly(
         trap.anomaly,
-        position_path=tuple(n.op for n in rt.node_stack),
+        position_path=tuple(n.op for n in path),
         offending_op=op,
         valid_alternatives=alternatives,
         op_name_for=lambda tok: SIGNATURES.get(tok, {"name": "?"}).get("name", "?"),
@@ -1050,16 +1270,21 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
     none, which is what makes an unbounded loop expressible without an
     unbounded stack.
     """
-    if isinstance(fn, LoopFn):
+    if fn.__class__ is LoopFn:
         value = argument
+        pred, step = fn.pred, fn.step
         while True:
-            rt.tick()
-            verdict = _as_int(_call(fn.pred, value, rt), "loop-until predicate")
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            verdict = _call(pred, value, rt)
+            if verdict.__class__ is not int:
+                verdict = _as_int(verdict, "loop-until predicate")
             if verdict != 0:
                 return value
-            value = _call(fn.step, value, rt)
+            value = _call(step, value, rt)
 
-    if not isinstance(fn, Closure):
+    if fn.__class__ is not Closure:
         raise DomainTrap(
             "type-violation",
             f"apply: head slot is not a function (got {fn!r}); only "
@@ -1073,70 +1298,688 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
         depth = rt.call_depth
         rt.call_depth -= 1
         raise DepthTrap(depth=depth, limit=rt.max_call_depth)
-    # A call frame is a plain dict, not a Scope: a LET inside the body
-    # must not extend it, or a binding would outlive the expression that
-    # introduced it.
-    scope: Dict[int, Any] = dict(fn.env)
+    # A call frame extends the closure's environment by one binding.
+    # A LET directly in the body opens its own frame rather than
+    # extending this one: `let_chain` names the body of a LET, and a
+    # lambda body is not one.
+    scope = Scope()
+    scope.parent = fn.env
     scope[fn.param] = argument
     saved_env = rt.env
-    saved_chain = rt.let_chain
-    saved_caps, saved_enclosed = rt.caps, rt.enclosed
-    rt.let_chain = False
+    saved_caps = rt.caps
+    saved_enclosed = rt.enclosed
     rt.env = scope
-    rt.caps, rt.enclosed = fn.caps, fn.enclosed
+    rt.caps = fn.caps
+    rt.enclosed = fn.enclosed
     try:
-        return _eval(fn.body, rt)
+        code = fn.code
+        if code is None:
+            code = fn.code = _code(fn.body, rt)
+        return code(rt)
     finally:
         rt.env = saved_env
-        rt.let_chain = saved_chain
-        rt.caps, rt.enclosed = saved_caps, saved_enclosed
+        rt.caps = saved_caps
+        rt.enclosed = saved_enclosed
         rt.call_depth -= 1
 
 
 def _eval(node: Node, rt: Runtime) -> Any:
-    """Evaluate one node: the frame, the accounting, the dispatch.
+    """Evaluate one node under ``rt``.
 
-    One function rather than a wrapper around a body (M22): it runs
-    once per node, and the extra call was a fifth of the interpreter.
-    A literal cannot trap, so it takes no frame on the node stack --
-    only the accounting every node owes.
+    M23: a tree is compiled to Python closures -- one per node, the
+    children's closures bound in -- the first time a run meets it
+    (`_code`), and evaluation is a call.  The tree walk of M1-M22
+    (`node.op`, a handler table, `node.args[i]` per child, a node stack
+    pushed and popped per node) was ~45% of the per-node cost; see
+    journal M23.  What every node still owes is the accounting: the
+    active budget and the step ceiling.
+
+    The handlers below (`_op_*`) remain the definition of each operator
+    and run unchanged, wrapped, for every operator without a template
+    of its own; a template is a hand-inlined handler for an operator
+    that runs often.  Both call back through here for a child that is
+    not theirs, which is how a quoted program, text `read` at run time
+    or a probe's replacement tree is compiled on first sight.
     """
-    op = node.op
-    if op == LIT_INT:
-        rt.let_chain = False
+    entry = rt.code_cache.get(id(node))
+    if entry is not None and entry[0] is node:
+        return entry[1](rt)
+    return _code(node, rt)(rt)
+
+
+def _code(node: Node, rt: Runtime) -> Any:
+    """The compiled closure for ``node``, built and cached on first use."""
+    cache = rt.code_cache
+    entry = cache.get(id(node))
+    if entry is not None and entry[0] is node:
+        return entry[1]
+    fn = _COMPILERS.get(node.op, _compile_generic)(node, rt)
+    cache[id(node)] = (node, fn)
+    return fn
+
+
+def _unbound(name_id: Any, rt: Runtime) -> DomainTrap:
+    return DomainTrap(
+        "unbound-ref", f"unbound ref: {name_id}",
+        {"name_id": name_id, "bound_names": sorted(flatten_env(rt.env))},
+        "bind the name with a `let`, or reference one that is bound",
+    )
+
+
+# Every template below has the same shape: the accounting first, inside
+# the `try` so a step or budget trap raised there is enriched at this
+# node; then the operator; and an `except` that names ``node`` so that
+# `_node_path` can read it off the frame.  A literal takes no `except`
+# and closes over no node, as it took no frame on the old node stack:
+# the step trap it can raise is enriched by its parent.
+
+def _compile_generic(node: Node, rt: Runtime) -> Any:
+    handler = _HANDLERS.get(node.op)
+    if handler is None:
+        def _n_unimplemented(rt: Runtime) -> Any:
+            try:
+                if rt.budget_stack:
+                    rt.budget_stack[-1].charge(1)
+                rt.steps += 1
+                if rt.steps > rt.max_steps:
+                    raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+                return _eval_unimplemented(node, rt)
+            except (BudgetTrap, DeltaTrap) as trap:
+                _trapped(trap, rt, node)
+                raise
+        return _n_unimplemented
+
+    def _n_generic(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            return handler(node, rt, False)
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_generic
+
+
+def _compile_LIT_INT(node: Node, rt: Runtime) -> Any:
+    value = int(node.args[0])
+
+    def _n_lit(rt: Runtime) -> Any:
         if rt.budget_stack:
             rt.budget_stack[-1].charge(1)
         rt.steps += 1
         if rt.steps > rt.max_steps:
             raise StepTrap(steps=rt.steps, limit=rt.max_steps)
-        return int(node.args[0])
-    stack = rt.node_stack
-    stack.append(node)
-    try:
-        # Consume the "directly inside a LET body" flag: it is true for
-        # at most the one node that follows a LET.
-        chained = rt.let_chain
-        rt.let_chain = False
-        # Every op costs one unit against the active budget (if any),
-        # and one step against the always-on substrate ceiling (M9).
-        if rt.budget_stack:
-            rt.budget_stack[-1].charge(1)
-        rt.steps += 1
-        if rt.steps > rt.max_steps:
-            raise StepTrap(steps=rt.steps, limit=rt.max_steps)
-        handler = _HANDLERS.get(op)
-        if handler is not None:
-            return handler(node, rt, chained)
-        return _eval_unimplemented(node, rt)
-    except (BudgetTrap, DeltaTrap) as trap:
-        # Enrich on first catch (innermost frame), re-raise.  Each
-        # outer frame sees ``_enriched`` sentinel and skips.
-        if not trap.anomaly.get("_enriched"):
-            _enrich_trap(trap, rt)
-            trap.anomaly["_enriched"] = True
-        raise
-    finally:
-        stack.pop()
+        return value
+    return _n_lit
+
+
+def _compile_REF(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 1 or node.args[0].op != LIT_INT:
+        return _compile_generic(node, rt)
+    name_id = node.args[0].args[0]
+
+    def _n_ref(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            return rt.env[name_id]
+        except KeyError:
+            raise _unbound(name_id, rt) from None
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_ref
+
+
+def _compile_IDENTITY(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 1:
+        return _compile_generic(node, rt)
+    inner = _code(node.args[0], rt)
+
+    def _n_identity(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            return inner(rt)
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_identity
+
+
+def _compile_MERGE(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 2:
+        return _compile_generic(node, rt)
+    left, right = _code(node.args[0], rt), _code(node.args[1], rt)
+
+    def _n_merge(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            a = left(rt)
+            if a.__class__ is not int:
+                a = _as_int(a, "merge")
+            b = right(rt)
+            if b.__class__ is not int:
+                b = _as_int(b, "merge")
+            return a + b
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_merge
+
+
+def _compile_DEVIATION(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 2:
+        return _compile_generic(node, rt)
+    left, right = _code(node.args[0], rt), _code(node.args[1], rt)
+
+    def _n_deviation(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            a = left(rt)
+            if a.__class__ is not int:
+                a = _as_int(a, "deviation")
+            b = right(rt)
+            if b.__class__ is not int:
+                b = _as_int(b, "deviation")
+            return a - b
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_deviation
+
+
+def _compile_THRESHOLD(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 1:
+        return _compile_generic(node, rt)
+    inner = _code(node.args[0], rt)
+
+    def _n_threshold(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            x = inner(rt)
+            if x.__class__ is not int:
+                x = _as_int(x, "threshold")
+            return 1 if x > 0 else 0
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_threshold
+
+
+def _compile_MUL(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 2:
+        return _compile_generic(node, rt)
+    left, right = _code(node.args[0], rt), _code(node.args[1], rt)
+
+    def _n_mul(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            a = left(rt)
+            if a.__class__ is not int:
+                a = _as_int(a, "mul")
+            b = right(rt)
+            if b.__class__ is not int:
+                b = _as_int(b, "mul")
+            if a.bit_length() + b.bit_length() > MAX_INT_BITS:
+                raise DomainTrap(
+                    "domain-error",
+                    f"mul result would exceed MAX_INT_BITS={MAX_INT_BITS} "
+                    f"({a.bit_length()} + {b.bit_length()} bits)",
+                    {"operator": "mul", "limit": MAX_INT_BITS},
+                    "multiply smaller numbers",
+                )
+            return a * b
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_mul
+
+
+def _compile_DIV(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 2:
+        return _compile_generic(node, rt)
+    left, right = _code(node.args[0], rt), _code(node.args[1], rt)
+
+    def _n_div(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            a = left(rt)
+            if a.__class__ is not int:
+                a = _as_int(a, "div")
+            b = right(rt)
+            if b.__class__ is not int:
+                b = _as_int(b, "div")
+            if b == 0:
+                raise DomainTrap(
+                    "domain-error", "div: division by zero",
+                    {"operator": "div"},
+                    "guard the divisor with `(if d (div a d) fallback)`",
+                )
+            return a // b
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_div
+
+
+def _compile_MOD(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 2:
+        return _compile_generic(node, rt)
+    left, right = _code(node.args[0], rt), _code(node.args[1], rt)
+
+    def _n_mod(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            a = left(rt)
+            if a.__class__ is not int:
+                a = _as_int(a, "mod")
+            b = right(rt)
+            if b.__class__ is not int:
+                b = _as_int(b, "mod")
+            if b == 0:
+                raise DomainTrap(
+                    "domain-error", "mod: division by zero",
+                    {"operator": "mod"},
+                    "guard the divisor with `(if d (mod a d) fallback)`",
+                )
+            return a % b
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_mod
+
+
+def _compile_NIL(node: Node, rt: Runtime) -> Any:
+    def _n_nil(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            return NIL_VALUE
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_nil
+
+
+def _compile_CONS(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 2:
+        return _compile_generic(node, rt)
+    first, second = _code(node.args[0], rt), _code(node.args[1], rt)
+
+    def _n_cons(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            element = first(rt)
+            rest = second(rt)
+            if rest is not NIL_VALUE and rest.__class__ is not Cons:
+                rest = _as_list(rest, "cons")
+            return Cons(element, rest)
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_cons
+
+
+def _compile_HEAD(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 1:
+        return _compile_generic(node, rt)
+    inner = _code(node.args[0], rt)
+
+    def _n_head(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            target = inner(rt)
+            if target.__class__ is Cons:
+                return target.head
+            target = _as_list(target, "head")
+            if target is NIL_VALUE:
+                raise DomainTrap(
+                    "domain-error",
+                    "head: the list is empty; guard with `nil?` before "
+                    "taking a head",
+                    {"operator": "head"},
+                    "guard with `(if (nil? xs) fallback (head xs))`",
+                )
+            return target.head
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_head
+
+
+def _compile_TAIL(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 1:
+        return _compile_generic(node, rt)
+    inner = _code(node.args[0], rt)
+
+    def _n_tail(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            target = inner(rt)
+            if target.__class__ is Cons:
+                return target.tail
+            target = _as_list(target, "tail")
+            if target is NIL_VALUE:
+                raise DomainTrap(
+                    "domain-error",
+                    "tail: the list is empty; guard with `nil?` before "
+                    "taking a tail",
+                    {"operator": "tail"},
+                    "guard with `(if (nil? xs) fallback (tail xs))`",
+                )
+            return target.tail
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_tail
+
+
+def _compile_IS_NIL(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 1:
+        return _compile_generic(node, rt)
+    inner = _code(node.args[0], rt)
+
+    def _n_is_nil(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            target = inner(rt)
+            if target is NIL_VALUE:
+                return 1
+            if target.__class__ is Cons:
+                return 0
+            _as_list(target, "nil?")
+            return 0
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_is_nil
+
+
+def _compile_MAP_PUT(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 3:
+        return _compile_generic(node, rt)
+    cm, ck, cv = (_code(a, rt) for a in node.args)
+
+    def _n_map_put(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            base = cm(rt)
+            if base.__class__ is not MapValue:
+                base = _as_map(base, "map-put")
+            key = ck(rt)
+            value = cv(rt)
+            return base.put(_map_key(key, "map-put"), key, value)
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_map_put
+
+
+def _compile_MAP_GET(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 3:
+        return _compile_generic(node, rt)
+    cm, ck, cd = (_code(a, rt) for a in node.args)
+
+    def _n_map_get(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            m = cm(rt)
+            if m.__class__ is not MapValue:
+                m = _as_map(m, "map-get")
+            key = ck(rt)
+            hit = m.entries.get(_map_key(key, "map-get"))
+            if hit is None:
+                return cd(rt)                       # the default, only when needed
+            return hit[1]
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_map_get
+
+
+def _compile_SEQ(node: Node, rt: Runtime) -> Any:
+    codes = tuple(_code(child, rt) for child in node.args)
+
+    def _n_seq(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            last = 0
+            for code in codes:
+                last = code(rt)
+            return last
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_seq
+
+
+def _compile_IF_SURPRISE(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 3:
+        return _compile_generic(node, rt)
+    test, then, otherwise = (_code(a, rt) for a in node.args)
+
+    def _n_if(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            s = test(rt)
+            if s.__class__ is not int:
+                s = _as_int(s, "if-surprise")
+            return then(rt) if s != 0 else otherwise(rt)
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_if
+
+
+def _compile_LET(node: Node, rt: Runtime) -> Any:
+    # The semantics are the LET handler's, inlined; read it first.
+    if len(node.args) != 3 or node.args[0].op != LIT_INT:
+        return _compile_generic(node, rt)
+    name_id = int(node.args[0].args[0])
+    value_code, body_code = _code(node.args[1], rt), _code(node.args[2], rt)
+
+    def _n_let(rt: Runtime) -> Any:
+        try:
+            chained = rt.let_chain is _n_let
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            saved_env = rt.env
+            extend = (chained and saved_env.__class__ is Scope
+                      and not saved_env.bound(name_id))
+            if extend:
+                scope = saved_env
+            else:
+                scope = Scope()
+                scope.parent = saved_env
+                rt.env = scope
+            try:
+                value = value_code(rt)
+                if value.__class__ is Closure and value.name is None:
+                    value.name = name_id
+                scope[name_id] = value
+                rt.let_chain = body_code     # the body may continue the group
+                return body_code(rt)
+            finally:
+                rt.let_chain = None
+                if not extend:
+                    rt.env = saved_env
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_let
+
+
+def _compile_LAMBDA(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 2 or node.args[0].op != LIT_INT:
+        return _compile_generic(node, rt)
+    param = int(node.args[0].args[0])
+    body = node.args[1]
+    body_code = _code(body, rt)
+
+    def _n_lambda(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            return Closure(param=param, body=body, env=rt.env,
+                           caps=rt.caps, enclosed=rt.enclosed,
+                           code=body_code)
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_lambda
+
+
+def _compile_APPLY(node: Node, rt: Runtime) -> Any:
+    if not node.args:
+        return _compile_generic(node, rt)
+    codes = tuple(_code(child, rt) for child in node.args)
+    head, arguments = codes[0], codes[1:]
+
+    def _n_apply(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            fn = head(rt)
+            for code in arguments:
+                fn = _call(fn, code(rt), rt)
+            return fn
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_apply
+
+
+def _compile_LOOP_UNTIL(node: Node, rt: Runtime) -> Any:
+    if len(node.args) != 2:
+        return _compile_generic(node, rt)
+    pred_code, step_code = _code(node.args[0], rt), _code(node.args[1], rt)
+
+    def _n_loop_until(rt: Runtime) -> Any:
+        try:
+            if rt.budget_stack:
+                rt.budget_stack[-1].charge(1)
+            rt.steps += 1
+            if rt.steps > rt.max_steps:
+                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+            pred = pred_code(rt)
+            step = step_code(rt)
+            if not is_callable_value(pred) or not is_callable_value(step):
+                raise DomainTrap(
+                    "type-violation",
+                    "LOOP_UNTIL: both slots must be functions (type Fn); got "
+                    f"pred={pred!r}, step={step!r}",
+                    {"operator": "loop-until", "expected": "Fn"},
+                    "pass two lambdas: a predicate and a step",
+                )
+            return LoopFn(pred=pred, step=step)
+        except (BudgetTrap, DeltaTrap) as trap:
+            _trapped(trap, rt, node)
+            raise
+    return _n_loop_until
+
+
+_COMPILERS = {
+    LIT_INT: _compile_LIT_INT,
+    REF: _compile_REF,
+    IDENTITY: _compile_IDENTITY,
+    MERGE: _compile_MERGE,
+    DEVIATION: _compile_DEVIATION,
+    THRESHOLD: _compile_THRESHOLD,
+    MUL: _compile_MUL,
+    DIV: _compile_DIV,
+    MOD: _compile_MOD,
+    NIL: _compile_NIL,
+    CONS: _compile_CONS,
+    HEAD: _compile_HEAD,
+    TAIL: _compile_TAIL,
+    IS_NIL: _compile_IS_NIL,
+    MAP_PUT: _compile_MAP_PUT,
+    MAP_GET: _compile_MAP_GET,
+    SEQ: _compile_SEQ,
+    IF_SURPRISE: _compile_IF_SURPRISE,
+    LET: _compile_LET,
+    LAMBDA: _compile_LAMBDA,
+    APPLY: _compile_APPLY,
+    LOOP_UNTIL: _compile_LOOP_UNTIL,
+}
 
 
 def _op_LIT_INT(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -1404,7 +2247,7 @@ def _op_TRACE(node: Node, rt: Runtime, chained: bool) -> Any:
     # loop of traces cannot slip past MAX_STEPS.
     program = _as_program(_eval(node.args[0], rt), "trace")
     inner = Runtime(
-        env=dict(rt.env), lineage=rt.lineage,
+        env=flatten_env(rt.env), lineage=rt.lineage,
         max_steps=max(1, rt.max_steps - rt.steps),
         max_call_depth=max(1, rt.max_call_depth - rt.call_depth),
     )
@@ -1617,9 +2460,7 @@ def _op_MAP_PUT(node: Node, rt: Runtime, chained: bool) -> Any:
     base = _as_map(_eval(node.args[0], rt), "map-put")
     key = _eval(node.args[1], rt)
     value = _eval(node.args[2], rt)
-    out = MapValue(dict(base.entries))          # persistence by copying
-    out.entries[_map_key(key, "map-put")] = (key, value)
-    return out
+    return base.put(_map_key(key, "map-put"), key, value)
 
 
 def _op_MAP_GET(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -1837,7 +2678,7 @@ def _op_CONSERVE(node: Node, rt: Runtime, chained: bool) -> Any:
     actual = _as_int(_eval(node.args[1], rt), "conserve")
     if expected != actual:
         body_offender = _scan_body_offender(
-            node.args[1], expected, actual, dict(rt.env)
+            node.args[1], expected, actual, flatten_env(rt.env)
         )
         repair_hint = (
             "body produced a value different from the expected "
@@ -1926,6 +2767,11 @@ def _op_LET(node: Node, rt: Runtime, chained: bool) -> Any:
     op = node.op
     # (let name value body) — ``name`` must be a LIT_INT symbol id.
     #
+    # M23: a well-formed LET runs as `_compile_LET`'s closure, which
+    # inlines this handler and is where the binding group is joined
+    # (``rt.let_chain``); this handler is reached for the malformed
+    # shapes and reports them.  The comments below are the semantics.
+    #
     # M9: this is a **letrec**.  A fresh scope dict is created for
     # the binding and installed *before* the value is evaluated, so
     # any closure built while evaluating the value captures that
@@ -1955,22 +2801,20 @@ def _op_LET(node: Node, rt: Runtime, chained: bool) -> Any:
     # already holds would otherwise reach back and change what an
     # earlier closure sees.
     extend = (chained and isinstance(rt.env, Scope)
-              and name_id not in rt.env)
+              and not rt.env.bound(name_id))
     saved_env = rt.env
     if extend:
         scope = rt.env
     else:
-        scope = Scope(rt.env)
+        scope = Scope.open(rt.env)
         rt.env = scope
     try:
         value = _eval(node.args[1], rt)
         if isinstance(value, Closure) and value.name is None:
             value.name = name_id
         scope[name_id] = value
-        rt.let_chain = True          # the body may continue the group
         return _eval(node.args[2], rt)
     finally:
-        rt.let_chain = False
         if not extend:
             rt.env = saved_env
 
@@ -1987,14 +2831,7 @@ def _op_REF(node: Node, rt: Runtime, chained: bool) -> Any:
     try:
         return rt.env[name_id]
     except KeyError:
-        pass
-    if name_id not in rt.env:
-        raise DomainTrap(
-            "unbound-ref", f"unbound ref: {name_id}",
-            {"name_id": name_id, "bound_names": sorted(rt.env)},
-            "bind the name with a `let`, or reference one that is bound",
-        )
-    return rt.env[name_id]
+        raise _unbound(name_id, rt) from None
 
 
 def _op_IF_SURPRISE(node: Node, rt: Runtime, chained: bool) -> Any:

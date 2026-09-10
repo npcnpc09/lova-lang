@@ -10,10 +10,10 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 665 tests. It is a
-tree-walking interpreter in Python and it is slow — a 10 000-line word
-count takes 73 s — and it has no floats, no namespaces and no
-concurrency. The "What LOVA still cannot do" section below is kept
+LOVA, modules, a CLI, an MCP server for agents, and 688 tests. It is an
+interpreter in Python and it is slow — a 10 000-line word count takes
+28 s on CPython, 5.5 s on PyPy — and it has no floats, no
+namespaces and no concurrency. The "What LOVA still cannot do" section below is kept
 honest.*
 
 ## The one-paragraph pitch
@@ -143,7 +143,8 @@ semantics.
 
 ## Quick start
 
-Requires Python ≥ 3.10. The core has **no dependencies**.
+Requires Python ≥ 3.10. The core has **no dependencies**, so it also
+runs under PyPy, where long runs are about six times faster.
 
 ```bash
 git clone <this-repo> lova && cd lova
@@ -163,8 +164,11 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (665 tests, stdlib unittest only)
+# run the test suite (688 tests, stdlib unittest only)
 python -m unittest discover -s tests
+
+# the same under PyPy, where the whole suite is also expected to pass
+pypy -m unittest discover -s tests -t .
 
 # run an experiment
 python experiments/experiment_01_hello_lova.py
@@ -319,17 +323,19 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         665 unit tests, stdlib only
+tests/         688 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
 
 Stated plainly, because the list is short and the omissions are large:
 
-- **It is slow.** A tree-walking interpreter in Python at ~300 000
-  steps a second: a word count of 10 000 lines takes 73 seconds
-  (`apps/wordfreq.lova`; journal M22 has the profile). Thousands of
-  lines are seconds; millions are not this language yet (Q75).
+- **It is slow.** An interpreter in Python — the tree compiled to
+  closures, since M23 — at ~700 000 steps a second on CPython, ~4
+  million under PyPy: a word count of 10 000 lines takes 28 s on
+  CPython, 5.5 s under PyPy (`apps/wordfreq.lova`; journal M22
+  and M23 have the profiles). Thousands of lines are seconds; millions are not this
+  language yet (Q76).
 - **IO is whole values.** `fs-read` reads a whole file, `net-recv` one
   datagram: there are no handles and no streams (Q72). The terminal is
   ambient rather than declared (Q68).

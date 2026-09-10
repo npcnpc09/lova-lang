@@ -126,7 +126,8 @@ full argument behind each.
    *Precision (Exp 12 F4, Exp 16):* for **generated** programs this
    now holds at the name level too — since M16 the state machine is
    given literal payloads and keeps scope, so an unbound or wrongly
-   typed reference is unrepresentable (704/1000 → 0). For hand-written
+   typed reference is unrepresentable (704/1000 → 0 at M16; 226 → 0
+   at the M23 re-run). For hand-written
    or mutated trees the compiler's scope and type passes are the check.
    Mutual recursion is compilable but not generatable (Q64). Quote the
    axiom with that qualifier.
@@ -282,6 +283,10 @@ python -m core.cli mcp
 
 # Run an experiment
 python experiments/experiment_01_hello_lova.py
+
+# The same, ~6x faster on long runs: the core has no dependencies, so
+# any PyPy 3.10+ runs it unchanged (M23)
+pypy -m core.cli run apps/wordfreq.lova notes.txt 10 --allow fs-read
 ```
 
 ## Autonomous operation
@@ -381,7 +386,7 @@ Do NOT add to memory when:
 - The information is ephemeral (current experiment state, in-progress
   work)
 
-## Current state (2026-09-10 — post-M22)
+## Current state (2026-09-10 — post-M23)
 
 **10 / 10 axioms operational.** See `journal/README.md` for per-
 experiment details.
@@ -473,6 +478,24 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M23** removed the tree walk. `_eval` compiles a node to a Python
+closure the first time a run meets it (`Runtime.code_cache`, per
+run); twenty-two hot operators have inlined templates and the rest run
+their unchanged handlers inside a generic wrapper. The node stack is
+gone -- a trap's `position_path` is read off the Python stack by
+`_node_path` -- and `Scope` frames chain by parent pointer instead of
+copying the environment per call. Step counts and trap positions are
+unchanged (`tests/test_compiled.py` pins values recorded on the M22
+walker). The map reroots instead of copying (O(1) a put through a
+fold, where M22 was O(keys)), and `words` saves a call per character.
+**1000 lines 7.87 s → 3.39 s; 10 000 lines 73 s → 28 s**,
+~700 000 steps a second on CPython. The core is stdlib-only and runs
+under **PyPy** unchanged, where the same count takes **~5.5 s** (~4
+million steps a second); `evaluate` runs on a sized-stack thread
+there, because PyPy spends C stack per frame and Windows gives the
+main thread a megabyte. Q75 answered; Q76 (the next floor), Q77 (Exp
+16's figures have drifted from its script).
+
 **M22** made LOVA a language a real program can stand on, measured by
 one: `apps/wordfreq.lova`. Ceilings raised (depth 10 000; CLI/MCP
 20 000 000 steps, library 1 000 000); the prelude iterates instead of
@@ -537,7 +560,9 @@ had become the cheapest way to close an `Fn` slot.
 **M16** made generation scope-aware. `GenState.step` takes the
 literal's payload, keeps frames, and offers `ref` only where a bound,
 type-compatible name exists. Exp 16: unbound references in generated
-programs 704/1000 → 0, runnable 16% → 37%, `Fn` slots filled by
+programs 704/1000 → 0, runnable 16% → 37% (re-run at M23: 226 → 0,
+13% → 16%, the drop being M20's arity checker refusing a quarter of
+generated programs -- Q71's measurement; Q77), `Fn` slots filled by
 references 74 → 5 (Q54 closed). Axiom 3 now holds at the name level for
 generated programs; the compiler remains the check for everything else.
 Exp 10 with real names: +32 pp. Q64–Q66.
@@ -607,7 +632,7 @@ density by 70%; node count is a poor proxy in both directions.
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-665 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
+688 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
 5 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
 1 telemetry DB (19 KB).
 

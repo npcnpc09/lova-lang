@@ -306,6 +306,116 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Milestone 23 (2026-09-10) — The tree walk removed
+Q75 asked which of two levers pays first: frame chains, or compiling
+the tree away. Both were pulled, in that order of payoff reversed.
+
+**Measured before touched.** A micro-benchmark of the three evaluator
+shapes on the same tree, same accounting (`_eval` + node stack as at
+M22; the walk without the stack; closures): **1115 / 910 / 586 ns per
+node**. The stack was 18%; the walk itself -- `node.op`, the handler
+table, `node.args[i]` per child, a call into a handler -- was another
+30%. The profile of the thousand-line count agreed: `_eval` held 42%
+of the self-time and the env copy in `_call` about 10%, not the other
+way round as the Q75 note guessed.
+
+**Compile to closures.** `_eval` now compiles a node the first time a
+run meets it -- one Python closure per node, the children's closures
+bound in as free variables -- and evaluation is a call. Twenty-two
+operators (literal, `ref`, the arithmetic, the list and map
+operators, `if`, `seq`, `let`, `lambda`, `apply`, `loop-until`) have a
+hand-inlined template; the other forty-one run their unchanged M22
+handler inside a generic wrapper, and a handler that evaluates a child
+calls back through `_eval`, which is how a quoted program or text
+`read` at run time is compiled on first sight. The cache is a run's
+(`Runtime.code_cache`, cleared by `evaluate`), so a tree edited in
+place between runs meets fresh closures. What every node still pays
+is the accounting -- the active budget and the step ceiling.
+
+**The node stack is gone.** It existed so a trap could report its
+`position_path`. The Python stack already holds it: every compiled
+closure is named `_n_*` and closes over its node, and `_node_path`
+reads the path off the frames at trap time, filtering by runtime so a
+body-offender probe or a `trace` sandbox does not see the outer
+program. Zero cost until a trap asks.
+
+**Frames chain.** `Scope` holds its own bindings and a parent pointer;
+a miss falls through (`__missing__`, one Python call however deep). A
+call opens a one-entry frame where it copied ninety. The `let_chain`
+flag every node had to clear became a token naming the one closure
+allowed to join the binding group, so only `let` touches it. `Cons`
+lost `frozen` (its constructor was `object.__setattr__` per field) and
+keeps its hash; it is never mutated.
+
+**Numbers.** Thousand-line count (`apps/wordfreq.lova`, 2 574 877
+steps, unchanged to the step): **7.87 s → 3.57 s**. Ten thousand
+lines, 21.8 million steps: **73 s → 33.7 s**, ~650 000 steps a
+second. Every trap position, step count and bound-name list in the
+new `tests/test_compiled.py` was recorded on the M22 walker first;
+Exp 09 (50/50 fuzz, 5/5 repair) and Exp 12 (44/44) reproduce.
+Python frames per LOVA call fell from two per node to one, so the
+recursion-limit formula is now generous rather than tight; 9 000
+recursive frames run under the default ceiling.
+
+**Noticed, not caused.** Exp 16 rerun on the M22 code and on this one
+gives the same numbers -- unbound references 226/1000 → 0, runnable
+134 → 156 -- where `journal/experiment_16.md` records 704 → 0 and 16%
+→ 37%. The generator has changed since M16 (M17–M22 added operators
+it samples); the experiment's findings hold in direction and not in
+figure, and the journal entry has not been re-run (Q77).
+
+**Two things tried and dropped.** Inlining `_call` into the `apply`
+template, one Python frame per LOVA call instead of two: 3.57 → 3.56
+s, not worth twenty duplicated lines. Merging a curried application's
+frames: a LOVA-level profile showed 250 000 of the 337 000 closure
+calls are `iterate`'s anonymous predicate and step (`words` costs
+three calls per character), and only 13% land on a lambda whose body
+is a lambda, so the fast path would touch too little.
+
+**The host, not the substrate.** Q75's second question -- at what
+point does a substrate stop being the reference interpreter -- has an
+answer that keeps it one. The core is stdlib-only, so it runs under
+PyPy unchanged: 1000 lines **3.56 s → 1.8 s**, 10 000 lines **33.7 s
+→ 5.2–6.4 s** (of which about a second is start-up and JIT warm-up),
+~4 million steps a second on the long run. One accommodation was
+needed: CPython 3.11+ spends no C stack on a Python-to-Python call,
+PyPy does, and a Windows main thread has a megabyte of it, so ten
+thousand LOVA frames killed the process without a traceback. On PyPy
+`evaluate` now runs on a daemon thread whose stack is sized to the
+depth ceiling (4 KB a frame, 64 MB floor; 1.6 KB a frame measured).
+All 679 tests pass under PyPy 3.11 (7.3.20); 25 000 recursive frames
+run with `--max-depth 30000`. CPython is untouched by the branch.
+
+**The map reroots.** M22's `map-put` copied the dict -- O(n) a put,
+quadratic over a vocabulary. `MapValue` now keeps one dict per family
+of versions and moves it to whichever version is read (Baker's
+rerooting, as OCaml's persistent arrays): the newest version owns the
+dict, an older one holds the one difference that leads back toward
+it. A map threaded through a fold never reroots -- O(1) a put -- and
+a program that reads old versions alternately pays the chain between
+them, which is what the copy cost before. `tests/
+test_map_persistence.py` checks 20 random histories of 200 puts over
+live versions against a copying model, entries and insertion order
+both. **Measured honestly, the copy was not the CPython cost**: 3 000
+lines over a 20 000-word vocabulary (14 000 keys, 24 000 puts, 27.9
+million steps) take 42.7 s copying and 44.1 s rerooting -- noise; a
+dict copy is a memcpy, and at these sizes it is under a second. Under
+PyPy the same run goes **8.2 s → 3.8 s**, because there the
+interpreter is fast enough for the copies to be half the time. The
+asymptotics are the reason to keep it; PyPy is the measurement.
+
+**The prelude, one call less per character.** `words` called `space`
+on every character; written out as `(le c 32)`, a macro, the loop
+saves a call and pays six nodes: 2 574 877 → 2 462 492 steps on the
+thousand lines, 3.57 → 3.39 s.
+
+Ten thousand lines now: **CPython 28 s, PyPy 5.5 s**.
+
+Where it stands on CPython: `_call` at ~1.5 µs (a frame, six
+attribute saves and restores, the depth check) is the largest single
+item, then the per-node prologue at ~0.3 µs. Tests 665 → 684. Q75
+answered; Q76 asks what the next floor is.
+
 ### Milestone 7 (2026-09-09) — LOVA as a tool for agents
 Named at M6 and delivered after M21, because everything it exposes had
 to exist first. `core/mcp_server.py` speaks the Model Context
@@ -1070,12 +1180,35 @@ the corpus grows again.
   one bit); the host names the places (`--allow net=host:port`,
   `net=:port`). Where is host policy, not program text, so the byte
   sequence stays free of addresses and Stage 3 is untouched.
-- **Q75**: The interpreter runs ~300 000 steps a second after M22's
-  pass; the floor is per-node bookkeeping (~3 µs) and `_call`'s copy of
-  a ~90-entry environment. Frame chains with parent pointers would
-  make a call O(1) and a lookup O(depth); a compile-to-closures or
-  bytecode step would remove the tree walk. Which pays first — and at
-  what point does a *substrate* stop being the reference interpreter?
+- ~~**Q77**~~: *closed 2026-09-10; re-run and re-recorded.* Exp 16's
+  journal entry now carries three readings (M16: 704 → 0, 16% → 37%;
+  M17: 248 → 0, 29% → 38%; M23: 226 → 0, 13% → 16%). The zero holds at
+  every reading. The runnable rate fell because the language grew:
+  250/1000 generated programs are now refused by M20's arity-aware
+  checker (`type-mismatch` -- Q71's missing measurement) and 172 trap
+  on a capability the sandbox does not grant. Eight programs in a
+  thousand are a strict `let` self-reference the compiler accepts and
+  the runtime traps; the M9 letrec left that open.
+- **Q76**: After M23 the interpreter runs ~650 000 steps a second. The
+  remaining floor is `_call` (~1.5 µs: a frame, the capability and
+  environment saves and restores, the depth check) and the per-node
+  accounting (~0.3 µs: budget, steps). Lexical addressing would make a
+  reference a fixed chain of attribute loads instead of a `__missing__`
+  walk; carrying the capability mask in the frame would halve what a
+  call saves and restores; charging a straight-line subtree at its
+  root would remove most of the accounting but move where a step trap
+  fires. Which of these is worth a semantic wrinkle, now that the host
+  VM buys 6× for none (PyPy, M23)? And is the PyPy path -- a run on a
+  thread with a sized stack -- the right shape for the MCP server,
+  which serves many runs from one process?
+- ~~**Q75**~~: *answered in part by M23, with a measurement.* Compile-
+  to-closures paid first and most (the walk and its node stack were
+  ~48% of the per-node cost; 1115 → 586 ns on the micro-benchmark);
+  frame chains paid ~15% more. 7.87 s → 3.57 s on a thousand lines,
+  73 s → 33.7 s on ten thousand. The second question -- when does the
+  substrate stop being the reference interpreter -- answered itself:
+  it does not have to. The same Python under PyPy runs the ten
+  thousand lines in ~5.5 s. What remains of the question is in Q76.
 - **Q74**: The token table is full — 63 operators and `END` — and
   every slot was spent on a measurement or an axiom. The reserve
   position `spec/token-budget.md` has held since Exp 13 is the
@@ -1175,7 +1308,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
-| 16 | 2026-09-09 | Scope-aware generation | Done (N=1000 × 2) | **WIN.** `step` takes the literal payload; the machine keeps scope and offers `ref` only where a bound, type-compatible name exists. Unbound references in generated programs **704/1000 → 0**; compile-and-run **16% → 37%**; `Fn` slots filled by references 74 → 5, all bound (Q54 closed). Axiom 3 now holds at the **name level for generated programs**; the compiler's scope pass remains for hand-written and mutated trees. Boundary: mutual recursion compiles but cannot be generated left-to-right (Q64). Exp 10 with real names: +32 pp. Exp 02's 100% measured the generator with its own scope-blind validator (Q66). Q64-Q66 raised. |
+| 16 | 2026-09-09 | Scope-aware generation | Done (N=1000 × 2) | **WIN.** `step` takes the literal payload; the machine keeps scope and offers `ref` only where a bound, type-compatible name exists. Unbound references in generated programs **704/1000 → 0**; compile-and-run **16% → 37%**; `Fn` slots filled by references 74 → 5, all bound (Q54 closed). Axiom 3 now holds at the **name level for generated programs**; the compiler's scope pass remains for hand-written and mutated trees. Boundary: mutual recursion compiles but cannot be generated left-to-right (Q64). Exp 10 with real names: +32 pp. Exp 02's 100% measured the generator with its own scope-blind validator (Q66). Q64-Q66 raised. *Re-run at M23 (Q77): 226 → 0, runnable 13% → 16%; 250 generated programs refused by the M20 arity checker (Q71).* |
 | 15 | 2026-09-09 | Populations: Exp 05 from inside LOVA | Done (10 seeds × 30 gens) | **WIN.** Axiom 6 in the language: `defpop` / `fitness` / `variant` / `select` / `retire` / `evolve` on the Evolution family's own slots, `Population` as a fifth value kind. Exp 05 rewritten as one LOVA program: **9/10 seeds improve, 3/10 converge, best seed 35 → 1 (97%), mean 85% of the worst-case gap closed** — Exp 05 had 3/10, 97%, 80%. Same rule (retire 20%, sharpness 3, clone 30%), different setting (strength 0.30 vs 0.45), so the same shape, not the same run. Winners report their own provenance via `generation` / `why`. Trapping variants score UNFIT and are recorded, not silent. **All ten axioms now realised in the language.** Q61-Q63 raised. |
 | 14 | 2026-09-09 | Stage-2 surface, built and measured | Done (2150 round-trips; 3 corpora) | **WIN (STRONG).** Closes Q37. Built `core/surface2.py`: the text projection of the byte encoding, one character per byte, **no delimiters — because the encoding never had any**, `decode` recovering the tree from arity alone. Losslessness **2150/2150** (trees *and* bytes, incl. 1000 generated programs, with and without the reference digram). **Algorithmic density 0.66x -> 1.13x: LOVA is denser than Python on real programs for the first time**, past the 0.76x ceiling Exp 13 proved no table change could reach. **LOVABench 2.00x -> 5.38x vs sympy, 8.51x -> 22.89x vs pure.** Parentheses 25% -> **0%** of token cost. One compression rule (`(ref k)`, 22% of nodes) was worth **27%**, three times what two new token slots were worth. **Exp 11's Stage-2 projection understated density by 70%** (546 predicted vs 322 measured) having erred the *other* way in Exp 12 — node count is a poor proxy in both directions. First time Axiom 2 was cashed in rather than asserted. Untested and now load-bearing: whether a model can emit it (Q47). Q46-Q49 raised. |
 | 13 | 2026-09-09 | Token budget re-derived | Done (3 corpora; 10 tasks x 3 levers) | **WIN on diagnosis — refuted its own hypothesis.** Where the Stage-1 tokens go: **51% names, 25% parens, 10% literals**. Three levers measured separately: one-token operator spellings close **30% of the algorithmic density gap for 0 slots** (verified by execution, 10/10 programs identical); `lt`+`sub` close **9% for 2 slots**; **61% is s-expression syntax** and unreachable by any table change (best case 0.76x, still below Python). So Exp 12's F7 — "the lever is the operator set" — is wrong by 3x; spelling was never measured and is the biggest term. Census: number-theory family is **33% of LOVABench use vs 3-5% elsewhere**, `p`/`tau`/`mobius` zero outside it — but the benchmark's own docstring says tasks were picked for what LOVA can express, so **it cannot testify about the table** (circularity inherited by Exp 10's generation priors, Q40). Proposal: 10 of 14 free slots; strings cost 0 once `cons` exists. Axiom 8 revision proposed, **not applied** — needs owner approval. Two methodology bugs recorded: a regex that matched 1 of 5 sites, and an AST re-render that measured the desugared form (+67%). Q37-Q41 raised. |

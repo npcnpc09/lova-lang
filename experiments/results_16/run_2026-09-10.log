@@ -1,0 +1,56 @@
+LOVA Experiment 16 -- scope-aware generation (M16)
+
+==============================================================================
+  1. 1000 generated programs, with and without scope tracking
+==============================================================================
+  outcome                                pre-M16       M16
+  ----------------------------------------------------------
+  unbound reference (compile error)      226 23%     0  0%
+  other compile error                    185 18%   250 25%
+  compiles, traps at run time            455 46%   594 59%
+  compiles and runs                      134 13%   156 16%
+  ----------------------------------------------------------
+  references emitted                         236        32
+
+  An unbound reference is now unrepresentable by generation, as
+  Axiom 3 always said ill-typed programs were.  The compiler's
+  scope pass still exists, for trees that did not come from the
+  generator: hand-written, mutated, or read back from text.
+
+==============================================================================
+  2. What fills an `Fn` slot (Q54)
+==============================================================================
+  apply head is                  pre-M16       M16
+  --------------------------------------------------
+  a reference                         10         2
+  a lambda / loop-until               69        94
+
+  Before, a reference in an Fn slot named whatever the sampler
+  drew -- almost never a bound function.  After, it names a bound
+  function or is not offered, so the depth bias reaches for
+  `lambda` instead and the program closes.
+
+==============================================================================
+  3. The boundary: what the compiler accepts that generation cannot reach
+==============================================================================
+  program shape                         compiles  validates
+  ------------------------------------------------------------
+  self recursion                            True       True
+  nested lets, later sees earlier           True       True
+  shadowing                                 True       True
+  mutual recursion (M12 chain)              True      False
+
+  A left-to-right machine cannot emit a reference to a name bound
+  later, so a mutually recursive def chain -- legal since M12 --
+  is compilable but not generatable.  The generator is strictly
+  more conservative than the compiler, which is the safe direction;
+  the gap is 1 shape(s) in this set, and it is Q64.
+
+==============================================================================
+  Experiment 16 -- summary
+==============================================================================
+  unbound references in generated programs: 226/1000 -> 0/1000
+  programs that compile and run:            134/1000 -> 156/1000
+  Axiom 3 now holds at the name level for generated programs;
+  the compiler's scope pass remains the check for everything else.
+

@@ -44,6 +44,51 @@ pre-M16 unbound **248**, runnable **291**; M16 unbound **0**, runnable
 not change in kind. `experiments/results_16/run.log` holds the M17
 numbers.
 
+*Re-run at M23 (2026-09-10, Q77)*, on the generator as M17–M22 left
+it -- twenty more operators it samples, among them the effects
+(M19), the network (M21), `read` (M18) and the map (M22) -- and on
+the compiler as M20 left it. `experiments/results_16/run_2026-09-10.log`:
+
+| Outcome (N=1000) | pre-M16 | M16 |
+|---|---|---|
+| unbound reference | **226 (23%)** | **0** |
+| other compile error | 185 | 250 |
+| compiles, traps at run time | 455 | 594 |
+| compiles and runs | **134 (13%)** | **156 (16%)** |
+| references emitted | 236 | 32 |
+| `apply` head is a reference | 10 | 2 |
+| `apply` head is a lambda / loop-until | 69 | 94 |
+
+The M16 column's claim -- **no unbound reference is generatable** --
+holds at every reading. Everything around it has moved, and the
+movement is the story:
+
+- **The 250 "other compile errors" are all `type-mismatch`.** M20 gave
+  the checker `Fn<arity, ret>`; the generator still sees plain `Fn`
+  (Q71), so a quarter of what it emits is refused for calling with
+  the wrong arity or using a call's result in the wrong slot. Axiom 3
+  holds at the operator and name levels and not yet at the arity
+  level; this table is the measurement Q71 was missing.
+- **Runnable fell from 38% to 16%** because the language grew things a
+  generated program cannot satisfy in a sandbox: of the 594 traps,
+  172 are `capability-denied` (an effect inside a boundary the test
+  runtime does not grant -- correct, and unavoidable without a
+  grant), 72 `malformed` (`read` of empty text), 205 `domain-error`,
+  80 `type-violation`, 29 `conservation-violated`, 15 `signalled`, 13
+  `budget-exceeded` -- and **8 `unbound-ref`**: a strict
+  self-reference in a `let`'s own value, `(let 0 (mobius (merge (ref
+  0) ...)) 15)`. The compiler accepts it because a letrec must accept
+  a self-reference under a lambda; the runtime traps because the
+  binding is not yet installed when the value is evaluated strictly.
+  The generator emits it because the compiler accepts it. Whether the
+  scope pass should distinguish a self-reference under a lambda from
+  one evaluated strictly is a question the M9 design left open; it is
+  eight programs in a thousand.
+
+Which reading to quote: the M16 column's zero, always; the runnable
+rate only with its date, because it measures the language's surface
+at that date more than the generator.
+
 Boundary: self recursion, nested lets and shadowing validate; a
 **mutually recursive `def` chain compiles (M12) but does not validate**.
 

@@ -249,11 +249,13 @@
 (def lines [text] (split text 10))
 
 ;; The words of `text`: runs of non-space characters.
+;; `space` is written out as `(le c 32)` in the loop: it runs once per
+;; character, and a call costs more than the six nodes it saves (M23).
 (def words [text]
   (let f (iterate
            (cons text (cons (nil) (nil)))
            (lambda s (nil? (head s)))
-           (lambda s (if (space (head (head s)))
+           (lambda s (if (le (head (head s)) 32)
                        (cons (tail (head s))
                              (cons (nil) (if (nil? (head (tail s)))
                                            (tail (tail s))
