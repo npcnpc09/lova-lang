@@ -290,18 +290,44 @@ place is a set of guarantees no general-purpose language carries.
 ### Against other languages
 
 | What a program gets | Python | Rust | Haskell | Clojure | Unison | **LOVA** |
-|---|---|---|---|---|---|---|
-| Faults as structured data, not text | no | partly (`Result`; panics are text) | partly | no | no | **yes** -- every fault carries a kind, a position path and a repair hint, compile time and run time alike |
-| Ill-formed programs unrepresentable to a generator | no | no | no | no | no | **yes** -- `valid_next` gives the legal next tokens at every step; a generated program cannot be syntactically or scope-invalid |
-| Effects declared by the program, granted by the host | no | no | in the type, not granted | no | partly (abilities) | **yes** -- `(boundary "fs-read" ...)` declares the kind, `--allow` names the places; an undeclared effect is a compile error |
-| Termination guaranteed | no | no | no | no | no | **yes** -- step and depth ceilings are built in; a loop that never ends is a structured anomaly, never a hang |
-| Cost contracts inside the program | no | no | no | no | no | **yes** -- `(budget n ...)` per call, per job, per untrusted line; the program catches its own overrun |
-| Programs as first-class data | no | no | no | yes (macros, `quote`) | yes (content-addressed) | **yes** -- `quote`, `eval`, `read`, `explain`, `hash`; a program is one integer |
-| Provenance queryable from inside | no | no | no | no | partly | **yes** -- `why`, `generation`, `lineage-query` are operators |
-| A function as an evolving population | no | no | no | no | no | **yes** -- `defpop`, `evolve`, `select`; the winner explains its descent |
-| Repair guided by the program's own deviation | no | no | no | no | no | **yes** -- `conserve` states the contract, `surprise` measures the miss, `mutate` proposes; three targets repaired in 39, 37 and 20 attempts, reproducibly |
-| Written by a frontier model from one page, as reliably as Python | -- | -- | -- | -- | -- | **yes** -- a fresh Claude session: 79/80 in LOVA, 79/80 in Python, same tasks |
-| Zero dependencies, same core on CPython and PyPy | core only | no | no | needs the JVM | needs its runtime | **yes** -- 727 tests pass on both |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Faults as structured data, not text | – | partly | partly | – | – | **yes** |
+| Ill-formed programs unrepresentable to a generator | – | – | – | – | – | **yes** |
+| Effects declared by the program, granted by the host | – | – | typed | – | partly | **yes** |
+| Termination guaranteed | – | – | – | – | – | **yes** |
+| Cost contracts inside the program | – | – | – | – | – | **yes** |
+| Programs as first-class data | – | – | – | yes | yes | **yes** |
+| Provenance queryable from inside | – | – | – | – | partly | **yes** |
+| A function as an evolving population | – | – | – | – | – | **yes** |
+| Repair guided by the program's own deviation | – | – | – | – | – | **yes** |
+| Zero dependencies, one core on CPython and PyPy | core | – | – | JVM | runtime | **yes** |
+
+How LOVA does each, in the order of the table:
+
+1. Every fault carries a kind, a position path and a repair hint, at
+   compile time and at run time alike; `when-anomaly` lets a program
+   catch its own and branch on the code.
+2. `valid_next` gives the legal next tokens at every step, so a
+   generated program cannot be syntactically or scope-invalid.
+3. `(boundary "fs-read" ...)` declares the kind of effect, `--allow`
+   names the places; an undeclared effect is a compile error.
+4. Step and depth ceilings are built in: a loop that never ends is a
+   structured anomaly, never a hang.
+5. `(budget n ...)` per call, per job, per untrusted line; the program
+   catches its own overrun.
+6. `quote`, `eval`, `read`, `explain`, `hash`: a program is one
+   integer, and a value the language handles.
+7. `why`, `generation`, `lineage-query` are operators; the record is in
+   the value, not in a side channel.
+8. `defpop`, `evolve`, `select`: the winner explains its descent.
+9. `conserve` states the contract, `surprise` measures the miss,
+   `mutate` proposes; three targets repaired in 39, 37 and 20 attempts,
+   reproducibly.
+10. The core is stdlib-only; 727 tests pass on both interpreters.
+
+And the measurement behind the claim that it costs a model nothing: a
+fresh Claude session given one page of LOVA wrote 79 of 80 benchmark
+tasks correctly, single-shot, exactly its score in Python.
 
 Three of these exist elsewhere, scattered: effects in types (Haskell,
 Koka), code as data (Lisp, Unison), a system that heals itself
