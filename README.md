@@ -273,6 +273,9 @@ something and kept as a test. What they demonstrate:
 - **It runs anywhere Python does.** The core has no dependencies, so
   the same programs run under CPython and PyPy, and the 747 tests pass
   on both.
+- **Text is a value.** A string literal is one node; `words`, `split`,
+  `join`, `parse-int` and the rest are one operator each; a word count
+  of 10 000 lines runs in 5.5 s on CPython where it took 28 (M25).
 - **A fault says where, and a fix is a patch.** Every anomaly carries
   the source span of the expression at fault and its text; the MCP
   server's `lova_patch` replaces that span and checks the result. The
@@ -501,12 +504,15 @@ Stated plainly, because the list is short and the omissions are large:
 
 - **It is an interpreter.** The tree is compiled to closures (M23)
   and runs at ~700 000 steps a second on CPython, ~4 million under
-  PyPy (journal M22 and M23 have the profiles). Thousands of lines of
-  input are seconds; millions are not this language yet (Q76).
+  PyPy (journal M22, M23 and M25 have the profiles). Tens of thousands
+  of lines of input are seconds; millions are not this language yet
+  (Q76).
 - **IO is whole values.** `fs-read` reads a whole file, `net-recv` one
   datagram: there are no handles and no streams (Q72). The terminal is
   ambient rather than declared (Q68).
-- **The token table is full.** 63 operators and `END`; the next
+- **The core table is full, and the language grows past it.** 63 core
+  operators and `END`; the text family (0x40-0x4D, M25) was the first
+  addition beyond 64, and the next
   operator has to displace one of the number-theory family (Q74).
 - **Modules are textual.** `(use "name")` includes `lib/name.lova`
   once and transitively, and `drop-unused` makes it free — but two

@@ -155,13 +155,16 @@ class TestStrings(unittest.TestCase):
     """A string is a list of codepoints, so it costs zero table slots."""
 
     def test_string_literal_desugars_to_cons(self):
-        self.assertEqual(parse('"abc"'), parse("(list 97 98 99)"))
+        # M25: a literal is one text node, and reads as its codepoints.
+        self.assertEqual(run('(head "abc")'), 97)
+        self.assertEqual(run('(text-cmp "abc" (list 97 98 99))'), 0)
 
     def test_string_evaluates_to_codepoints(self):
         self.assertEqual(list_to_python(run('"LOVA"')), [76, 79, 86, 65])
 
     def test_empty_string_is_nil(self):
-        self.assertIs(run('""'), NIL_VALUE)
+        self.assertEqual(run('""'), "")            # a text since M25; `nil?` of it is 1
+        self.assertEqual(run('(nil? "")'), 1)
 
     def test_escapes(self):
         self.assertEqual(list_to_python(run('"a\\nb"')), [97, 10, 98])
@@ -176,7 +179,10 @@ class TestStrings(unittest.TestCase):
         self.assertEqual(list_to_python(run('"1"')), [49])
 
     def test_string_helper_matches_the_literal(self):
-        self.assertEqual(string_to_nodes("hi"), parse('"hi"'))
+        # M25: the literal is a text node; the helper still builds the list.
+        self.assertEqual(parse('"hi"').op, 0x40)
+        self.assertEqual(parse('"hi"').args[0], "hi")
+        self.assertEqual(string_to_nodes("hi"), parse("(list 104 105)"))
 
     def test_string_length(self):
         src = ("(def len [xs] (if (nil? xs) 0 (merge 1 (len (tail xs)))))"
@@ -247,14 +253,14 @@ class TestMacros(unittest.TestCase):
 
                 def collect(node):
                     ops.add(node.op)
-                    if node.op != 0x01:
+                    if node.op not in (0x01, 0x40):        # literals carry no nodes
                         for child in node.args:
                             collect(child)
 
                 collect(parse(src))
                 for op in ops:
-                    self.assertLessEqual(op, 0x3F)
-                    self.assertIn(op, TYPED_TOKENS)
+                    self.assertLessEqual(op, 0x4D)        # the core, or the text family (M25)
+                    self.assertTrue(op in TYPED_TOKENS or 0x40 <= op <= 0x4D)   # the text family validates, is not yet generated (M25)
 
     def test_macro_arity_is_checked(self):
         with self.assertRaises(ValueError) as ctx:
@@ -360,7 +366,7 @@ class TestSlotBudget(unittest.TestCase):
         self.assertEqual(len(TYPED_TOKENS), 63)
 
     def test_the_core_is_still_64_operators(self):
-        self.assertEqual(len(SIGNATURES), 64)
+        self.assertEqual(len(SIGNATURES), 78)      # 64 core + the text family (M25)
 
     def test_reallocated_slots_carry_their_new_meaning(self):
         expected = {

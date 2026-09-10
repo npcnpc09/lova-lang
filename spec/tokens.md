@@ -6,7 +6,9 @@
 
 ## Overview
 
-LOVA's core is exactly **64 operators**, one byte each.
+LOVA's core is **64 operators**, one byte each, and since M25 a
+**text family of 14** at 0x40-0x4D (Q85; Axiom 8's ceiling was
+demoted to a preference on 2026-09-10).
 Tokens are grouped into 8 families of 8 operators.  Arguments
 follow each operator as typed-slot tokens; types are positional,
 not annotated.  See `spec/paradigm-inheritance.md` for the
@@ -15,7 +17,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  63 of the 64 tokens are implemented.
+  77 of the 78 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -123,6 +125,25 @@ Legend:
 | 0x3D | `uid` | 1 | Program | Int | {read-lineage} | **impl** |
 | 0x3E | `ancestor-of` | 2 | Program, Program | Int | {read-lineage} | **impl** |
 | 0x3F | `generation` | 1 | Program | Int | {read-lineage} | **impl** |
+
+## Text (0x40 - 0x4D)
+
+| Byte | Name | Arity | In types | Out type | Effects | Status |
+|---|---|---|---|---|---|---|
+| 0x40 | `text` | 0 | - | Text | - | **impl** |
+| 0x41 | `text-len` | 1 | Value | Int | - | **impl** |
+| 0x42 | `text-cat` | 2 | Value, Value | Text | - | **impl** |
+| 0x43 | `text-slice` | 3 | Value, Int, Int | Text | - | **impl** |
+| 0x44 | `text-find` | 2 | Value, Value | Int | - | **impl** |
+| 0x45 | `text-split` | 2 | Value, Value | List | - | **impl** |
+| 0x46 | `text-join` | 2 | List, Value | Text | - | **impl** |
+| 0x47 | `text-chars` | 1 | Value | List | - | **impl** |
+| 0x48 | `text-of-chars` | 1 | Value | Text | - | **impl** |
+| 0x49 | `text-cmp` | 2 | Value, Value | Int | - | **impl** |
+| 0x4A | `text-int` | 1 | Value | Int | - | **impl** |
+| 0x4B | `int-text` | 1 | Int | Text | - | **impl** |
+| 0x4C | `text?` | 1 | Value | Int | - | **impl** |
+| 0x4D | `text-trim` | 1 | Value | Text | - | **impl** |
 
 ## Slot conventions
 
@@ -252,4 +273,4 @@ the identifier was a convenience for whoever typed it.
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  63/64 operators implemented.
+  77/78 operators implemented.

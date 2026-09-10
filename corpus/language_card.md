@@ -1,8 +1,8 @@
 # LOVA in one page
 
-LOVA is a small integer language written as s-expressions. Every value is an
-integer, a list, a function, a map or a program. There are no floats, no
-strings other than lists of codepoints, no mutable variables.
+LOVA is a small language written as s-expressions. Every value is an
+integer, a text, a list, a function, a map or a program. There are no
+floats and no mutable variables.
 
 ## Writing a program
 
@@ -39,7 +39,8 @@ Comparisons return 1 or 0: `(eq a b) (ne a b) (lt a b) (gt a b) (le a b)
 
 `(nil)` is the empty list; `(cons x xs)` prepends; `(head xs)` and
 `(tail xs)`; `(nil? xs)` tests emptiness. `(list 1 2 3)` builds a list.
-A string literal `"abc"` is the list of its codepoints.
+A string literal `"abc"` is a text; `(eq a b)` compares texts, and every
+list function reads a text as its codepoints (`(head "abc")` is 97).
 
 Library (always available):
 
@@ -50,7 +51,9 @@ Library (always available):
 (sort xs) (sort-by less xs) (range a b) ; a .. b-1   (repeat x n)
 (digits n) ; decimal digits, most significant first
 (text-of n) ; decimal text of n     (parse-int text)   (words text) (lines text)
-(join parts sep) (split text sep)
+(join parts sep) (split text sep)   ; sep: a text or a codepoint
+(text-cat a b) (text-slice t start end) (text-find t needle) ; -1 if absent
+(text-trim t) (text? v) (text-chars t) (text-of-chars xs)
 (map-put m k v) (map-get m k default) (map-pairs m) (map-count m k) (map-size m)
 (rec x 1 y 2)  ; a record: named fields    (get r x)  ; the field    (put r x 9)  ; r with x set
 ```

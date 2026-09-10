@@ -436,9 +436,10 @@ class TestCLI(unittest.TestCase):
 
     def test_format_value_shows_a_list_as_text_too(self):
         rt = Runtime()
-        value = run('"hi"', rt)
+        value = run('(list 104 105)', rt)          # a codepoint list shows both ways
         self.assertIn('"hi"', format_value(value))
         self.assertIn("104", format_value(value))
+        self.assertEqual(format_value(run('"hi"', rt)), '"hi"')   # a text (M25) shows as text
 
 
 if __name__ == "__main__":

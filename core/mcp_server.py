@@ -241,7 +241,10 @@ def _source(params: Dict[str, Any]) -> str:
 
 def _value_fields(value: Any) -> Dict[str, Any]:
     out: Dict[str, Any] = {"value": format_value(value)}
-    if isinstance(value, bool):
+    if isinstance(value, str):
+        out["value_text"] = value
+        out["value_list"] = [ord(ch) for ch in value]
+    elif isinstance(value, bool):
         out["value_int"] = int(value)
     elif isinstance(value, int):
         out["value_int"] = value

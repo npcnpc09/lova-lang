@@ -45,7 +45,7 @@ from core.tokens import (
     MOD, MUL, NIL, P, PARTITION, REF, RESULT_FOLLOWS_OPERANDS, SIGMA,
     SIGNATURES, SURPRISE, SEQ, TAIL, TAU, THRESHOLD, TRACE_SURPRISE,
     VIOLATE, WHEN_ANOMALY, QUOTE, Lit, Node,
-    CAPABILITY_OF, EXTERNAL_BOUNDARY, capability_names,
+    CAPABILITY_OF, EXTERNAL_BOUNDARY, capability_names, LIT_TEXT,
 )
 from core.types import (
     FN, INT, LIST, LITERAL_INT, VALUE, FnType, Type, fn_type, is_subtype,
@@ -174,7 +174,7 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...],
     binding only after its value exists.  Until Q79 such a reference
     compiled and trapped at run time with an integer for a name.
     """
-    if node.op == LIT_INT:
+    if node.op in (LIT_INT, LIT_TEXT):
         return
     if node.op == QUOTE:
         # A quoted program is data until something evaluates it, and it
@@ -640,7 +640,13 @@ def _type_check(
             expected_here = head_types[i] if i < len(head_types) else inner
             _type_check(child, expected_here, path + (node.op, i), type_env)
     elif sig.get("in_types") is not None:
-        for i, (child, in_type) in enumerate(zip(node.args, sig["in_types"])):
+        in_types = sig["in_types"]
+        if node.op == DEVIATION:
+            # M25: `(eq a b)` and `(ne a b)` expand to `deviation`, and two
+            # texts compare at run time; the checker admits any value
+            # here and the runtime reports a non-comparable pair.
+            in_types = [VALUE, VALUE]
+        for i, (child, in_type) in enumerate(zip(node.args, in_types)):
             if isinstance(child, Node):
                 _type_check(child, in_type, path + (node.op, i), type_env)
 
@@ -673,7 +679,7 @@ def _fold(node: Node) -> Node:
 
 def _fold_inner(node: Node) -> Node:
     """Fold pure subtrees with constant arguments to LIT_INT."""
-    if node.op == LIT_INT:
+    if node.op in (LIT_INT, LIT_TEXT):
         return node
     if node.op == QUOTE:
         # Folding inside a quote would change the program that `hash`

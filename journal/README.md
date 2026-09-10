@@ -306,6 +306,46 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Milestone 25 (2026-09-10) — Text is a value
+The second work under the one goal: the tax every text program paid
+for the representation. Since M10 a string was a list of codepoints,
+which cost no slot and made `words` twenty nodes and three calls a
+character (M23). Under the demoted Axiom 8 the slot count is no
+longer the reason to refuse a value kind.
+
+**The text family, 0x40-0x4D.** The first tokens past 0x3F: a text
+literal (`text`, 0x40: two-byte length, UTF-8 payload) and thirteen
+operators -- `text-len` `text-cat` `text-slice` `text-find`
+`text-split` `text-join` `text-chars` `text-of-chars` `text-cmp`
+`text-int` `int-text` `text?` `text-trim`. A text is a Python `str` in
+the reference runtime. Where an operator says Value it takes a text or
+a codepoint list, so nothing written against the list form loses.
+
+**Every list operator reads a text as its codepoints**: `head`, `tail`,
+`nil?`, `cons` (a codepoint onto a text is a text), `len`, `map`,
+`filter`, the folds. A map keys a text like the list it stands for, so
+records and word counts built either way agree. `eq` compares two
+texts, which needed one relaxation in the checker (`deviation` admits
+any value; the runtime reports a non-comparable pair). `Text` is a
+subtype of `List` for the checker, because the runtime makes it one.
+
+**The prelude's text functions became one operator each**: `len`,
+`same`, `append`, `words`, `lines`, `split`, `join`, `parse-int`,
+`text-of`, `text-lt`, `chomp`. `fs-read`, `stdin`, `net-recv`,
+`explain` and `why` yield a text. `parse-int` keeps signal 16. The
+Stage-2 projection prints a text literal as a quoted string and gives
+the family Greek capitals, since printable ASCII had eight characters
+left. The validator admits the family; the samplers do not yet emit
+it (`valid_next(generate=False)` is the validation view), so
+Exp 16's figures stand.
+
+**Numbers.** The thousand-line word count: 2 462 492 → 598 404 steps,
+3.39 s → 1.12 s. Ten thousand lines: **28 s → 5.5 s on CPython** (73
+s at M22). The twelve programs run unchanged; `tictactoe.lova`'s
+board setter had already become `place`. Tests 747, all passing; the
+token table is 78 entries and `spec/tokens.md` is regenerated. Q85
+closed.
+
 ### Milestone 24 (2026-09-10) — A fault says where; a fix is a patch; a record has names
 The first work under the one goal (`spec/ai-convenience.md`), aimed
 at the two largest costs the yardstick names: re-emitting a program to
@@ -1482,7 +1522,10 @@ the corpus grows again.
   programs were rewritten around it. Under the goal, what is the
   cheapest form that lets a helper carry an effect -- a `def` inside a
   boundary, a boundary on the `def`, or dynamic scope for the grant?
-- **Q85**: Text is a list of codepoints, so `words` costs about twenty
+- ~~**Q85**~~: *closed by M25.* A text family at 0x40-0x4D, a text
+  literal, every list operator reading a text as its codepoints; the
+  thousand-line count 2.46 → 0.60 million steps. The question as
+  raised: text is a list of codepoints, so `words` costs about twenty
   nodes and three calls a character and every text program pays for
   the representation. Under the goal: a native text value (one slot,
   or a `Value` kind with no slot), with the list view kept for

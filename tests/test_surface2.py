@@ -27,12 +27,12 @@ def s2(src: str) -> str:
 class TestSymbolTable(unittest.TestCase):
 
     def test_every_byte_has_a_symbol(self):
-        self.assertEqual(len(surface2.SYMBOLS), 64)
+        self.assertEqual(len(surface2.SYMBOLS), 78)
         for byte in range(0x40):
             self.assertIn(byte, surface2.SYMBOLS)
 
     def test_symbols_are_distinct(self):
-        self.assertEqual(len(set(surface2.SYMBOLS.values())), 64)
+        self.assertEqual(len(set(surface2.SYMBOLS.values())), 78)
 
     def test_digits_and_minus_are_reserved_for_literals(self):
         # The lexer decides literal-vs-operator on the first character,

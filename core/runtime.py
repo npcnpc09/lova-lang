@@ -103,6 +103,7 @@ from core.tokens import (
     DEFPOP, EVOLVE, FITNESS, RETIRE, SELECT, VARIANT, READ,
     CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CAPABILITY_OF,
     capability_names, NET_RECV, NET_SEND, SIGNAL, MAP_GET, MAP_PAIRS, MAP_PUT,
+    LIT_TEXT, TEXT_LEN, TEXT_CAT, TEXT_SLICE, TEXT_FIND, TEXT_SPLIT, TEXT_JOIN, TEXT_CHARS, TEXT_OF_CHARS, TEXT_CMP, TEXT_INT, INT_TEXT, IS_TEXT, TEXT_TRIM,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -405,6 +406,16 @@ def is_list_value(v: Any) -> bool:
     return v is NIL_VALUE or isinstance(v, Cons)
 
 
+def is_text_value(v: Any) -> bool:
+    """True iff ``v`` is a text (M25): a Python ``str``."""
+    return isinstance(v, str)
+
+
+def _text_chars(v: Any, ctx: str) -> Any:
+    """A text as the codepoint list a list operator expects."""
+    return list_from([ord(ch) for ch in v])
+
+
 def list_from(values) -> Any:
     """Build a LOVA list from a Python iterable, right to left."""
     out = NIL_VALUE
@@ -414,7 +425,13 @@ def list_from(values) -> Any:
 
 
 def list_to_python(value: Any) -> list:
-    """Unpack a LOVA list into a Python list.  Raises on a non-list."""
+    """Unpack a LOVA list into a Python list.  Raises on a non-list.
+
+    A text unpacks to its codepoints (M25): every consumer of a list
+    reads a text as the list it stands for.
+    """
+    if isinstance(value, str):
+        return [ord(ch) for ch in value]
     out = []
     rest = value
     while isinstance(rest, Cons):
@@ -437,6 +454,8 @@ def _as_text(v: Any, ctx: str) -> str:
     -- print as ``abc``.  A function has no textual form and says so; a
     program has one, but asking for it is what `explain` is for.
     """
+    if isinstance(v, str):
+        return v
     if isinstance(v, int) and not isinstance(v, bool):
         return str(v)
     if is_population_value(v):
@@ -573,6 +592,8 @@ def _map_key(v: Any, ctx: str) -> Any:
     """A hashable stand-in for a key: an integer, or a list as a tuple."""
     if isinstance(v, int) and not isinstance(v, bool):
         return ("i", v)
+    if isinstance(v, str):
+        return ("l", tuple(("i", ord(ch)) for ch in v))     # as its codepoint list
     if is_list_value(v):
         return ("l", tuple(_map_key(item, ctx) for item in list_to_python(v)))
     raise DomainTrap(
@@ -707,9 +728,11 @@ def _ensure_registered(program: Node, rt: "Runtime") -> int:
 
 
 def _as_list(v: Any, ctx: str) -> Any:
-    """Coerce a runtime value to List, or fail loudly."""
+    """Coerce a runtime value to List, or fail loudly.  A text is its codepoints."""
     if is_list_value(v):
         return v
+    if isinstance(v, str):
+        return _text_chars(v, ctx)
     raise DomainTrap(
         "type-violation",
         f"{ctx}: expected a List, got {v!r}; only `nil`, `cons` and `tail` "
@@ -1431,6 +1454,19 @@ def _compile_LIT_INT(node: Node, rt: Runtime) -> Any:
     return _n_lit
 
 
+def _compile_LIT_TEXT(node: Node, rt: Runtime) -> Any:
+    value = node.args[0]
+
+    def _n_text(rt: Runtime) -> Any:
+        if rt.budget_stack:
+            rt.budget_stack[-1].charge(1)
+        rt.steps += 1
+        if rt.steps > rt.max_steps:
+            raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+        return value
+    return _n_text
+
+
 def _compile_REF(node: Node, rt: Runtime) -> Any:
     if len(node.args) != 1 or node.args[0].op != LIT_INT:
         return _compile_generic(node, rt)
@@ -1511,9 +1547,11 @@ def _compile_DEVIATION(node: Node, rt: Runtime) -> Any:
             if rt.steps > rt.max_steps:
                 raise StepTrap(steps=rt.steps, limit=rt.max_steps)
             a = left(rt)
+            b = right(rt)
+            if a.__class__ is str or b.__class__ is str:
+                return 0 if _as_text(a, "deviation") == _as_text(b, "deviation") else 1
             if a.__class__ is not int:
                 a = _as_int(a, "deviation")
-            b = right(rt)
             if b.__class__ is not int:
                 b = _as_int(b, "deviation")
             return a - b
@@ -1669,7 +1707,12 @@ def _compile_CONS(node: Node, rt: Runtime) -> Any:
                 raise StepTrap(steps=rt.steps, limit=rt.max_steps)
             element = first(rt)
             rest = second(rt)
-            if rest is not NIL_VALUE and rest.__class__ is not Cons:
+            if rest.__class__ is str:
+                # A codepoint onto a text is a text; anything else makes a list.
+                if element.__class__ is int and 0 <= element <= 0x10FFFF:
+                    return chr(element) + rest
+                rest = _text_chars(rest, "cons")
+            elif rest is not NIL_VALUE and rest.__class__ is not Cons:
                 rest = _as_list(rest, "cons")
             return Cons(element, rest)
         except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
@@ -1693,6 +1736,8 @@ def _compile_HEAD(node: Node, rt: Runtime) -> Any:
             target = inner(rt)
             if target.__class__ is Cons:
                 return target.head
+            if target.__class__ is str and target:
+                return ord(target[0])
             target = _as_list(target, "head")
             if target is NIL_VALUE:
                 raise DomainTrap(
@@ -1724,6 +1769,8 @@ def _compile_TAIL(node: Node, rt: Runtime) -> Any:
             target = inner(rt)
             if target.__class__ is Cons:
                 return target.tail
+            if target.__class__ is str and target:
+                return target[1:]
             target = _as_list(target, "tail")
             if target is NIL_VALUE:
                 raise DomainTrap(
@@ -1757,6 +1804,8 @@ def _compile_IS_NIL(node: Node, rt: Runtime) -> Any:
                 return 1
             if target.__class__ is Cons:
                 return 0
+            if target.__class__ is str:
+                return 1 if not target else 0
             _as_list(target, "nil?")
             return 0
         except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
@@ -1975,6 +2024,7 @@ def _compile_LOOP_UNTIL(node: Node, rt: Runtime) -> Any:
 
 _COMPILERS = {
     LIT_INT: _compile_LIT_INT,
+    LIT_TEXT: _compile_LIT_TEXT,
     REF: _compile_REF,
     IDENTITY: _compile_IDENTITY,
     MERGE: _compile_MERGE,
@@ -2099,6 +2149,108 @@ def _op_MOD(node: Node, rt: Runtime, chained: bool) -> Any:
     return a % b   # floored, sign follows the divisor (Python semantics)
 
 
+# --- text (M25, Q85) ---------------------------------------------------------
+#
+# A text is a Python str.  Where an operator says Value it takes a text
+# or a codepoint list (`_as_text`), so a program that still holds its
+# text as a list loses nothing.  Separators may be a text or a codepoint.
+
+def _sep(v: Any, ctx: str) -> str:
+    if isinstance(v, int) and not isinstance(v, bool):
+        return chr(v)
+    return _as_text(v, ctx)
+
+
+def _op_LIT_TEXT(node: Node, rt: Runtime, chained: bool) -> Any:
+    return node.args[0]
+
+
+def _op_TEXT_LEN(node: Node, rt: Runtime, chained: bool) -> Any:
+    v = _eval(node.args[0], rt)
+    if isinstance(v, str):
+        return len(v)
+    return len(list_to_python(_as_list(v, "text-len")))
+
+
+def _op_TEXT_CAT(node: Node, rt: Runtime, chained: bool) -> Any:
+    return _as_text(_eval(node.args[0], rt), "text-cat") + _as_text(_eval(node.args[1], rt), "text-cat")
+
+
+def _op_TEXT_SLICE(node: Node, rt: Runtime, chained: bool) -> Any:
+    t = _as_text(_eval(node.args[0], rt), "text-slice")
+    start = _as_int(_eval(node.args[1], rt), "text-slice")
+    end = _as_int(_eval(node.args[2], rt), "text-slice")
+    return t[max(0, start):max(0, end)]
+
+
+def _op_TEXT_FIND(node: Node, rt: Runtime, chained: bool) -> Any:
+    t = _as_text(_eval(node.args[0], rt), "text-find")
+    needle = _sep(_eval(node.args[1], rt), "text-find")
+    return t.find(needle)
+
+
+def _op_TEXT_SPLIT(node: Node, rt: Runtime, chained: bool) -> Any:
+    t = _as_text(_eval(node.args[0], rt), "text-split")
+    sep = _sep(_eval(node.args[1], rt), "text-split")
+    return list_from(t.split() if sep == "" else t.split(sep))
+
+
+def _op_TEXT_JOIN(node: Node, rt: Runtime, chained: bool) -> Any:
+    parts = _eval(node.args[0], rt)
+    sep = _sep(_eval(node.args[1], rt), "text-join")
+    if isinstance(parts, str):
+        parts = _text_chars(parts, "text-join")
+    return sep.join(_as_text(p, "text-join") for p in list_to_python(_as_list(parts, "text-join")))
+
+
+def _op_TEXT_CHARS(node: Node, rt: Runtime, chained: bool) -> Any:
+    v = _eval(node.args[0], rt)
+    return _text_chars(v, "text-chars") if isinstance(v, str) else _as_list(v, "text-chars")
+
+
+def _op_TEXT_OF_CHARS(node: Node, rt: Runtime, chained: bool) -> Any:
+    return _as_text(_eval(node.args[0], rt), "text-of-chars")
+
+
+def _op_TEXT_CMP(node: Node, rt: Runtime, chained: bool) -> Any:
+    a = _eval(node.args[0], rt)
+    b = _eval(node.args[1], rt)
+    if isinstance(a, str) and isinstance(b, str):
+        return (a > b) - (a < b)
+    # Element-wise on the codepoints, so two lists of integers compare
+    # too, whatever the integers are.
+    xs = list_to_python(a) if not isinstance(a, str) else [ord(c) for c in a]
+    ys = list_to_python(b) if not isinstance(b, str) else [ord(c) for c in b]
+    return (xs > ys) - (xs < ys)
+
+
+def _op_TEXT_INT(node: Node, rt: Runtime, chained: bool) -> Any:
+    t = _as_text(_eval(node.args[0], rt), "text-int").strip()
+    body = t[1:] if t.startswith("-") else t
+    if not body or not body.isdigit():
+        # The prelude's `parse-int` has signalled 16 for this since M22;
+        # the operator keeps the contract so `try` and `when-anomaly`
+        # handlers written against it keep working.
+        raise DomainTrap(
+            "signalled", f"text-int: not a number: {t[:40]!r}",
+            {"operator": "text-int", "code": 16, "text": t[:40]},
+            "give `text-int` decimal digits, with an optional leading -",
+        )
+    return int(t)
+
+
+def _op_INT_TEXT(node: Node, rt: Runtime, chained: bool) -> Any:
+    return str(_as_int(_eval(node.args[0], rt), "int-text"))
+
+
+def _op_IS_TEXT(node: Node, rt: Runtime, chained: bool) -> Any:
+    return 1 if isinstance(_eval(node.args[0], rt), str) else 0
+
+
+def _op_TEXT_TRIM(node: Node, rt: Runtime, chained: bool) -> Any:
+    return _as_text(_eval(node.args[0], rt), "text-trim").strip()
+
+
 def _op_NIL(node: Node, rt: Runtime, chained: bool) -> Any:
     op = node.op
     return NIL_VALUE
@@ -2109,7 +2261,11 @@ def _op_CONS(node: Node, rt: Runtime, chained: bool) -> Any:
     # program, a function.  Only the tail has to be a list.
     element = _eval(node.args[0], rt)
     rest = _eval(node.args[1], rt)
-    if rest is not NIL_VALUE and not isinstance(rest, Cons):
+    if isinstance(rest, str):
+        if isinstance(element, int) and not isinstance(element, bool) and 0 <= element <= 0x10FFFF:
+            return chr(element) + rest
+        rest = _text_chars(rest, "cons")
+    elif rest is not NIL_VALUE and not isinstance(rest, Cons):
         rest = _as_list(rest, "cons")          # the structured fault
     return Cons(element, rest)
 
@@ -2180,7 +2336,7 @@ def _op_EXPLAIN(node: Node, rt: Runtime, chained: bool) -> Any:
     # reached from *inside* the language for the first time.
     from core.surface import pretty
     program = _as_program(_eval(node.args[0], rt), "explain")
-    return list_from([ord(ch) for ch in pretty(program)])
+    return pretty(program)
 
 
 def _op_READ(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -2253,7 +2409,7 @@ def _op_WHY(node: Node, rt: Runtime, chained: bool) -> Any:
     else:
         rec = rt.lineage.record(uid)
         text = f"{rec.mutation_kind} {rec.notes}".strip()
-    return list_from([ord(ch) for ch in text])
+    return text
 
 
 def _op_TRACE(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -2469,7 +2625,7 @@ def _op_STDIN(node: Node, rt: Runtime, chained: bool) -> Any:
     line = rt.read_line()
     if line is None:
         return NIL_VALUE          # end of input, not an error
-    return list_from([ord(ch) for ch in line])   # newline included (Q78)
+    return line                                   # newline included (Q78)
 
 
 def _op_MAP_PUT(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -2577,7 +2733,7 @@ def _op_FS_READ(node: Node, rt: Runtime, chained: bool) -> Any:
              "reason": type(exc).__name__},
             "give `fs-read` the path of a readable UTF-8 file",
         ) from None
-    return list_from([ord(ch) for ch in text])
+    return text
 
 
 def _op_FS_WRITE(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -2679,7 +2835,7 @@ def _op_NET_RECV(node: Node, rt: Runtime, chained: bool) -> Any:
             "grant a port that is free to bind",
         ) from None
     text = data.decode("utf-8", errors="replace")
-    return list_from([ord(ch) for ch in text])
+    return text
 
 
 def _op_CLOCK(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -2780,9 +2936,11 @@ def _op_DEVIATION(node: Node, rt: Runtime, chained: bool) -> Any:
     # is the whole point: it is what makes ordering expressible.
     # Emits no surprise event — this is a pure comparison, not an
     # observation about a prediction.
-    a = _as_int(_eval(node.args[0], rt), "deviation")
-    b = _as_int(_eval(node.args[1], rt), "deviation")
-    return a - b
+    a = _eval(node.args[0], rt)
+    b = _eval(node.args[1], rt)
+    if isinstance(a, str) or isinstance(b, str):
+        return 0 if _as_text(a, "deviation") == _as_text(b, "deviation") else 1
+    return _as_int(a, "deviation") - _as_int(b, "deviation")
 
 
 def _op_THRESHOLD(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -2952,6 +3110,11 @@ def _eval_unimplemented(node: Node, rt: Runtime) -> Any:
 # Operator dispatch (M22).  One hash per node where a chain of
 # comparisons used to walk past fifty operators to reach `ref`.
 _HANDLERS = {
+    LIT_TEXT: _op_LIT_TEXT,
+    TEXT_LEN: _op_TEXT_LEN, TEXT_CAT: _op_TEXT_CAT, TEXT_SLICE: _op_TEXT_SLICE,
+    TEXT_FIND: _op_TEXT_FIND, TEXT_SPLIT: _op_TEXT_SPLIT, TEXT_JOIN: _op_TEXT_JOIN,
+    TEXT_CHARS: _op_TEXT_CHARS, TEXT_OF_CHARS: _op_TEXT_OF_CHARS, TEXT_CMP: _op_TEXT_CMP,
+    TEXT_INT: _op_TEXT_INT, INT_TEXT: _op_INT_TEXT, IS_TEXT: _op_IS_TEXT, TEXT_TRIM: _op_TEXT_TRIM,
     LIT_INT: _op_LIT_INT,
     IDENTITY: _op_IDENTITY,
     MERGE: _op_MERGE,

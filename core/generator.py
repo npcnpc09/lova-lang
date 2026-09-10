@@ -29,7 +29,7 @@ from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 from core.tokens import (
     APPLY, END, IF_SURPRISE, LAMBDA, LET, LIT_INT, REF,
     RESULT_FOLLOWS_OPERANDS, RESULT_NOT_STATIC, SIGNATURES, TYPED_TOKENS,
-    WHEN_ANOMALY, CAPABILITY_OF, EXTERNAL_BOUNDARY,
+    WHEN_ANOMALY, CAPABILITY_OF, EXTERNAL_BOUNDARY, LIT_TEXT, TEXT_FAMILY,
 )
 from core.types import INT, LITERAL_INT, Type
 
@@ -183,7 +183,7 @@ class GenState:
 
     # ---- valid next ------------------------------------------------------
 
-    def valid_next(self) -> FrozenSet[int]:
+    def valid_next(self, generate: bool = True) -> FrozenSet[int]:
         """The set of token bytes that can validly follow the current prefix.
 
         At any point this is the intersection of:
@@ -192,13 +192,21 @@ class GenState:
         - whose out_type is defined (i.e. Milestone-1-runtime-supported).
 
         If the top slot is a variadic continuation, ``END`` is also valid.
+
+        ``generate=False`` is the *validation* view (M25): it admits the
+        text family and the text literal as well, so a program that
+        uses them validates, while the samplers -- which call this with
+        the default -- do not yet emit them (their distributions, and
+        Exp 16's figures, stay put until text generation is designed).
         """
         if not self.stack:
             return frozenset()  # program complete
         slot = self.stack[-1]
         valid: Set[int] = set()
-        from core.types import LITERAL_INT, is_subtype
-        for tok in TYPED_TOKENS:
+        from core.types import LITERAL_INT, TEXT, is_subtype
+        if not generate and slot.role not in ("binder", "ref-name", "caps")                 and is_subtype(TEXT, slot.expected_type):
+            valid.add(LIT_TEXT)
+        for tok in TYPED_TOKENS if generate else (TYPED_TOKENS | TEXT_FAMILY):
             sig = SIGNATURES[tok]
             out_type = sig.get("out_type")
             if out_type is None:
@@ -243,7 +251,7 @@ class GenState:
         Raises ``ValueError`` if ``token`` is not in ``self.valid_next()``,
         or if a ref names something not in scope.
         """
-        valid = self.valid_next()
+        valid = self.valid_next(generate=False)
         if token not in valid:
             raise ValueError(
                 f"token 0x{token:02X} not in valid_next {sorted(valid)}"
@@ -498,7 +506,7 @@ def is_certain(state: "GenState", token: int) -> bool:
     name of *known*, compatible type exists.  False for the transparent
     operators, whose result is whatever their operands turn out to be.
     """
-    if token == END or token == LIT_INT:
+    if token == END or token == LIT_INT or token == LIT_TEXT:
         return True
     if token == REF:
         if not state.stack or not state.track_scope:
@@ -680,6 +688,8 @@ def _apply_node(state: GenState, node) -> GenState:
     # uses only where the literal is a name (M16).
     if node.op == LIT_INT:
         return state.step(node.op, int(node.args[0]))
+    if node.op == LIT_TEXT:
+        return state.step(node.op)
     state = state.step(node.op)
     # Walk the operator's children.
     for child in node.args:

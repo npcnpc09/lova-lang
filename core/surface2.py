@@ -57,7 +57,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
-from core.tokens import END, LIT_INT, Node, REF, SIGNATURES
+from core.tokens import END, LIT_INT, LIT_TEXT, Node, REF, SIGNATURES
 
 
 # --- the symbol table --------------------------------------------------------
@@ -122,10 +122,20 @@ SYMBOLS: Dict[int, str] = {
     # Meta / lineage 0x38-0x3F (all reserved)
     0x38: "i", 0x39: "j", 0x3A: "k", 0x3B: "l",
     0x3C: "m", 0x3D: "n", 0x3E: "o", 0x3F: "q",
+    # Text 0x40-0x4D (M25).  0x40 is the text literal, printed as a
+    # quoted string and never by its symbol.
+    0x40: "'", 0x41: "[", 0x42: "]", 0x43: "{", 0x44: "}", 0x45: "`",
+    0x46: "~", 0x47: "(", 0x48: ")", 0x49: "|", 0x4A: "<", 0x4B: ">",
+    0x4C: "?", 0x4D: "!",
 }
 
-assert len(SYMBOLS) == 64, f"symbol table must cover 64 bytes, has {len(SYMBOLS)}"
-assert len(set(SYMBOLS.values())) == 64, "symbols must be distinct"
+# The text family (M25) takes one Greek capital per byte: printable ASCII
+# has eight characters left after the core table, the reference digram
+# and the literal characters, and the family needs fourteen.
+for _tok, _sym in zip(sorted(t for t in SYMBOLS if t >= 0x40), "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞ"):
+    SYMBOLS[_tok] = _sym
+assert len(SYMBOLS) == len(SIGNATURES), f"symbol table must cover every token, has {len(SYMBOLS)}"
+assert len(set(SYMBOLS.values())) == len(SYMBOLS), "symbols must be distinct"
 assert not (set(SYMBOLS.values()) & set("0123456789-")), \
     "digits and '-' are reserved for literals"
 
@@ -195,6 +205,10 @@ def _render_into(node: Node, parts: List[str], pack_refs: bool = True) -> None:
             parts.append(" ")
         parts.append(text)
         return
+    if node.op == LIT_TEXT:
+        from core.surface import quote_text
+        parts.append(quote_text(node.args[0]))     # self-delimiting
+        return
     parts.append(SYMBOLS[node.op])
     sig = SIGNATURES[node.op]
     for child in node.args:
@@ -232,6 +246,21 @@ def _parse_one(text: str, pos: int) -> Tuple[Node, int]:
         if end == pos + 1 and char == "-":
             raise ValueError(f"bare '-' at {pos}")
         return Node(op=LIT_INT, args=[int(text[pos:end])]), end
+
+    if char == '"':
+        end = pos + 1
+        buf: List[str] = []
+        while end < len(text) and text[end] != '"':
+            if text[end] == chr(92) and end + 1 < len(text):
+                esc = text[end + 1]
+                buf.append({"n": chr(10), "t": chr(9), "r": chr(13)}.get(esc, esc))
+                end += 2
+                continue
+            buf.append(text[end])
+            end += 1
+        if end >= len(text):
+            raise ValueError(f"unterminated text literal at {pos}")
+        return Node(op=LIT_TEXT, args=["".join(buf)]), end + 1
 
     if char in REF_INDEX_FOR_SYMBOL:
         index = REF_INDEX_FOR_SYMBOL[char]
@@ -312,7 +341,7 @@ def _self_test() -> None:
         round_trip(tree, pack_refs=True)
 
     # The projection is total over the table, including reserved slots.
-    assert len(SYMBOLS) == 64 and len(TOKEN_FOR_SYMBOL) == 64
+    assert len(SYMBOLS) == len(SIGNATURES) and len(TOKEN_FOR_SYMBOL) == len(SIGNATURES)
 
     example = parse1("(defn square [n] (mul n n))(square 7)")
     print()

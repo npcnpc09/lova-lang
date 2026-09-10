@@ -151,6 +151,9 @@ def format_value(value: Any) -> str:
     plausible codepoint — a string is a list of codepoints, so the
     reader deserves to be told which one they are looking at.
     """
+    if isinstance(value, str):
+        from core.surface import quote_text
+        return quote_text(value)
     if is_population_value(value):
         return (f"#<population n={len(value.variants)} "
                 f"gen={value.generation}>")

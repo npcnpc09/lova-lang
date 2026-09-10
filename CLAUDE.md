@@ -425,7 +425,7 @@ experiment details.
 | 5. Lineage intrinsic | ✅ in the language (M14) | 04; `uid`/`why`/`lineage-query` are operators |
 | 6. Populations over individuals | ✅ in the language (M15) | 05 from Python, 15 from inside; the Evolution family is 8/8 |
 | 7. Surprise as debugger | ✅ | 01 + 06 (structured anomaly) |
-| 8. Small core, dense tokens | ✅ | 64 tokens × 1 byte |
+| 8. Small core, dense tokens | preference since 2026-09-10 | 64 core tokens + a text family of 14 (M25), 1 byte each |
 | 9. No PnL objective | ✅ | design decision |
 | 10. Stage-coherent | ✅ | text ↔ integer lossless |
 
@@ -502,6 +502,17 @@ experiment details.
   work. Related: four runtime arithmetic sites trusted their slot type
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
+
+**M25** made text a value. A text family at 0x40-0x4D -- the first
+tokens past the 64 -- with a text literal and thirteen operators
+(`text-len` `text-cat` `text-slice` `text-find` `text-split`
+`text-join` `text-chars` `text-of-chars` `text-cmp` `text-int`
+`int-text` `text?` `text-trim`); every list operator reads a text as
+its codepoints, so programs written against the list form run
+unchanged; the prelude's text functions are one operator each; IO
+yields texts. Word count, 10 000 lines: **28 s → 5.5 s on CPython**.
+The validator admits the family, the samplers do not yet emit it.
+78 tokens; `spec/tokens.md` regenerated. Q85 closed.
 
 **M24** made a fault say where and a fix a patch. Every node parsed
 from text carries its source span; compile errors and every run-time
@@ -683,8 +694,10 @@ proved the token table could not beat) and on LOVABench 2.00× →
 **5.38×** vs sympy-Python. Exp 11's Stage-2 *projection* understated
 density by 70%; node count is a poor proxy in both directions.
 
-**63 / 64 operators runtime-implemented**; the table is full (the
-64th is `END`), and the reserve position is the number-theory family (see the slot-budget note above). See
+**63 / 64 core operators runtime-implemented** (the 64th is `END`),
+plus the text family 0x40-0x4D since M25: 78 tokens in all. The
+64-slot ceiling is a design preference since the ruling of
+2026-09-10; a new family is added when the four numbers call for it. See
 `spec/tokens.md` for the complete table (generated) and
 `spec/token-budget.md` for the ledger.
 

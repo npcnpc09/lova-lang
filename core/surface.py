@@ -44,7 +44,7 @@ from core.tokens import (
     ALIASES, APPLY, CONS, DEVIATION, IF_SURPRISE, LAMBDA, LET, LIT_INT,
     MERGE, MUL, NIL, Node, REF, SIGNATURES, SURFACE_ALIASES, SURPRISE,
     THRESHOLD, WHEN_ANOMALY, NAME_TO_TOKEN, Lit,
-    CAPABILITY_BITS, EXTERNAL_BOUNDARY, MAP_PUT, MAP_GET, SIGNAL,
+    CAPABILITY_BITS, EXTERNAL_BOUNDARY, MAP_PUT, MAP_GET, SIGNAL, LIT_TEXT,
 )
 
 
@@ -381,8 +381,17 @@ def _macro_list(args: List[Node], syms: "SymbolTable") -> Node:
     return _cons_chain(args)
 
 
+def text_literal(text: str) -> Node:
+    """``"abc"`` -> a text literal (M25, Q85): one node, one value."""
+    return Node(op=LIT_TEXT, args=[text])
+
+
 def string_to_nodes(text: str) -> Node:
     """``"abc"`` -> the codepoint list ``(cons 97 (cons 98 (cons 99 (nil))))``.
+
+    The form every string literal took from M10 to M24.  Kept for the
+    programs and tests that build the list on purpose; the parser now
+    reads a literal as `text_literal`.
 
     A string is not a type in LOVA; it is a list of integers.  That is
     why the token table spends no slots on strings: once a cons cell
@@ -524,8 +533,8 @@ def _field_name(node: Node, syms: "SymbolTable", macro: str) -> Node:
     if node.op == REF and node.args and node.args[0].op == LIT_INT:
         name = syms.name_of(int(node.args[0].args[0]))
         if name is not None:
-            return string_to_nodes(name)
-    if node.op in (CONS, NIL):
+            return text_literal(name)
+    if node.op in (CONS, NIL, LIT_TEXT):
         return node                       # already text
     raise ValueError(f"{macro}: a field is a bare name or a string, not {node!r}")
 
@@ -570,6 +579,8 @@ def _macro_put(args, syms):
 # zero slots.
 def _text_of_chain(node: Node) -> Optional[str]:
     """The text a cons chain of codepoint literals spells, else None."""
+    if node.op == LIT_TEXT:
+        return node.args[0]              # a text literal (M25)
     out = []
     while node.op == CONS and len(node.args) == 2:
         head, node = node.args
@@ -696,7 +707,7 @@ def _parse_expr(
             f"unexpected {t!r} -- brackets appear only in a defn parameter list"
         )
     if t.startswith('"'):
-        return _spanned(string_to_nodes(t[1:-1]), tokens, pos, pos + 1), pos + 1
+        return _spanned(text_literal(t[1:-1]), tokens, pos, pos + 1), pos + 1
     # bare atom: an integer literal, or a reference to a bound name.
     try:
         n = int(t, 0)  # accepts decimal, 0x hex, 0b bin
@@ -862,6 +873,8 @@ _UNICODE_REVERSE = {v: k for k, v in ALIASES.items()}
 def _pretty(node: Node, unicode: bool) -> str:
     if node.op == LIT_INT:
         return str(node.args[0])
+    if node.op == LIT_TEXT:
+        return quote_text(node.args[0])
     name = SIGNATURES[node.op]["name"]
     if unicode and name in _UNICODE_REVERSE:
         name = _UNICODE_REVERSE[name]
@@ -869,6 +882,13 @@ def _pretty(node: Node, unicode: bool) -> str:
         return f"({name})"
     children = " ".join(_pretty(c, unicode) for c in node.args)
     return f"({name} {children})"
+
+
+def quote_text(text: str) -> str:
+    """A text as the literal the parser reads back: quoted, escaped."""
+    out = text.replace(chr(92), chr(92) * 2).replace('"', chr(92) + '"')
+    out = out.replace(chr(10), chr(92) + "n").replace(chr(9), chr(92) + "t").replace(chr(13), chr(92) + "r")
+    return '"' + out + '"'
 
 
 # --- round-trip helper -------------------------------------------------------

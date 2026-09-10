@@ -39,6 +39,7 @@ FAMILIES = [
     ("Composition", 0x28, 0x2F),
     ("Effects / IO", 0x30, 0x37),
     ("Meta / lineage", 0x38, 0x3F),
+    ("Text", 0x40, 0x4D),
 ]
 
 
@@ -49,7 +50,8 @@ def _implemented() -> set:
     ``_TYPE_INFO`` exactly when the runtime learned to evaluate it, and
     that same set is what type-directed generation may emit.
     """
-    return set(TYPED_TOKENS)
+    from core.tokens import LIT_TEXT, TEXT_FAMILY
+    return set(TYPED_TOKENS) | set(TEXT_FAMILY) | {LIT_TEXT}    # the text family is typed but not generated (M25)
 
 
 def _in_types(sig: dict) -> str:
@@ -99,7 +101,9 @@ def render() -> str:
         "",
         "## Overview",
         "",
-        "LOVA's core is exactly **64 operators**, one byte each.",
+        "LOVA's core is **64 operators**, one byte each, and since M25 a",
+        "**text family of 14** at 0x40-0x4D (Q85; Axiom 8's ceiling was",
+        "demoted to a preference on 2026-09-10).",
         "Tokens are grouped into 8 families of 8 operators.  Arguments",
         "follow each operator as typed-slot tokens; types are positional,",
         "not annotated.  See `spec/paradigm-inheritance.md` for the",
@@ -108,7 +112,7 @@ def render() -> str:
         "",
         "Legend:",
         f"- **impl**: the runtime (`core.runtime`) evaluates this operator.",
-        f"  {n_impl} of the 64 tokens are implemented.",
+        f"  {n_impl} of the {len(SIGNATURES)} tokens are implemented.",
         "- **Reserved**: the operator has a declared slot but no runtime",
         "  support.  Evaluating one raises `NotImplementedError`, and it is",
         "  excluded from type-directed generation (`TYPED_TOKENS`).",
@@ -245,7 +249,7 @@ def render() -> str:
         "  and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`",
         "  (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and",
         "  `Value` types added; this file made genuinely generated.",
-        f"  {n_impl}/64 operators implemented.",
+        f"  {n_impl}/{len(SIGNATURES)} operators implemented.",
         "",
     ]
     return "\n".join(parts)
@@ -256,7 +260,7 @@ def main() -> None:
     with open(OUT_PATH, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(text)
     print(f"wrote {OUT_PATH}  ({len(text.splitlines())} lines, "
-          f"{len(_implemented())}/64 operators implemented)")
+          f"{len(_implemented())}/{len(SIGNATURES)} operators implemented)")
 
 
 if __name__ == "__main__":

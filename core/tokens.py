@@ -99,6 +99,27 @@ UID             = 0x3D
 ANCESTOR_OF     = 0x3E
 GENERATION      = 0x3F
 
+# Family 0x40-0x4F  Text (M25, Q85).  The first family past 0x3F: the
+# 64-slot ceiling was Axiom 8's, demoted to a preference on 2026-09-10
+# because every text program was paying twenty nodes a character for
+# the representation.  A text is a value of its own -- a Python str in
+# the reference runtime -- and these operators work on it natively.
+# Where an operator says Value it accepts a text or a codepoint list.
+LIT_TEXT        = 0x40   # a text literal (2-byte length, UTF-8 payload)
+TEXT_LEN        = 0x41   # (text-len v) -- characters, or elements of a list
+TEXT_CAT        = 0x42   # (text-cat a b)
+TEXT_SLICE      = 0x43   # (text-slice t start end)
+TEXT_FIND       = 0x44   # (text-find t needle) -- index, or -1
+TEXT_SPLIT      = 0x45   # (text-split t sep) -- "" splits on whitespace runs
+TEXT_JOIN       = 0x46   # (text-join parts sep)
+TEXT_CHARS      = 0x47   # (text-chars t) -- the codepoint list
+TEXT_OF_CHARS   = 0x48   # (text-of-chars xs)
+TEXT_CMP        = 0x49   # (text-cmp a b) -- -1, 0, 1; lists compare element-wise
+TEXT_INT        = 0x4A   # (text-int t) -- decimal text to integer, or signal 16
+INT_TEXT        = 0x4B   # (int-text n)
+IS_TEXT         = 0x4C   # (text? v)
+TEXT_TRIM       = 0x4D   # (text-trim t)
+
 
 # --- signatures (arity + semantic family for the decoder) -------------------
 
@@ -115,6 +136,22 @@ SIGNATURES = {
     HEAD:         {"name": "head",          "arity": 1, "family": "struct"},
     TAIL:         {"name": "tail",          "arity": 1, "family": "struct"},
     IDENTITY:     {"name": "identity",      "arity": 1, "family": "struct"},
+    # Text (M25)
+    LIT_TEXT:     {"name": "text",          "arity": 0, "family": "text",
+                   "payload": "text"},
+    TEXT_LEN:     {"name": "text-len",      "arity": 1, "family": "text"},
+    TEXT_CAT:     {"name": "text-cat",      "arity": 2, "family": "text"},
+    TEXT_SLICE:   {"name": "text-slice",    "arity": 3, "family": "text"},
+    TEXT_FIND:    {"name": "text-find",     "arity": 2, "family": "text"},
+    TEXT_SPLIT:   {"name": "text-split",    "arity": 2, "family": "text"},
+    TEXT_JOIN:    {"name": "text-join",     "arity": 2, "family": "text"},
+    TEXT_CHARS:   {"name": "text-chars",    "arity": 1, "family": "text"},
+    TEXT_OF_CHARS: {"name": "text-of-chars", "arity": 1, "family": "text"},
+    TEXT_CMP:     {"name": "text-cmp",      "arity": 2, "family": "text"},
+    TEXT_INT:     {"name": "text-int",      "arity": 1, "family": "text"},
+    INT_TEXT:     {"name": "int-text",      "arity": 1, "family": "text"},
+    IS_TEXT:      {"name": "text?",         "arity": 1, "family": "text"},
+    TEXT_TRIM:    {"name": "text-trim",     "arity": 1, "family": "text"},
     # Number theory
     P:            {"name": "p",             "arity": 1, "family": "nt"},
     TAU:          {"name": "tau",           "arity": 1, "family": "nt"},
@@ -180,7 +217,9 @@ SIGNATURES = {
     GENERATION:   {"name": "generation",    "arity": 1, "family": "meta"},
 }
 
-assert len(SIGNATURES) == 64, f"Token table must have exactly 64 entries, found {len(SIGNATURES)}"
+CORE_TOKENS = 64          # the original table, 0x00-0x3F
+TEXT_TOKENS = 14          # the Text family, 0x40-0x4D (M25)
+assert len(SIGNATURES) == CORE_TOKENS + TEXT_TOKENS,     f"Token table must have exactly {CORE_TOKENS + TEXT_TOKENS} entries, found {len(SIGNATURES)}"
 
 
 # --- typed-slot extensions (Milestone 2) ------------------------------------
@@ -190,7 +229,7 @@ assert len(SIGNATURES) == 64, f"Token table must have exactly 64 entries, found 
 # treats them as unreachable and never emits them.  As milestones land,
 # operators get type info here and become generation-reachable.
 
-from core.types import MAP, FN, INT, LIST, LITERAL_INT, POPULATION, PROGRAM, VALUE  # noqa: E402
+from core.types import MAP, FN, INT, LIST, LITERAL_INT, POPULATION, PROGRAM, VALUE, TEXT  # noqa: E402
 
 _TYPE_INFO = {
     # Literals
@@ -393,6 +432,32 @@ for _tok, _extra in _TYPE_INFO.items():
 # Tokens currently reachable by type-directed generation.
 TYPED_TOKENS = frozenset(_TYPE_INFO.keys())
 
+# The text family is typed for the compiler but kept out of generation
+# for now (M25): the generator's samplers and Exp 16's figures would
+# move, and a text slot needs a literal the samplers cannot yet make.
+_TEXT_TYPE_INFO = {
+    LIT_TEXT:      {"in_types": [], "out_type": TEXT},
+    TEXT_LEN:      {"in_types": [VALUE], "out_type": INT},
+    TEXT_CAT:      {"in_types": [VALUE, VALUE], "out_type": TEXT},
+    TEXT_SLICE:    {"in_types": [VALUE, INT, INT], "out_type": TEXT},
+    TEXT_FIND:     {"in_types": [VALUE, VALUE], "out_type": INT},
+    TEXT_SPLIT:    {"in_types": [VALUE, VALUE], "out_type": LIST},
+    TEXT_JOIN:     {"in_types": [LIST, VALUE], "out_type": TEXT},
+    TEXT_CHARS:    {"in_types": [VALUE], "out_type": LIST},
+    TEXT_OF_CHARS: {"in_types": [VALUE], "out_type": TEXT},
+    TEXT_CMP:      {"in_types": [VALUE, VALUE], "out_type": INT},
+    TEXT_INT:      {"in_types": [VALUE], "out_type": INT},
+    INT_TEXT:      {"in_types": [INT], "out_type": TEXT},
+    IS_TEXT:       {"in_types": [VALUE], "out_type": INT},
+    TEXT_TRIM:     {"in_types": [VALUE], "out_type": TEXT},
+}
+for _tok, _extra in _TEXT_TYPE_INFO.items():
+    SIGNATURES[_tok].update(_extra)
+
+# The text operators, for the validator's view (LIT_TEXT stands apart:
+# it is a literal, admitted by type like the integer literal is).
+TEXT_FAMILY = frozenset(t for t in _TEXT_TYPE_INFO if t != LIT_TEXT)
+
 # Operators whose result type is their operands' rather than their own.
 #
 # ``(if c a b)`` is whatever its branches are, ``(let n v body)``
@@ -505,6 +570,8 @@ class Node:
     def __repr__(self) -> str:
         if self.op == LIT_INT:
             return f"Lit({self.args[0]})"
+        if self.op == LIT_TEXT:
+            return f"Text({self.args[0]!r})"
         name = SIGNATURES[self.op]["name"]
         return f"({name} {' '.join(repr(a) for a in self.args)})"
 
@@ -526,6 +593,13 @@ def encode(node: Node) -> bytes:
 
 def _encode_into(node: Node, buf: bytearray) -> None:
     buf.append(node.op)
+    if node.op == LIT_TEXT:
+        data = str(node.args[0]).encode("utf-8")
+        if len(data) > 0xFFFF:
+            raise ValueError(f"LIT_TEXT too long: {len(data)} bytes")
+        buf.extend(len(data).to_bytes(2, "big"))
+        buf.extend(data)
+        return
     if node.op == LIT_INT:
         val: int = node.args[0]
         # How many bytes needed?  ``bit_length`` + sign bit.
@@ -577,6 +651,14 @@ def _decode_one(data: bytes, pos: int) -> Tuple[Node, int]:
             raise ValueError("LIT_INT: truncated payload")
         val = int.from_bytes(data[pos + 2 : pos + 2 + length], "big", signed=True)
         return Node(op=LIT_INT, args=[val]), pos + 2 + length
+    if op == LIT_TEXT:
+        if pos + 3 > len(data):
+            raise ValueError("LIT_TEXT: missing length")
+        length = int.from_bytes(data[pos + 1 : pos + 3], "big")
+        if pos + 3 + length > len(data):
+            raise ValueError("LIT_TEXT: truncated payload")
+        text = data[pos + 3 : pos + 3 + length].decode("utf-8")
+        return Node(op=LIT_TEXT, args=[text]), pos + 3 + length
     sig = SIGNATURES[op]
     pos += 1
     children: List[Any] = []

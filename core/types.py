@@ -146,6 +146,11 @@ This is that value.  ``defpop`` builds one from a scorer and any number
 of programs; ``evolve`` returns the next generation; ``select`` ranks.
 """
 
+TEXT = Type("Text")
+"""A text (M25, Q85): a sequence of codepoints as one value.  A subtype
+of ``List`` for the checker, because every list operator accepts a
+text and reads it as its codepoints; the runtime does the coercion."""
+
 MAP = Type("Map")
 """A persistent map from keys to values (M22).
 
@@ -187,6 +192,8 @@ _SUBTYPE_PAIRS = frozenset({
     (PROGRAM, VALUE),
     (POPULATION, VALUE),
     (MAP, VALUE),
+    (TEXT, VALUE),
+    (TEXT, LIST),
 })
 
 

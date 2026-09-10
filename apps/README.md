@@ -345,6 +345,9 @@ What the twelve programs found in M23, and what became of it:
 - **Records** (Q84, closed in M24): `(rec score s move k memo m)`
   and `(get st memo)` replaced the three-element lists
   `tictactoe.lova`'s search used to take apart by position.
+- **Text is a value** (Q85, closed in M25): `words`, `split`, `join`
+  and the rest are one operator each; the word count of 10 000 lines
+  runs in 5.5 s on CPython where it took 28.
 - **Speed.**  Solving the game is eleven million steps: 18 s on
   CPython, 3 s under PyPy.
 - **`hash` is the program's integer, not a digest** (Q80, closed):
