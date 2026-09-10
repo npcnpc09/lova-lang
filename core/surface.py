@@ -44,11 +44,30 @@ from core.tokens import (
     ALIASES, APPLY, CONS, DEVIATION, IF_SURPRISE, LAMBDA, LET, LIT_INT,
     MERGE, MUL, NIL, Node, REF, SIGNATURES, SURFACE_ALIASES, SURPRISE,
     THRESHOLD, WHEN_ANOMALY, NAME_TO_TOKEN, Lit,
-    CAPABILITY_BITS, EXTERNAL_BOUNDARY,
+    CAPABILITY_BITS, EXTERNAL_BOUNDARY, MAP_PUT, MAP_GET, SIGNAL,
 )
 
 
 # --- tokenizer ---------------------------------------------------------------
+
+class Tok(str):
+    """A token that remembers its place in the source (M24).
+
+    A ``str``, so every comparison and table lookup in the parser is
+    unchanged; ``start`` and ``end`` are character offsets into the
+    text that was tokenized.  Spans on nodes are built from them, and
+    a fault reported with a span is what lets an AI patch the one
+    expression at fault instead of re-emitting the program.
+    """
+    __slots__ = ("start", "end")
+
+    @classmethod
+    def at(cls, text: str, start: int, end: int) -> "Tok":
+        tok = cls(text)
+        tok.start = start
+        tok.end = end
+        return tok
+
 
 def _tokenize(src: str) -> List[str]:
     """Split source into atomic text tokens.  Comments are ``;...`` to end of line."""
@@ -63,7 +82,7 @@ def _tokenize(src: str) -> List[str]:
                 i += 1
             continue
         if c in "()[]":
-            out.append(c); i += 1; continue
+            out.append(Tok.at(c, i, i + 1)); i += 1; continue
         if c == '"':
             # A string literal.  Kept quoted in the token stream so the
             # parser can tell `"1"` from `1`.
@@ -81,16 +100,37 @@ def _tokenize(src: str) -> List[str]:
             if j >= len(src):
                 raise ValueError("unterminated string literal")
             buf.append('"')
-            out.append("".join(buf))
+            out.append(Tok.at("".join(buf), i, j + 1))
             i = j + 1
             continue
         # atom (identifier or integer literal)
         j = i
         while j < len(src) and not src[j].isspace() and src[j] not in "();[]":
             j += 1
-        out.append(src[i:j])
+        out.append(Tok.at(src[i:j], i, j))
         i = j
     return out
+
+
+def _spanned(node: Node, tokens: List[str], pos: int, after: int) -> Node:
+    """Give ``node`` the span from token ``pos`` to the token before ``after``."""
+    first, last = tokens[pos], tokens[after - 1]
+    start, end = getattr(first, "start", None), getattr(last, "end", None)
+    if start is not None and end is not None:
+        node.span = (start, end)
+    return node
+
+
+def span_of(node: Any) -> Optional[Tuple[int, int]]:
+    """The (start, end) offsets a node came from, if it came from text."""
+    return getattr(node, "span", None)
+
+
+def line_col(source: str, offset: int) -> Tuple[int, int]:
+    """1-based line and column of an offset in ``source``."""
+    line = source.count(chr(10), 0, offset) + 1
+    col = offset - (source.rfind(chr(10), 0, offset) + 1) + 1
+    return line, col
 
 
 # --- symbol interning --------------------------------------------------------
@@ -231,6 +271,8 @@ def _wrap(definitions: List[Tuple[int, Node]], body: Optional[Node],
         )
     for name_id, fn_node in reversed(definitions):
         body = Node(op=LET, args=[Lit(name_id), fn_node, body])
+        if span_of(fn_node) is not None:
+            body.span = fn_node.span          # the def form
     # The names, for whoever reports an error about one (M23, Q79).
     # The integer is the program; the spelling is a courtesy.
     body.symbols = syms
@@ -280,7 +322,7 @@ def _parse_defn(
     # Curry: (defn f [a b] body) is (lambda a (lambda b body)).
     fn = body
     for param in reversed(params):
-        fn = Node(op=LAMBDA, args=[Lit(param), fn])
+        fn = _spanned(Node(op=LAMBDA, args=[Lit(param), fn]), tokens, pos, cursor)
     return name_id, fn, cursor
 
 
@@ -470,6 +512,54 @@ def _macro_cond(args, syms):
     return result
 
 
+def _field_name(node: Node, syms: "SymbolTable", macro: str) -> Node:
+    """A field written as a bare identifier, as the text of its name.
+
+    ``(get r memo)`` names the field ``memo``; the parser has already
+    read ``memo`` as a reference, so the name is recovered from the
+    symbol table and becomes the string key ``"memo"``.  A string
+    literal is accepted as it is, so a computed field name can be
+    written ``(get r "memo")`` too.
+    """
+    if node.op == REF and node.args and node.args[0].op == LIT_INT:
+        name = syms.name_of(int(node.args[0].args[0]))
+        if name is not None:
+            return string_to_nodes(name)
+    if node.op in (CONS, NIL):
+        return node                       # already text
+    raise ValueError(f"{macro}: a field is a bare name or a string, not {node!r}")
+
+
+def _macro_rec(args, syms):
+    """``(rec x 1 y 2)`` -- a record: a map from field names to values.
+
+    Named fields where a list would be taken apart by position (Q84):
+    a fold that threads three things carries ``(rec best 0 move -1
+    memo m)`` and reads ``(get st memo)`` instead of ``(nth st 2)``.
+    A record is a map, so `map-pairs`, `map-size` and `map-put` work
+    on it, and a program that already had maps has records.
+    """
+    if len(args) % 2:
+        raise ValueError(f"rec: expects field/value pairs, got {len(args)} arguments")
+    out: Node = Node(op=NIL, args=[])
+    for i in range(0, len(args), 2):
+        out = Node(op=MAP_PUT, args=[out, _field_name(args[i], syms, "rec"), args[i + 1]])
+    return out
+
+
+def _macro_get(args, syms):
+    """``(get r x)`` -- the field, or a `missing-field` signal (code 17)."""
+    record, field = args
+    missing = Node(op=SIGNAL, args=[Lit(17)])
+    return Node(op=MAP_GET, args=[record, _field_name(field, syms, "get"), missing])
+
+
+def _macro_put(args, syms):
+    """``(put r x v)`` -- the record with field ``x`` set to ``v``."""
+    record, field, value = args
+    return Node(op=MAP_PUT, args=[record, _field_name(field, syms, "put"), value])
+
+
 # name -> (arity, expander).  Arity ``None`` means variadic.  Arity is
 # checked before expansion so the error message names the macro rather
 # than the operator it expands to.
@@ -534,6 +624,9 @@ MACROS = {
     "cond": (None, _macro_cond),
     "try": (2, _macro_try),
     "list": (None, _macro_list),
+    "rec": (None, _macro_rec),
+    "get": (2, _macro_get),
+    "put": (3, _macro_put),
     "boundary": (2, _macro_boundary),
 }
 
@@ -566,7 +659,7 @@ def _parse_expr(
                 raise ValueError(
                     f"{op_name}: expects {arity} args, got {len(macro_args)}"
                 )
-            return expand(macro_args, syms), cursor
+            return _spanned(expand(macro_args, syms), tokens, pos, cursor), cursor
         if op_name not in NAME_TO_TOKEN:
             # Call sugar: an unknown head is a call of a bound name.
             #   (square 5)  ->  (apply (ref square) 5)
@@ -577,8 +670,8 @@ def _parse_expr(
                 raise ValueError(f"unknown operator: {op_sym!r}")
             name_id = syms.intern(op_sym)
             call_args, cursor = _parse_args(tokens, pos + 2, syms)
-            head = Node(op=REF, args=[Lit(name_id)])
-            return Node(op=APPLY, args=[head] + call_args), cursor
+            head = _spanned(Node(op=REF, args=[Lit(name_id)]), tokens, pos + 1, pos + 2)
+            return _spanned(Node(op=APPLY, args=[head] + call_args), tokens, pos, cursor), cursor
         op_tok = NAME_TO_TOKEN[op_name]
         cursor = pos + 2
         args: List[Node] = []
@@ -595,7 +688,7 @@ def _parse_expr(
             raise ValueError(
                 f"{op_name}: expects {sig['arity']} args, got {len(args)}"
             )
-        return Node(op=op_tok, args=args), cursor
+        return _spanned(Node(op=op_tok, args=args), tokens, pos, cursor), cursor
     if t == ")":
         raise ValueError(f"unexpected closing paren at token {pos}")
     if t in ("[", "]"):
@@ -603,15 +696,15 @@ def _parse_expr(
             f"unexpected {t!r} -- brackets appear only in a defn parameter list"
         )
     if t.startswith('"'):
-        return string_to_nodes(t[1:-1]), pos + 1
+        return _spanned(string_to_nodes(t[1:-1]), tokens, pos, pos + 1), pos + 1
     # bare atom: an integer literal, or a reference to a bound name.
     try:
         n = int(t, 0)  # accepts decimal, 0x hex, 0b bin
     except ValueError:
         if _is_identifier(t):
-            return Node(op=REF, args=[Lit(syms.intern(t))]), pos + 1
+            return _spanned(Node(op=REF, args=[Lit(syms.intern(t))]), tokens, pos, pos + 1), pos + 1
         raise ValueError(f"bare atom must be an integer literal: {t!r}")
-    return Lit(n), pos + 1
+    return _spanned(Lit(n), tokens, pos, pos + 1), pos + 1
 
 
 def _parse_args(

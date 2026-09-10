@@ -116,6 +116,25 @@ TOOLS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "lova_patch",
+        "description": (
+            "Replace one span of a LOVA source and report whether the result "
+            "compiles. An anomaly from lova_execute carries `span` as [start, "
+            "end] character offsets and `excerpt`, the text there: patch that "
+            "span with the fix and run again. Returns the patched source."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                **_SOURCE_PROPS,
+                "span": {"type": "array", "items": {"type": "integer"},
+                         "description": "[start, end] offsets into `source`, as an anomaly reports them"},
+                "replacement": {"type": "string", "description": "the text to put there"},
+            },
+            "required": ["source", "span", "replacement"],
+        },
+    },
+    {
         "name": "lova_static_analyze",
         "description": (
             "Compile a LOVA program without running it. Returns the static "
@@ -189,17 +208,35 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
-def _failure(stage: str, exc: Exception) -> Dict[str, Any]:
+def _failure(stage: str, exc: Exception, source: Optional[str] = None) -> Dict[str, Any]:
     anomaly = getattr(exc, "anomaly", None)
     if anomaly is None:
         anomaly = {"kind": "error", "message": str(exc)}
-    return {"ok": False, "stage": stage, "anomaly": _jsonable(anomaly)}
+    anomaly = _jsonable(anomaly)
+    # M24: the span as offsets into the source the caller sent, and the
+    # text there, so the caller can patch that expression and nothing else.
+    if source is not None and isinstance(anomaly, dict) and anomaly.get("span"):
+        start, end = anomaly["span"]
+        anomaly["excerpt"] = source[start:end]
+        from core.surface import line_col
+        anomaly["line"], anomaly["col"] = line_col(source, start)
+    return {"ok": False, "stage": stage, "anomaly": anomaly}
 
 
 def _build(params: Dict[str, Any]):
-    source = substitute(params["source"], [str(a) for a in params.get("args", [])])
+    source = _source(params)
     return build(source, prelude=params.get("prelude", True),
                  stage2=params.get("stage2", False))
+
+
+def _source(params: Dict[str, Any]) -> str:
+    """The source as it will be parsed: placeholders filled.
+
+    Spans in an anomaly are offsets into *this* text, which differs
+    from what the caller sent only where a placeholder was longer or
+    shorter than its value; ``lova_patch`` takes the same text.
+    """
+    return substitute(params["source"], [str(a) for a in params.get("args", [])])
 
 
 def _value_fields(value: Any) -> Dict[str, Any]:
@@ -219,9 +256,10 @@ def _value_fields(value: Any) -> Dict[str, Any]:
 
 def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
+        source = _source(params)
         tree, _report = _build(params)
     except (CompileError, ValueError, SystemExit) as exc:
-        return _failure("compile", exc)
+        return _failure("compile", exc, params.get("source"))
     allow = [str(a) for a in params.get("allow", [])]
     try:
         granted = parse_allow(allow)
@@ -238,7 +276,7 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
         value = evaluate(tree, runtime)
     except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError) as exc:
-        result = _failure("run", exc)
+        result = _failure("run", exc, source)
         result["output"] = runtime.written()
         result["steps"] = runtime.steps
         return result
@@ -252,11 +290,45 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def tool_patch(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Replace one span of the source and say whether the result compiles.
+
+    The loop an AI runs: execute, read the anomaly's span, patch that
+    span, execute again.  A patch costs the size of the fix, not the
+    size of the program (spec/ai-convenience.md, section 4).
+    """
+    source = str(params["source"])
+    span = params.get("span")
+    if span is None:
+        span = [params.get("start"), params.get("end")]
+    try:
+        start, end = int(span[0]), int(span[1])
+    except (TypeError, ValueError, IndexError):
+        return {"ok": False, "stage": "patch",
+                "anomaly": {"kind": "error", "message": "span must be [start, end] offsets"}}
+    if not 0 <= start <= end <= len(source):
+        return {"ok": False, "stage": "patch",
+                "anomaly": {"kind": "error",
+                            "message": f"span [{start}, {end}] is outside the source (length {len(source)})"}}
+    replacement = str(params.get("replacement", ""))
+    patched = source[:start] + replacement + source[end:]
+    result: Dict[str, Any] = {"ok": True, "source": patched,
+                              "replaced": source[start:end],
+                              "span": [start, start + len(replacement)]}
+    try:
+        _build({**params, "source": patched})
+    except (CompileError, ValueError, SystemExit) as exc:
+        failure = _failure("compile", exc, patched)
+        failure["source"] = patched
+        return failure
+    return result
+
+
 def tool_static_analyze(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
         tree, report = _build(params)
     except (CompileError, ValueError, SystemExit) as exc:
-        return _failure("compile", exc)
+        return _failure("compile", exc, params.get("source"))
     analysis = static_analyze(tree)
     data = encode(tree)
     return {
@@ -355,6 +427,7 @@ def tool_emit(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
+    "lova_patch": tool_patch,
     "lova_execute": tool_execute,
     "lova_static_analyze": tool_static_analyze,
     "lova_valid_next": tool_valid_next,

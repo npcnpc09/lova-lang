@@ -306,6 +306,43 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Milestone 24 (2026-09-10) — A fault says where; a fix is a patch; a record has names
+The first work under the one goal (`spec/ai-convenience.md`), aimed
+at the two largest costs the yardstick names: re-emitting a program to
+fix one expression, and taking state apart by position.
+
+**Spans.** Every node parsed from text carries its (start, end)
+offsets: the tokenizer's tokens are a `str` subclass that remembers
+where it came from, and every form, atom, macro expansion and call
+takes the span of the text it was read from. The prelude's copies
+have none, so a fault inside a library function reports the *call*
+that reached it -- the expression the author can change. The compiler
+keeps spans through constant folding and drop-unused; a compile error
+carries the span of the offending node; every run-time trap kind is
+now enriched (domain traps included, which until now reported no
+position) with the innermost node that came from the program's text.
+The CLI prints `at: 2:14  (div 10 (sub 3 3))`; the MCP server adds
+`span`, `excerpt`, `line` and `col` to every anomaly.
+
+**`lova_patch`.** The fifth MCP tool: `(source, span, replacement)`
+→ the patched source, compiled to check it, or the anomaly of the
+patch. The loop an AI runs is execute → read the span → patch that
+span → execute: a fix costs the size of the fix. `tests/test_spans.py`
+runs the loop on a division by zero: the anomaly says `(div 10 (sub 3
+3))` at 2:14, the patch replaces eighteen characters, the second run
+returns 8.
+
+**Records (Q84).** `(rec x 1 y 2)`, `(get r x)`, `(put r x v)`: three
+macros over the persistent map with the field's name as a string key,
+zero slots. A missing field is signal 17, catchable. `tictactoe.lova`'s
+search now threads `(rec score s move k memo m)` and reads `(get st
+memo)` where it read `(nth st 2)`; the game's own board setter became
+`place`, since `put` is the macro. 11.07 → 11.45 million steps for the
+first move: named fields cost three percent and remove the least
+readable code in the repository. The language card teaches them.
+
+Tests 727 → 747.
+
 ### The ruling (2026-09-10) — one goal, four numbers
 An outsider's review of the architecture at the end of M23 found that
 the project's goal had been two goals folded together since the first
@@ -1450,7 +1487,9 @@ the corpus grows again.
   the representation. Under the goal: a native text value (one slot,
   or a `Value` kind with no slot), with the list view kept for
   programs that want it?
-- **Q84**: There are no pairs; two results come back as a list and are
+- ~~**Q84**~~: *closed by M24.* `rec` / `get` / `put`, macros over the
+  map with string keys; a missing field is signal 17. The question as
+  raised: there are no pairs; two results come back as a list and are
   taken apart by position, and `tictactoe.lova` threads a three-element
   state through a fold that way -- the least readable code in the
   repository and the kind an AI gets wrong. Under the goal: a pair or a

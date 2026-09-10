@@ -81,17 +81,18 @@ other four.
 
 Consequences, each a change the numbers above would reward:
 
-- **The unit of editing is a path in the tree.** `lova_patch(path,
-  replacement)` beside `lova_execute` in the MCP server: a fix costs
-  the size of the fix, not the size of the file. The anomaly already
-  names the path; the patch closes the loop.
+- **The unit of editing is the span at fault.** *(M24, done.)* Every
+  anomaly carries the source span and text of the expression at
+  fault; `lova_patch(source, span, replacement)` beside `lova_execute`
+  in the MCP server replaces it and checks the result. A fix costs the
+  size of the fix, not the size of the file.
 - **A fault arrives with its fix, and the first fault stops the run.**
   Already the rule; keep it. A cascade of consequent errors is
   context spent for nothing.
 - **Fewer names, and named fields instead of positions.** A record
-  type with named access (Q84); pipeline composition in the library
-  so that intermediate values need no name; a scope the runtime can
-  list on request.
+  with named access *(M24, done: `rec` / `get` / `put`)*; pipeline
+  composition in the library so that intermediate values need no name;
+  a scope the runtime can list on request.
 - **A program carries its examples.** A contract is a set of
   (inputs, expected) pairs the runtime can check at once, stored with
   the program and in its lineage.

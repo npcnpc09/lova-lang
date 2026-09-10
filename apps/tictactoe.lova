@@ -25,7 +25,8 @@
 (def cell [b k] (mod (div b (nth powers k)) 3))
 
 ;; Only ever called on an empty square, so adding is setting.
-(def put [b k v] (merge b (mul v (nth powers k))))
+;; (`put` is the record macro, so the board's setter is `place`.)
+(def place [b k v] (merge b (mul v (nth powers k))))
 
 (def lines [] (list (list 0 1 2) (list 3 4 5) (list 6 7 8)
                     (list 0 3 6) (list 1 4 7) (list 2 5 8)
@@ -50,38 +51,41 @@
 ;; `solve` scores a position for the player about to move: 1 a forced
 ;; win, 0 a draw, -1 a forced loss.  Positions are memoised in a map
 ;; keyed by board and player, and the map is threaded through the
-;; search as a value, because there is no other way: `(list score
-;; memo)` comes back from every call.  The first move searches the
-;; whole game; every later move finds its answers already there.
+;; search as a value: every call returns a record `(rec score s memo
+;; m)`, and the folds below carry `(rec best b move k memo m)` and read
+;; their fields by name (Q84; until M24 this was `(nth st 2)`).  The
+;; first move searches the whole game; every later move finds its
+;; answers already there.
 
 (def memo-key [b p] (merge (mul b 3) p))
 
 (def solve [b p memo]
   (let known (map-get memo (memo-key b p) 5)
     (if (ne known 5)
-      (list known memo)
-      (let r (cond (winner b) (list -1 memo)        ; the other side just won
-                   (full b)   (list 0 memo)
+      (rec score known memo memo)
+      (let r (cond (winner b) (rec score -1 memo memo)   ; the other side just won
+                   (full b)   (rec score 0 memo memo)
                    (best b p memo))
-        (list (head r) (map-put (head (tail r)) (memo-key b p) (head r)))))))
+        (put r memo (map-put (get r memo) (memo-key b p) (get r score)))))))
 
 ;; The best score `p` can reach from `b`, with the memo it built.
 (def best [b p memo]
   (fold (lambda st (lambda k
-          (let r (solve (put b k p) (other p) (head (tail st)))
-            (list (max (head st) (neg (head r))) (head (tail r))))))
-        (list -2 memo)
+          (let r (solve (place b k p) (other p) (get st memo))
+            (rec score (max (get st score) (neg (get r score)))
+                 memo (get r memo)))))
+        (rec score -2 memo memo)
         (empties b)))
 
-;; The square to play: (list score square memo).
+;; The square to play: (rec score s move k memo m).
 (def choose [b p memo]
   (fold (lambda st (lambda k
-          (let r (solve (put b k p) (other p) (nth st 2))
-            (let sc (neg (head r))
-              (if (gt sc (head st))
-                (list sc k (head (tail r)))
-                (list (head st) (nth st 1) (head (tail r))))))))
-        (list -2 -1 memo)
+          (let r (solve (place b k p) (other p) (get st memo))
+            (let sc (neg (get r score))
+              (if (gt sc (get st score))
+                (rec score sc move k memo (get r memo))
+                (put st memo (get r memo)))))))
+        (rec score -2 move -1 memo memo)
         (empties b)))
 
 ;; --- the table ------------------------------------------------------
@@ -123,15 +127,15 @@
        (let k (read-move b)
          (if (lt k 0)
            (seq (println "bye") 0)
-           (let b2 (put b k 1)
+           (let b2 (place b k 1)
              (if (or (winner b2) (full b2))
                (announce b2)
                (let r (choose b2 2 memo)
-                 (let b3 (put b2 (nth r 1) 2)
-                   (seq (println (join (list "the computer plays" (text-of (inc (nth r 1)))) 32))
+                 (let b3 (place b2 (get r move) 2)
+                   (seq (println (join (list "the computer plays" (text-of (inc (get r move)))) 32))
                         (if (or (winner b3) (full b3))
                           (announce b3)
-                          (play b3 (nth r 2))))))))))))
+                          (play b3 (get r memo))))))))))))
 
 (seq (println "you are X and move first; type the number of a square")
      (play {start} (nil)))

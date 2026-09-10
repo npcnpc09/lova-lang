@@ -232,13 +232,28 @@ def parse_net_allow(values: Optional[List[str]]):
     return send_to, listen_on
 
 
-def report_error(exc: Exception) -> int:
+def describe_span(source: str, span) -> str:
+    """``line:col-line:col`` and the text of the span (M24)."""
+    from core.surface import line_col
+    start, end = span
+    l1, c1 = line_col(source, start)
+    l2, c2 = line_col(source, max(start, end - 1))
+    excerpt = source[start:end]
+    if len(excerpt) > 80:
+        excerpt = excerpt[:77] + "..."
+    where = f"{l1}:{c1}" if l1 == l2 else f"{l1}:{c1}-{l2}:{c2}"
+    return f"{where}  {excerpt}"
+
+
+def report_error(exc: Exception, source: Optional[str] = None) -> int:
     """Print a structured anomaly, or a plain message, and pick an exit code."""
     anomaly = getattr(exc, "anomaly", None)
     if anomaly is None:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
     print(f"{anomaly['kind']}:", file=sys.stderr)
+    if source is not None and anomaly.get("span"):
+        print(f"  at: {describe_span(source, anomaly['span'])}", file=sys.stderr)
     for key in ("detail", "offending_op_name", "position_path",
                 "valid_alternatives", "body_offender"):
         value = anomaly.get(key)
@@ -265,13 +280,13 @@ def cmd_run(args: argparse.Namespace) -> int:
                               stage2=args.stage2,
                               do_compile=not args.no_compile)
     except (CompileError, ValueError) as exc:
-        return report_error(exc)
+        return report_error(exc, source)
 
     try:
         granted = parse_allow(args.allow)
         send_to, listen_on = parse_net_allow(args.allow)
     except ValueError as exc:
-        return report_error(exc)
+        return report_error(exc, source)
     runtime = Runtime(out_stream=sys.stdout,
                       input_source=sys.stdin.readline,
                       max_steps=args.max_steps,
@@ -282,11 +297,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         value = evaluate(tree, runtime)
     except (BudgetTrap, DeltaTrap) as trap:
         sys.stdout.flush()
-        return report_error(trap)
+        return report_error(trap, source)
     except (ValueError, NotImplementedError) as exc:
         sys.stdout.flush()
         name_anomaly(getattr(exc, "anomaly", None), getattr(tree, "symbols", None))
-        return report_error(exc)
+        return report_error(exc, source)
 
     sys.stdout.flush()
     if not args.quiet:
@@ -305,7 +320,7 @@ def cmd_emit(args: argparse.Namespace) -> int:
                              stage2=args.stage2,
                              do_compile=not args.no_compile)
     except (CompileError, ValueError) as exc:
-        return report_error(exc)
+        return report_error(exc, source)
 
     data = encode(tree)
     if args.form == "stage2":
@@ -329,7 +344,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         tree, _ = build(source, prelude=not args.no_prelude,
                         stage2=args.stage2, do_compile=not args.no_compile)
     except (CompileError, ValueError) as exc:
-        return report_error(exc)
+        return report_error(exc, source)
     print(static_analyze(tree).summary())
     print(f"  bytes:           {len(encode(tree))}")
     print(f"  stage-2:         {surface2.render(tree)[:60]}")

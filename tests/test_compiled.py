@@ -64,8 +64,9 @@ class Frames(unittest.TestCase):
         self.assertEqual(_run(src), 10)
 
     def test_a_let_in_argument_position_does_not_leak(self):
+        # A domain trap carries its position too, since M24.
         self.assertEqual(_run("(let 0 1 (seq (let 1 2 0) (ref 1)))"),
-                         ("unbound-ref", (), None, [0]))
+                         ("unbound-ref", (46, 40, 47), 47, [0]))
 
     def test_a_let_in_a_loop_body_opens_a_fresh_frame_each_round(self):
         # The step's LET runs once per round; its binding must not
@@ -76,7 +77,7 @@ class Frames(unittest.TestCase):
 
     def test_unbound_ref_lists_names_from_every_frame(self):
         self.assertEqual(_run("(let 5 1 (apply (lambda 6 (ref 7)) 0))"),
-                         ("unbound-ref", (), None, [5, 6]))
+                         ("unbound-ref", (46, 45, 47), 47, [5, 6]))
 
     def test_mutual_recursion_still_shares_one_frame(self):
         src = ("(let 0 (lambda 2 (if-surprise (ref 2) (apply (ref 1) "

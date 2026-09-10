@@ -342,9 +342,9 @@ What the twelve programs found in M23, and what became of it:
   effect even when called from inside a boundary that declares it;
   the compiler refuses it before the run.  Define the helper inside
   the boundary, or pass the effect's value in.
-- **No pairs.**  Two results come back as a two-element list and are
-  taken apart with `head` and `nth`; `tictactoe.lova`'s search
-  threads a three-element state through a fold that way.
+- **Records** (Q84, closed in M24): `(rec score s move k memo m)`
+  and `(get st memo)` replaced the three-element lists
+  `tictactoe.lova`'s search used to take apart by position.
 - **Speed.**  Solving the game is eleven million steps: 18 s on
   CPython, 3 s under PyPy.
 - **`hash` is the program's integer, not a digest** (Q80, closed):

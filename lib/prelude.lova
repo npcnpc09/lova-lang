@@ -226,6 +226,7 @@
 ;; program catches it with `when-anomaly` and branches on the code.
 ;; The prelude's codes (16 and up are a program's to use):
 ;;   16  not a number  (`parse-int` of text that is not decimal digits)
+;;   17  missing field (`(get r x)` on a record without `x`)
 
 ;; Whitespace is every control character and the space itself: one
 ;; comparison, because `words` asks this once per character.

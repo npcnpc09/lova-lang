@@ -503,6 +503,17 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**M24** made a fault say where and a fix a patch. Every node parsed
+from text carries its source span; compile errors and every run-time
+trap kind report the innermost span from the program's own text (a
+fault inside the prelude reports the call that reached it); the CLI
+prints `at: line:col  excerpt`; the MCP server adds `span`, `excerpt`,
+`line`, `col` to anomalies and gains **`lova_patch`** (source, span,
+replacement → patched source, compiled to check). Records (Q84):
+`(rec x 1 y 2)`, `(get r x)`, `(put r x v)` as macros over the map,
+zero slots, missing field = signal 17; `tictactoe.lova` threads
+records instead of `(nth st 2)`. Tests 727 → 747.
+
 **M23** removed the tree walk. `_eval` compiles a node to a Python
 closure the first time a run meets it (`Runtime.code_cache`, per
 run); twenty-two hot operators have inlined templates and the rest run
@@ -678,7 +689,7 @@ density by 70%; node count is a poor proxy in both directions.
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-725 unit tests passing, 17 experiments (Exp 17 has its harness and dry run; its model runs wait on a key) (pb11 has a v1 pilot + v2 re-run),
+747 unit tests passing, 17 experiments (Exp 17 has its harness and dry run; its model runs wait on a key) (pb11 has a v1 pilot + v2 re-run),
 14 first-class apps, **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

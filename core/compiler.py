@@ -106,6 +106,7 @@ class CompileError(Exception):
         offending_op: Optional[int] = None,
         valid_alternatives: Tuple[int, ...] = (),
         repair_hint: str = "",
+        span: Optional[Tuple[int, int]] = None,
     ):
         offending_name = (
             SIGNATURES.get(offending_op, {"name": ""}).get("name", "")
@@ -120,8 +121,23 @@ class CompileError(Exception):
             "offending_op_name": offending_name,
             "valid_alternatives": valid_alternatives,
             "repair_hint": repair_hint,
+            # M24: where in the source, as (start, end) offsets, when the
+            # node came from text.  What `lova_patch` edits by.
+            "span": span,
         }
         super().__init__(f"CompileError[{kind}]: {detail}")
+
+
+def _span(node: Node):
+    return getattr(node, "span", None)
+
+
+def _keep_span(source: Node, rewritten: Node) -> Node:
+    """A rewritten node stands where the source node stood (M24)."""
+    if rewritten is not source and getattr(source, "span", None) is not None \
+            and getattr(rewritten, "span", None) is None:
+        rewritten.span = source.span
+    return rewritten
 
 
 # --- Pass 1: scope resolution ----------------------------------------------
@@ -176,7 +192,7 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...],
                     "expected": "LiteralInt",
                     "got": SIGNATURES[name_node.op]["name"],
                 },
-                position_path=path + (node.op, name_node.op),
+                span=_span(node), position_path=path + (node.op, name_node.op),
                 offending_op=name_node.op,
                 repair_hint=(
                     "LET's first slot demands a LiteralInt; replace the "
@@ -212,7 +228,7 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...],
                     "expected": "LiteralInt",
                     "got": SIGNATURES[param_node.op]["name"],
                 },
-                position_path=path + (node.op, param_node.op),
+                span=_span(node), position_path=path + (node.op, param_node.op),
                 offending_op=param_node.op,
                 repair_hint=(
                     "LAMBDA's first slot demands a LiteralInt naming the "
@@ -235,7 +251,7 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...],
                     "expected": "LiteralInt",
                     "got": SIGNATURES[name_node.op]["name"],
                 },
-                position_path=path + (node.op, name_node.op),
+                span=_span(node), position_path=path + (node.op, name_node.op),
                 offending_op=name_node.op,
                 repair_hint=(
                     "REF's first slot demands a LiteralInt; replace with "
@@ -251,7 +267,7 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...],
                     "bound_names": sorted(env - pending),
                     "reason": "strict-self-reference",
                 },
-                position_path=path + (node.op,),
+                span=_span(node), position_path=path + (node.op,),
                 offending_op=REF,
                 repair_hint=(
                     f"REF {name_id} names a binding of this `let` group whose "
@@ -267,7 +283,7 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...],
                     "name_id": name_id,
                     "bound_names": sorted(env),
                 },
-                position_path=path + (node.op,),
+                span=_span(node), position_path=path + (node.op,),
                 offending_op=REF,
                 repair_hint=(
                     f"REF {name_id} is not in scope.  Either wrap in a LET "
@@ -430,7 +446,7 @@ def _check_transparent(
                     detail={"at_operator": "seq", "produces": "Int",
                             "expected": str(expected),
                             "note": "an empty seq evaluates to 0"},
-                    position_path=path + (node.op,),
+                    span=_span(node), position_path=path + (node.op,),
                     offending_op=node.op,
                     repair_hint=(
                         "an empty `seq` yields the integer 0; give it a "
@@ -468,7 +484,7 @@ def _check_transparent(
                 detail={"at_operator": "when-anomaly", **_describe(fallback),
                         "expected": str(expected),
                         "note": "the handler's return type is known from its lambda"},
-                position_path=path + (node.op, 1),
+                span=_span(node), position_path=path + (node.op, 1),
                 offending_op=node.op,
                 repair_hint=(
                     f"the handler returns {fallback} where the slot expects "
@@ -504,7 +520,7 @@ def _check_transparent(
                     kind="type-mismatch",
                     detail={"at_operator": "apply", "function": str(head),
                             "takes": given - excess, "given": given},
-                    position_path=path + (node.op,),
+                    span=_span(node), position_path=path + (node.op,),
                     offending_op=node.op,
                     repair_hint=(
                         f"the function takes {given - excess} argument(s) "
@@ -518,7 +534,7 @@ def _check_transparent(
                     detail={"at_operator": "apply", **_describe(result),
                             "expected": str(expected),
                             "note": "the result type is known from the function's lambda"},
-                    position_path=path + (node.op,),
+                    span=_span(node), position_path=path + (node.op,),
                     offending_op=node.op,
                     repair_hint=(
                         f"this call produces {result} where the slot expects "
@@ -572,7 +588,7 @@ def _type_check(
                 kind="type-mismatch",
                 detail={"at_operator": "quote", "produces": "Program",
                         "expected": str(expected)},
-                position_path=path + (node.op,),
+                span=_span(node), position_path=path + (node.op,),
                 offending_op=node.op,
                 repair_hint="a quoted program is a Program; `eval` it, "
                             "`hash` it, or `explain` it to get another type",
@@ -590,7 +606,7 @@ def _type_check(
                 **_describe(out_type),
                 "expected": str(expected),
             },
-            position_path=path + (node.op,),
+            span=_span(node), position_path=path + (node.op,),
             offending_op=node.op,
             repair_hint=(
                 f"Operator `{sig['name']}` produces {out_type}, but slot "
@@ -652,6 +668,10 @@ def _is_lit(node: Node) -> bool:
 
 
 def _fold(node: Node) -> Node:
+    return _keep_span(node, _fold_inner(node))
+
+
+def _fold_inner(node: Node) -> Node:
     """Fold pure subtrees with constant arguments to LIT_INT."""
     if node.op == LIT_INT:
         return node
@@ -749,6 +769,11 @@ def _split_chain(node: Node) -> Tuple[List[Tuple[int, Node]], Node]:
 
 
 def _drop_unused(node: Node) -> Tuple[Node, int]:
+    rewritten, dropped = _drop_unused_inner(node)
+    return _keep_span(node, rewritten), dropped
+
+
+def _drop_unused_inner(node: Node) -> Tuple[Node, int]:
     """Remove bindings nothing in the group reaches.
 
     A quoted program is left exactly as written (references inside it
@@ -863,7 +888,7 @@ def _capability_check(node: Node, caps: int, path: Tuple[int, ...],
                 kind="capability-denied",
                 detail={"at_operator": name, "needs": needed,
                         "declared": capability_names(caps)},
-                position_path=path + (node.op,),
+                span=_span(node), position_path=path + (node.op,),
                 offending_op=node.op,
                 repair_hint=(
                     f'wrap the use in (boundary "{needed}" ...); the host '
@@ -885,7 +910,7 @@ def _capability_check(node: Node, caps: int, path: Tuple[int, ...],
                         "declared": capability_names(inner),
                         "enclosing": capability_names(caps),
                         "excess": capability_names(excess)},
-                position_path=path + (node.op, 0),
+                span=_span(node), position_path=path + (node.op, 0),
                 offending_op=node.op,
                 repair_hint=(
                     "a nested boundary may only narrow; declare "

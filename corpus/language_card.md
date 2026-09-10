@@ -52,7 +52,12 @@ Library (always available):
 (text-of n) ; decimal text of n     (parse-int text)   (words text) (lines text)
 (join parts sep) (split text sep)
 (map-put m k v) (map-get m k default) (map-pairs m) (map-count m k) (map-size m)
+(rec x 1 y 2)  ; a record: named fields    (get r x)  ; the field    (put r x 9)  ; r with x set
 ```
+
+Use a record, not a list taken apart by position, to carry several
+values through a fold or a recursion: `(get st memo)` rather than
+`(nth st 2)`.
 
 `f` in `map`, `filter`, `fold` is a function value: a `lambda`, or the name
 of a `def`. `fold` calls `(f acc x)`; write a two-argument fold step as

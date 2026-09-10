@@ -1035,6 +1035,14 @@ def _enrich_trap(trap, rt: Runtime) -> None:
     top = path[-1] if path else None
     op = top.op if top is not None else None
     alternatives = suggest_alternatives(op) if op is not None else ()
+    # M24: the innermost node that came from the program's own text.
+    # A fault inside a library function reports the call that reached
+    # it, which is the expression the author can change.
+    for n in reversed(path):
+        span = getattr(n, "span", None)
+        if span is not None:
+            trap.anomaly["span"] = span
+            break
     enrich_anomaly(
         trap.anomaly,
         position_path=tuple(n.op for n in path),
@@ -1391,7 +1399,7 @@ def _compile_generic(node: Node, rt: Runtime) -> Any:
                 if rt.steps > rt.max_steps:
                     raise StepTrap(steps=rt.steps, limit=rt.max_steps)
                 return _eval_unimplemented(node, rt)
-            except (BudgetTrap, DeltaTrap) as trap:
+            except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
                 _trapped(trap, rt, node)
                 raise
         return _n_unimplemented
@@ -1404,7 +1412,7 @@ def _compile_generic(node: Node, rt: Runtime) -> Any:
             if rt.steps > rt.max_steps:
                 raise StepTrap(steps=rt.steps, limit=rt.max_steps)
             return handler(node, rt, False)
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_generic
@@ -1437,8 +1445,10 @@ def _compile_REF(node: Node, rt: Runtime) -> Any:
                 raise StepTrap(steps=rt.steps, limit=rt.max_steps)
             return rt.env[name_id]
         except KeyError:
-            raise _unbound(name_id, rt) from None
-        except (BudgetTrap, DeltaTrap) as trap:
+            trap = _unbound(name_id, rt)
+            _trapped(trap, rt, node)          # this frame is the ref's
+            raise trap from None
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_ref
@@ -1457,7 +1467,7 @@ def _compile_IDENTITY(node: Node, rt: Runtime) -> Any:
             if rt.steps > rt.max_steps:
                 raise StepTrap(steps=rt.steps, limit=rt.max_steps)
             return inner(rt)
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_identity
@@ -1482,7 +1492,7 @@ def _compile_MERGE(node: Node, rt: Runtime) -> Any:
             if b.__class__ is not int:
                 b = _as_int(b, "merge")
             return a + b
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_merge
@@ -1507,7 +1517,7 @@ def _compile_DEVIATION(node: Node, rt: Runtime) -> Any:
             if b.__class__ is not int:
                 b = _as_int(b, "deviation")
             return a - b
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_deviation
@@ -1529,7 +1539,7 @@ def _compile_THRESHOLD(node: Node, rt: Runtime) -> Any:
             if x.__class__ is not int:
                 x = _as_int(x, "threshold")
             return 1 if x > 0 else 0
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_threshold
@@ -1562,7 +1572,7 @@ def _compile_MUL(node: Node, rt: Runtime) -> Any:
                     "multiply smaller numbers",
                 )
             return a * b
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_mul
@@ -1593,7 +1603,7 @@ def _compile_DIV(node: Node, rt: Runtime) -> Any:
                     "guard the divisor with `(if d (div a d) fallback)`",
                 )
             return a // b
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_div
@@ -1624,7 +1634,7 @@ def _compile_MOD(node: Node, rt: Runtime) -> Any:
                     "guard the divisor with `(if d (mod a d) fallback)`",
                 )
             return a % b
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_mod
@@ -1639,7 +1649,7 @@ def _compile_NIL(node: Node, rt: Runtime) -> Any:
             if rt.steps > rt.max_steps:
                 raise StepTrap(steps=rt.steps, limit=rt.max_steps)
             return NIL_VALUE
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_nil
@@ -1662,7 +1672,7 @@ def _compile_CONS(node: Node, rt: Runtime) -> Any:
             if rest is not NIL_VALUE and rest.__class__ is not Cons:
                 rest = _as_list(rest, "cons")
             return Cons(element, rest)
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_cons
@@ -1693,7 +1703,7 @@ def _compile_HEAD(node: Node, rt: Runtime) -> Any:
                     "guard with `(if (nil? xs) fallback (head xs))`",
                 )
             return target.head
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_head
@@ -1724,7 +1734,7 @@ def _compile_TAIL(node: Node, rt: Runtime) -> Any:
                     "guard with `(if (nil? xs) fallback (tail xs))`",
                 )
             return target.tail
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_tail
@@ -1749,7 +1759,7 @@ def _compile_IS_NIL(node: Node, rt: Runtime) -> Any:
                 return 0
             _as_list(target, "nil?")
             return 0
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_is_nil
@@ -1773,7 +1783,7 @@ def _compile_MAP_PUT(node: Node, rt: Runtime) -> Any:
             key = ck(rt)
             value = cv(rt)
             return base.put(_map_key(key, "map-put"), key, value)
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_map_put
@@ -1799,7 +1809,7 @@ def _compile_MAP_GET(node: Node, rt: Runtime) -> Any:
             if hit is None:
                 return cd(rt)                       # the default, only when needed
             return hit[1]
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_map_get
@@ -1819,7 +1829,7 @@ def _compile_SEQ(node: Node, rt: Runtime) -> Any:
             for code in codes:
                 last = code(rt)
             return last
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_seq
@@ -1841,7 +1851,7 @@ def _compile_IF_SURPRISE(node: Node, rt: Runtime) -> Any:
             if s.__class__ is not int:
                 s = _as_int(s, "if-surprise")
             return then(rt) if s != 0 else otherwise(rt)
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_if
@@ -1882,7 +1892,7 @@ def _compile_LET(node: Node, rt: Runtime) -> Any:
                 rt.let_chain = None
                 if not extend:
                     rt.env = saved_env
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_let
@@ -1905,7 +1915,7 @@ def _compile_LAMBDA(node: Node, rt: Runtime) -> Any:
             return Closure(param=param, body=body, env=rt.env,
                            caps=rt.caps, enclosed=rt.enclosed,
                            code=body_code)
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_lambda
@@ -1928,7 +1938,7 @@ def _compile_APPLY(node: Node, rt: Runtime) -> Any:
             for code in arguments:
                 fn = _call(fn, code(rt), rt)
             return fn
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_apply
@@ -1957,7 +1967,7 @@ def _compile_LOOP_UNTIL(node: Node, rt: Runtime) -> Any:
                     "pass two lambdas: a predicate and a step",
                 )
             return LoopFn(pred=pred, step=step)
-        except (BudgetTrap, DeltaTrap) as trap:
+        except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
     return _n_loop_until

@@ -10,7 +10,7 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 725 tests. It is an
+LOVA, modules, a CLI, an MCP server for agents, and 747 tests. It is an
 interpreter in Python, with a stdlib-only core that runs under PyPy
 as well, and it has no floats, no namespaces and no concurrency. The
 "What LOVA still cannot do" section below is kept honest.*
@@ -180,7 +180,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (725 tests, stdlib unittest only)
+# run the test suite (747 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # the same under PyPy, where the whole suite is also expected to pass
@@ -271,8 +271,13 @@ something and kept as a test. What they demonstrate:
   gives its programs contracts, budgets and structured faults Python
   does not have (`journal/experiment_17.md`).
 - **It runs anywhere Python does.** The core has no dependencies, so
-  the same programs run under CPython and PyPy, and the 725 tests pass
+  the same programs run under CPython and PyPy, and the 747 tests pass
   on both.
+- **A fault says where, and a fix is a patch.** Every anomaly carries
+  the source span of the expression at fault and its text; the MCP
+  server's `lova_patch` replaces that span and checks the result. The
+  loop an agent runs is execute, patch, execute, and a fix costs the
+  size of the fix.
 - **What the programs found was fixed the same day.** Writing them
   surfaced four edges -- in input, in self-reference, in program ids,
   in arguments -- and each became a compile-time check, a prelude
@@ -487,7 +492,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         725 unit tests, stdlib only
+tests/         747 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do
