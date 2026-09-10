@@ -306,6 +306,65 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Q33 and the M8 groundwork (2026-09-10)
+The order was decided in the M23 retrospective: the benchmark first,
+because a fine-tune on LOVABench v2 would learn a sublanguage of
+straight-line arithmetic (Exp 12), then the corpus and the harness.
+
+**LOVABench v3.** Twenty algorithmic tasks, pb61-pb80 (`ALGORITHMIC`,
+`TASKS_V3`; `TASKS` stays v2 so Exp 03 / 07 / 11 measure what they
+measured): factorial, Fibonacci, primality, Collatz, sums over
+ranges, digits, powers, Euclid, bit counts, sorted digits. Every
+prompt says what to compute and not how (a test enforces that no
+prompt names an operator -- Exp 13 F3's complaint about v1/v2). The
+evaluator now compiles with the prelude in scope, so a solution is
+judged the way a program runs: 80/80 LOVA references and 80/80
+Python references pass (`tests/test_lovabench.py`). Q33 closed.
+
+**The corpus.** `corpus/finetune.py` makes (prompt, program) pairs
+from twelve families that render an English prompt, a LOVA program
+and a Python oracle from the same parameters; each pair is run
+against three oracle-made tests through the benchmark evaluator and
+kept only if it passes, so the corpus cannot teach a wrong program.
+The compositional family -- an aggregate of a transform of a filter
+of a source, each fragment carrying its own English -- is where the
+variety comes from. Held out by construction: a program that is a
+benchmark template, or a family setting that reproduces a benchmark
+task (each family names its own), is dropped. 3 000 pairs in 7
+minutes, 87 failures dropped (all of them the oracle refusing a
+parameter), 1 255 held-out, 4 236 duplicates: the families make a
+few thousand distinct programs and no more, which is the corpus's
+honest size. Two chat formats: with the one-page language card in
+every example (the prompt a base model gets) and without it (a
+sentence; what a fine-tuned model is trained and then judged with).
+Training tokens: 257 000 without the card, 3.1 million with it.
+
+**The card.** `corpus/language_card.md`: the language on one page,
+for a model that has never seen it -- syntax, arithmetic, lists and
+text, the library, six examples, all of which a test runs.
+
+**The harness.** `experiments/experiment_17_llm_benchmark.py` asks a
+model twice per task, LOVA and Python, runs each answer against the
+tests -- Python in a subprocess with a timeout, so a hang is a
+failure -- and reports pass@1 per category. Any OpenAI-compatible
+endpoint; `--dry-run` sends the references through the same pipe
+(80/80 LOVA, 79/80 Python: pb20's keyword-argument weakness, as in
+Exp 07). `experiments/m8_finetune.py` estimates, submits and polls a
+hosted fine-tune: **~$2.31 for three epochs on gpt-4o-mini** without
+the card, ~$28 with it.
+
+**Also.** `parse_with_prelude` caches the prelude's parse per name
+base and copies its definitions in: 68 ms → 6.7 ms a parse,
+identical trees on 98 sources; the evaluator is now the compiler's
+time, 48 ms.
+
+**Blocked on a key.** The OpenAI key in this environment returns
+401. What remains of M8 is three commands and a few dollars: a base
+model's pass@1 (LOVA vs Python, 80 tasks), the fine-tune, the
+fine-tuned model's pass@1. The question M8 exists to answer -- does
+a model write LOVA better than Python once it knows LOVA? -- waits on
+that, and on nothing else. Tests 716 → 725.
+
 ### Milestone 23 (2026-09-10) — The tree walk removed
 Q75 asked which of two levers pays first: frame chains, or compiling
 the tree away. Both were pulled, in that order of payoff reversed.
@@ -1190,7 +1249,10 @@ the corpus grows again.
 - **Q32**: Is there a terser Stage-1 surface that closes the negative
   density result without touching semantics? F7 suggests mostly no,
   but it is measurable.
-- **Q33**: LOVABench v3 with an algorithmic category — the present 60
+- ~~**Q33**~~: *closed 2026-09-10.* LOVABench v3 adds pb61-pb80, an
+  algorithmic category whose prompts say what and not how; `TASKS_V3`
+  is what M8 trains toward and is judged by. The question as raised:
+  LOVABench v3 with an algorithmic category — the present 60
   tasks cannot express recursion, so the benchmark cannot detect a
   regression in it.
 - ~~**Q34**~~: *closed by M12.* A chain of `LET`s shares one frame, so a

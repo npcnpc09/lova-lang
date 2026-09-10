@@ -653,8 +653,8 @@ density by 70%; node count is a poor proxy in both directions.
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-716 unit tests passing, 16 experiments (pb11 has a v1 pilot + v2 re-run),
-14 first-class apps, **LOVABench v2 (60 tasks, 180 cases, 20 KB JSONL)**,
+725 unit tests passing, 17 experiments (Exp 17 has its harness and dry run; its model runs wait on a key) (pb11 has a v1 pilot + v2 re-run),
+14 first-class apps, **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 
 **All 14 experiments run** as of 2026-09-09. Exp 03 and Exp 07 had
@@ -754,16 +754,26 @@ now emits lambdas, so their distributions are stale).
 3. ✅ `apps/mcp_demo.py` drives the server through its pipes; the
    README carries the host configuration.
 
-**M8 — Fine-tuning corpus + real-LLM benchmark** (≈ 1 month + GPU)
-0. **Prerequisite from Exp 12:** every LOVABench task predates M9, so
-   a corpus derived from them teaches a sublanguage of straight-line
-   arithmetic. Add an algorithmic category first (Q33) or the
-   fine-tune measures the wrong language.
-1. Synthetic corpus generator: 10k+ `(prompt, program)` pairs derived
-   from `constrained_random` + task-template expansion.
-2. Fine-tune a 7B-70B open model (Qwen3, Llama4) on the corpus.
-3. Measure pass@1 delta on held-out LOVABench v2. Target: fine-
-   tuned model's LOVA pass@1 > its Python pass@1 on same tasks.
+**M8 — Fine-tuning corpus + real-LLM benchmark** (groundwork done
+2026-09-10; the runs wait on an API key)
+0. ✅ **Prerequisite from Exp 12 (Q33):** LOVABench v3 adds twenty
+   algorithmic tasks (pb61-pb80, `corpus.tasks.TASKS_V3`) whose
+   prompts say what to compute and not how; the evaluator compiles
+   with the prelude in scope. 80/80 references pass in both languages.
+1. ✅ Corpus: `python -m corpus.finetune --n 3000` makes verified
+   (prompt, program) pairs from twelve families, every pair run
+   against oracle-made tests before it is kept, benchmark tasks held
+   out by construction. `corpus/finetune/` holds 3 000 (train 2 700,
+   val 300) in plain and chat formats; `corpus/language_card.md` is
+   the one-page prompt a base model gets.
+2. ⏳ Fine-tune: `experiments/m8_finetune.py --estimate | --submit |
+   --status` drives a hosted OpenAI-style fine-tune (~$2.31 for three
+   epochs of gpt-4o-mini without the card). An open 7B model on a GPU
+   is the alternative; the chat JSONL is the standard format.
+3. ⏳ Measure: `experiments/experiment_17_llm_benchmark.py --model X`
+   gives pass@1 in LOVA and Python per category, base or fine-tuned
+   (`--no-card` for the latter). Target unchanged: the fine-tuned
+   model's LOVA pass@1 > its own Python pass@1 on the same tasks.
 
 Everything beyond M8 is future work conditioned on MVP traction.
 

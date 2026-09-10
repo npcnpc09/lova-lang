@@ -14,8 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
+from core.compiler import compile as lova_compile
 from core.runtime import Runtime, evaluate
-from core.surface import parse
+from core.surface import parse_with_prelude
 from corpus.tasks import Task
 
 
@@ -53,11 +54,16 @@ def _fill(template: str, inputs: dict) -> str:
 
 
 def evaluate_template(template: str, inputs: dict) -> object:
-    """Substitute, parse, and evaluate.  Return the int on success,
-    or a string ``"error:<class>:<msg>"`` on any failure."""
+    """Substitute, parse, compile and evaluate.  Return the int on
+    success, or a string ``"error:<class>:<msg>"`` on any failure.
+
+    The standard library is in scope and the compiler runs (M23, Q33):
+    a solution is judged as a program would be, with `range`, `map`,
+    `digits` and the rest available, and the unused prelude dropped.
+    """
     try:
         src = _fill(template, inputs)
-        tree = parse(src)
+        tree, _report = lova_compile(parse_with_prelude(src))
         rt = Runtime()
         return evaluate(tree, rt)
     except Exception as e:

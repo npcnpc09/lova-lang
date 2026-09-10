@@ -17,7 +17,7 @@ from core.generator import constrained_random
 from core.runtime import Runtime, evaluate
 from core.surface import parse
 from core.tokens import LIT_INT, Node, REF, SIGNATURES, decode, encode
-from corpus.tasks import TASKS as BENCH_TASKS
+from corpus.tasks import TASKS_V3 as BENCH_TASKS
 
 
 def s2(src: str) -> str:

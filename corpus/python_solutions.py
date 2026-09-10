@@ -314,3 +314,52 @@ PYTHON_SYMPY: Dict[str, str] = {
             "def solve(a,b):\n"
             "    x=a+b; return partition(x)",
 }
+
+
+# --- LOVABench v3: the algorithmic category (61-80) ------------------------
+#
+# Pure Python, the way a proficient user writes it from scratch.  No
+# sympy column: nothing here has a library shortcut, which is the
+# point of the category (Exp 12).
+
+PYTHON_ALGORITHMIC: Dict[str, str] = {
+    "pb61": "def solve(n): return 1 if n == 0 else n * solve(n - 1)",
+    "pb62": "def solve(n): return n if n < 2 else solve(n - 1) + solve(n - 2)",
+    "pb63": ("def solve(n):\n"
+             "    if n < 2: return 0\n"
+             "    d = 2\n"
+             "    while d * d <= n:\n"
+             "        if n % d == 0: return 0\n"
+             "        d += 1\n"
+             "    return 1"),
+    "pb64": ("def solve(n):\n"
+             "    c = 0\n"
+             "    while n != 1:\n"
+             "        n = n // 2 if n % 2 == 0 else 3 * n + 1\n"
+             "        c += 1\n"
+             "    return c"),
+    "pb65": "def solve(n): return sum(range(1, n + 1))",
+    "pb66": "def solve(b, e): return 1 if e == 0 else b * solve(b, e - 1)",
+    "pb67": "def solve(a, b): return a if b == 0 else solve(b, a % b)",
+    "pb68": "def solve(n): return sum(1 for d in range(1, n + 1) if n % d == 0)",
+    "pb69": "def solve(n): return sum(int(c) for c in str(n))",
+    "pb70": "def solve(n): return int(str(n)[::-1])",
+    "pb71": "def solve(n): return sum(k * k for k in range(1, n + 1))",
+    "pb72": ("def solve(n):\n"
+             "    def prime(k):\n"
+             "        if k < 2: return False\n"
+             "        d = 2\n"
+             "        while d * d <= k:\n"
+             "            if k % d == 0: return False\n"
+             "            d += 1\n"
+             "        return True\n"
+             "    return sum(1 for k in range(2, n) if prime(k))"),
+    "pb73": "def solve(n): return max(int(c) for c in str(n))",
+    "pb74": "def solve(n): return bin(n).count('1')",
+    "pb75": "def solve(n): return 1 if str(n) == str(n)[::-1] else 0",
+    "pb76": "def solve(n): return n.bit_length() - 1",
+    "pb77": "def solve(n): return 1 if n == sum(d for d in range(1, n) if n % d == 0) else 0",
+    "pb78": "def solve(n): return sum(1 for k in range(1, n + 1) if k % 3 == 0 or k % 5 == 0)",
+    "pb79": "def solve(n): return len(str(n))",
+    "pb80": "def solve(n): return int(''.join(sorted(str(n))))",
+}

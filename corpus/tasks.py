@@ -1,4 +1,6 @@
-"""LOVABench v2 — 60 parametrised number-theory composition tasks.
+"""LOVABench v2 — 60 parametrised number-theory composition tasks —
+and v3, which adds twenty algorithmic ones (pb61-pb80, ``ALGORITHMIC``,
+``TASKS_V3``; Q33).
 
 Each task is a triple of (natural-language prompt, LOVA template,
 list of test cases). The template uses ``{var}`` placeholders for
@@ -663,8 +665,197 @@ assert len(TASKS) == 60, f"LOVABench v2 must have exactly 60 tasks, got {len(TAS
 assert len({t.id for t in TASKS}) == 60, "task ids must be unique"
 
 
+# --- LOVABench v3: the algorithmic category (61-80) ------------------------
+#
+# Q33 (raised by Exp 12): every task above predates M9, so the benchmark
+# could not see recursion, iteration, lists or text, and a corpus drawn
+# from it would teach a sublanguage of straight-line arithmetic.  These
+# twenty need a `def`, a loop or a list; their prompts say what to
+# compute and not how, so a solver has to synthesise rather than
+# transcribe (Exp 13 F3).  The prelude is in scope: a solution may use
+# `range`, `map`, `filter`, `fold`, `digits`, `text-of` and the rest,
+# as a program would.  Reference solutions are hand-written and
+# validate; `tests/test_lovabench.py` keeps that true.
+
+ALGORITHMIC: Tuple[Task, ...] = (
+    Task(
+        id="pb61",
+        name="factorial",
+        prompt="Given an integer n >= 0, return n factorial.",
+        template="(def fact [n] (if n (mul n (fact (sub n 1))) 1))(fact {n})",
+        tests=(({"n": 0}, 1), ({"n": 5}, 120), ({"n": 10}, 3628800)),
+        tags=("algorithmic", "recursion", "primitive-recursion"),
+    ),
+    Task(
+        id="pb62",
+        name="fibonacci",
+        prompt="Given an integer n >= 0, return the n-th Fibonacci number, with F(0) = 0 and F(1) = 1.",
+        template="(def fib [n] (if (lt n 2) n (merge (fib (sub n 1)) (fib (sub n 2)))))(fib {n})",
+        tests=(({"n": 0}, 0), ({"n": 7}, 13), ({"n": 15}, 610)),
+        tags=("algorithmic", "recursion", "tree-recursion"),
+    ),
+    Task(
+        id="pb63",
+        name="is_prime",
+        prompt="Given an integer n, return 1 if n is prime and 0 otherwise.",
+        template=("(def check [d n] (if (gt (mul d d) n) 1 (if (mod n d) (check (inc d) n) 0)))"
+                  "(def prime? [n] (if (lt n 2) 0 (check 2 n)))(prime? {n})"),
+        tests=(({"n": 1}, 0), ({"n": 97}, 1), ({"n": 561}, 0)),
+        tags=("algorithmic", "loop", "early-exit"),
+    ),
+    Task(
+        id="pb64",
+        name="collatz_steps",
+        prompt="Given an integer n >= 1, return how many Collatz steps (halve if even, else 3n+1) it takes to reach 1.",
+        template=("(def next [n] (if (mod n 2) (merge (mul 3 n) 1) (div n 2)))"
+                  "(def steps [n acc] (if (eq n 1) acc (steps (next n) (inc acc))))(steps {n} 0)"),
+        tests=(({"n": 1}, 0), ({"n": 6}, 8), ({"n": 27}, 111)),
+        tags=("algorithmic", "loop", "accumulator"),
+    ),
+    Task(
+        id="pb65",
+        name="sum_to",
+        prompt="Given an integer n >= 0, return the sum 1 + 2 + ... + n.",
+        template="(sum (range 1 (inc {n})))",
+        tests=(({"n": 0}, 0), ({"n": 10}, 55), ({"n": 100}, 5050)),
+        tags=("algorithmic", "list", "library"),
+    ),
+    Task(
+        id="pb66",
+        name="power",
+        prompt="Given integers b and e >= 0, return b raised to the power e.",
+        template="(def power [b e] (if e (mul b (power b (sub e 1))) 1))(power {b} {e})",
+        tests=(({"b": 2, "e": 10}, 1024), ({"b": 3, "e": 0}, 1), ({"b": 5, "e": 3}, 125)),
+        tags=("algorithmic", "recursion", "binary"),
+    ),
+    Task(
+        id="pb67",
+        name="gcd_euclid",
+        prompt="Given integers a and b, return their greatest common divisor by Euclid's algorithm, without the gcd operator.",
+        template="(def euclid [a b] (if b (euclid b (mod a b)) a))(euclid {a} {b})",
+        tests=(({"a": 12, "b": 18}, 6), ({"a": 270, "b": 192}, 6), ({"a": 0, "b": 5}, 5)),
+        tags=("algorithmic", "recursion", "binary"),
+    ),
+    Task(
+        id="pb68",
+        name="count_divisors_loop",
+        prompt="Given an integer n >= 1, return the number of its divisors, counted by trying every candidate from 1 to n.",
+        template="(len (filter (lambda d (not (mod {n} d))) (range 1 (inc {n}))))",
+        tests=(({"n": 1}, 1), ({"n": 12}, 6), ({"n": 28}, 6)),
+        tags=("algorithmic", "list", "filter"),
+    ),
+    Task(
+        id="pb69",
+        name="digit_sum",
+        prompt="Given an integer n >= 0, return the sum of its decimal digits.",
+        template="(sum (digits {n}))",
+        tests=(({"n": 0}, 0), ({"n": 1234}, 10), ({"n": 99999}, 45)),
+        tags=("algorithmic", "list", "library"),
+    ),
+    Task(
+        id="pb70",
+        name="reverse_digits",
+        prompt="Given an integer n >= 0, return the integer whose decimal digits are those of n in reverse order.",
+        template=("(def rev [n acc] (if n (rev (div n 10) (merge (mul acc 10) (mod n 10))) acc))"
+                  "(rev {n} 0)"),
+        tests=(({"n": 1234}, 4321), ({"n": 1200}, 21), ({"n": 7}, 7)),
+        tags=("algorithmic", "loop", "accumulator"),
+    ),
+    Task(
+        id="pb71",
+        name="sum_of_squares",
+        prompt="Given an integer n >= 1, return the sum of the squares of 1 to n.",
+        template="(sum (map (lambda k (mul k k)) (range 1 (inc {n}))))",
+        tests=(({"n": 1}, 1), ({"n": 3}, 14), ({"n": 10}, 385)),
+        tags=("algorithmic", "list", "map"),
+    ),
+    Task(
+        id="pb72",
+        name="primes_below",
+        prompt="Given an integer n, return how many primes are smaller than n.",
+        template=("(def check [d n] (if (gt (mul d d) n) 1 (if (mod n d) (check (inc d) n) 0)))"
+                  "(def prime? [n] (if (lt n 2) 0 (check 2 n)))"
+                  "(len (filter prime? (range 2 {n})))"),
+        tests=(({"n": 10}, 4), ({"n": 30}, 10), ({"n": 100}, 25)),
+        tags=("algorithmic", "list", "filter", "composition"),
+    ),
+    Task(
+        id="pb73",
+        name="largest_digit",
+        prompt="Given an integer n >= 0, return its largest decimal digit.",
+        template="(fold (lambda a (lambda b (max a b))) 0 (digits {n}))",
+        tests=(({"n": 1234}, 4), ({"n": 907}, 9), ({"n": 5}, 5)),
+        tags=("algorithmic", "list", "fold"),
+    ),
+    Task(
+        id="pb74",
+        name="binary_ones",
+        prompt="Given an integer n >= 0, return the number of 1 bits in its binary representation.",
+        template="(def ones [n] (if n (merge (mod n 2) (ones (div n 2))) 0))(ones {n})",
+        tests=(({"n": 0}, 0), ({"n": 255}, 8), ({"n": 1000}, 6)),
+        tags=("algorithmic", "recursion"),
+    ),
+    Task(
+        id="pb75",
+        name="palindrome_number",
+        prompt="Given an integer n >= 0, return 1 if its decimal digits read the same backwards and 0 otherwise.",
+        template="(same (digits {n}) (reverse (digits {n})))",
+        tests=(({"n": 121}, 1), ({"n": 123}, 0), ({"n": 7}, 1)),
+        tags=("algorithmic", "list", "library"),
+    ),
+    Task(
+        id="pb76",
+        name="floor_log2",
+        prompt="Given an integer n >= 1, return how many times n can be halved (rounding down) before it is smaller than 2.",
+        template="(def lg [n] (if (lt n 2) 0 (inc (lg (div n 2)))))(lg {n})",
+        tests=(({"n": 1}, 0), ({"n": 8}, 3), ({"n": 1000}, 9)),
+        tags=("algorithmic", "recursion"),
+    ),
+    Task(
+        id="pb77",
+        name="is_perfect_by_loop",
+        prompt="Given an integer n >= 1, return 1 if n equals the sum of its proper divisors (those smaller than n) and 0 otherwise.",
+        template="(eq {n} (sum (filter (lambda d (not (mod {n} d))) (range 1 {n}))))",
+        tests=(({"n": 6}, 1), ({"n": 28}, 1), ({"n": 12}, 0)),
+        tags=("algorithmic", "list", "filter"),
+    ),
+    Task(
+        id="pb78",
+        name="count_multiples",
+        prompt="Given an integer n >= 1, return how many integers from 1 to n are divisible by 3 or by 5.",
+        template="(len (filter (lambda k (or (not (mod k 3)) (not (mod k 5)))) (range 1 (inc {n}))))",
+        tests=(({"n": 10}, 5), ({"n": 15}, 7), ({"n": 100}, 47)),
+        tags=("algorithmic", "list", "filter"),
+    ),
+    Task(
+        id="pb79",
+        name="decimal_length",
+        prompt="Given an integer n >= 0, return the number of characters in its decimal representation.",
+        template="(len (text-of {n}))",
+        tests=(({"n": 0}, 1), ({"n": 12345}, 5), ({"n": 1000000}, 7)),
+        tags=("algorithmic", "text", "library"),
+    ),
+    Task(
+        id="pb80",
+        name="sorted_digits",
+        prompt="Given an integer n >= 0, return the integer formed by its decimal digits sorted in ascending order (a leading zero disappears).",
+        template="(fold (lambda a (lambda d (merge (mul a 10) d))) 0 (sort (digits {n})))",
+        tests=(({"n": 3142}, 1234), ({"n": 5}, 5), ({"n": 909}, 99)),
+        tags=("algorithmic", "list", "sort", "fold"),
+    ),
+)
+
+# LOVABench v3 = v2 + the algorithmic category.  ``TASKS`` stays v2 so
+# that Exp 03 / 07 / 11 measure what they measured; v3 is what a
+# fine-tune (M8) trains on and is judged by.
+TASKS_V3: Tuple[Task, ...] = TASKS + ALGORITHMIC
+
+assert len(TASKS_V3) == 80, f"LOVABench v3 must have exactly 80 tasks, got {len(TASKS_V3)}"
+assert len({t.id for t in TASKS_V3}) == 80, "task ids must be unique"
+
+
 def by_id(task_id: str) -> Task:
-    for t in TASKS:
+    for t in TASKS_V3:
         if t.id == task_id:
             return t
     raise KeyError(f"unknown task id: {task_id}")

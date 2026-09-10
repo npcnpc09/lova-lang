@@ -197,7 +197,13 @@ def parse(src: str) -> Node:
         raise ValueError("empty source")
     explicit = _explicit_name_ids(tokens)
     syms = SymbolTable(base=max(explicit) + 1 if explicit else 0)
+    definitions, body = _parse_program(tokens, syms)
+    return _wrap(definitions, body, syms)
 
+
+def _parse_program(tokens: List[str], syms: SymbolTable
+                   ) -> Tuple[List[Tuple[int, Node]], Optional[Node]]:
+    """The `defn` forms and the one expression of a token stream."""
     definitions: List[Tuple[int, Node]] = []
     body: Optional[Node] = None
     cursor = 0
@@ -213,7 +219,11 @@ def parse(src: str) -> Node:
                 f"expression; found a second top-level expression: {trailing!r}"
             )
         body, cursor = _parse_expr(tokens, cursor, syms)
+    return definitions, body
 
+
+def _wrap(definitions: List[Tuple[int, Node]], body: Optional[Node],
+          syms: SymbolTable) -> Node:
     if body is None:
         raise ValueError(
             f"program defines {len(definitions)} function(s) but has no "
@@ -686,8 +696,58 @@ def parse_with_prelude(src: str) -> Node:
     every binding the program never mentions, so a program that calls
     none of the prelude compiles to exactly what it would have without
     it.
+
+    M23: the prelude's parse is cached (per name base, since a source
+    that says `(let 0 ...)` pushes the prelude's names above 0) and
+    its definitions copied in, so this costs what parsing the program
+    costs.  The tree is identical to the one parsing the concatenated
+    text gives; `tests/test_surface.py` checks that.
     """
-    return parse(load_prelude() + chr(10) + src)
+    prelude = load_prelude()
+    src = expand_uses(src)
+    body_tokens = _tokenize(src)
+    if not body_tokens:
+        raise ValueError("empty source")
+    prelude_tokens = _prelude_tokens(prelude)
+    explicit = _explicit_name_ids(prelude_tokens + body_tokens)
+    base = max(explicit) + 1 if explicit else 0
+    definitions, snapshot = _prelude_parsed(prelude, prelude_tokens, base)
+    syms = SymbolTable(base=base)
+    syms._ids = dict(snapshot)
+    own, body = _parse_program(body_tokens, syms)
+    copied = [(name_id, _copy_tree(node)) for name_id, node in definitions]
+    return _wrap(copied + own, body, syms)
+
+
+_PRELUDE_TOKENS: Dict[str, List[str]] = {}
+_PRELUDE_PARSED: Dict[Tuple[str, int], Tuple[List[Tuple[int, Node]], Dict[str, int]]] = {}
+
+
+def _prelude_tokens(prelude: str) -> List[str]:
+    tokens = _PRELUDE_TOKENS.get(prelude)
+    if tokens is None:
+        tokens = _PRELUDE_TOKENS[prelude] = _tokenize(expand_uses(prelude))
+    return tokens
+
+
+def _prelude_parsed(prelude: str, tokens: List[str], base: int):
+    key = (prelude, base)
+    entry = _PRELUDE_PARSED.get(key)
+    if entry is None:
+        syms = SymbolTable(base=base)
+        definitions, body = _parse_program(tokens, syms)
+        if body is not None:
+            raise ValueError("the prelude must be definitions only")
+        entry = _PRELUDE_PARSED[key] = (definitions, syms.as_dict())
+    return entry
+
+
+def _copy_tree(node: Node) -> Node:
+    """A fresh copy of a definition, so no two programs share a node."""
+    if node.op == LIT_INT:
+        return Node(op=LIT_INT, args=[node.args[0]])
+    return Node(op=node.op, args=[_copy_tree(c) if isinstance(c, Node) else c
+                                  for c in node.args])
 
 
 # --- pretty-printer ----------------------------------------------------------

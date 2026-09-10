@@ -28,7 +28,7 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from corpus.tasks import TASKS, Task
+from corpus.tasks import TASKS, TASKS_V3, Task
 
 
 def task_to_dict(task: Task) -> dict:
@@ -61,6 +61,7 @@ def export_jsonl(tasks: Iterable[Task], path: str | Path) -> int:
 if __name__ == "__main__":
     import os
     here = Path(__file__).resolve().parent
-    out = here / "lovabench_v2.jsonl"
-    n = export_jsonl(TASKS, out)
-    print(f"wrote {n} tasks to {out}")
+    for name, tasks in (("lovabench_v2.jsonl", TASKS), ("lovabench_v3.jsonl", TASKS_V3)):
+        out = here / name
+        n = export_jsonl(tasks, out)
+        print(f"wrote {n} tasks to {out}")
