@@ -10,7 +10,7 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 697 tests. It is an
+LOVA, modules, a CLI, an MCP server for agents, and 716 tests. It is an
 interpreter in Python, with a stdlib-only core that runs under PyPy
 as well, and it has no floats, no namespaces and no concurrency. The
 "What LOVA still cannot do" section below is kept honest.*
@@ -159,6 +159,12 @@ python -m core.cli run apps/tictactoe.lova 0
 # run untrusted programs, one per line, under a budget; report each by name
 python -m core.cli run apps/sandbox.lova 5000 < programs.txt
 
+# evolve a pool of programs toward a target and ask the winner why it exists
+python -m core.cli run apps/evolve.lova 42 60
+
+# repair a program that violates its contract, guided by surprise
+python -m core.cli run apps/repair.lova 42 30 200
+
 # an interactive session, with the standard library loaded
 python -m core.cli repl
 
@@ -169,7 +175,7 @@ python -m core.cli emit apps/coprime.lova 14 15 --form int
 # what will this program do, without running it
 python -m core.cli analyze apps/collatz.lova 27
 
-# run the test suite (697 tests, stdlib unittest only)
+# run the test suite (716 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # the same under PyPy, where the whole suite is also expected to pass
@@ -217,6 +223,49 @@ Experiment 11 additionally needs `tiktoken`:
 ```bash
 pip install -e ".[experiments]"
 ```
+
+## What the programs show
+
+Twelve programs in `apps/`, each written to use the language for
+something and kept as a test. What they demonstrate:
+
+- **Logic runs right the first time.** The word count, the games, the
+  log summary, the batch, the sandbox: every program's logic produced
+  the correct result at its first execution. Errors, when they came,
+  were caught at compile time with a repair hint, or reported at run
+  time as a structured anomaly, never as a crash or a traceback.
+- **Failure is data.** The sandbox runs untrusted programs, one per
+  line, and reports each by hash and value or by the *name* of its
+  fault: an infinite loop meets its `budget`, a file read meets the
+  boundary it did not declare, text that is not a program is said to
+  be one. Nothing reaches the sandbox, and the sandbox needs no grant.
+- **Contracts are the program's own.** The batch gives each job its
+  own budget and counts the jobs that exceeded it; the repairer states
+  a `conserve` contract and mutates the patient until it holds,
+  keeping only mutations that shrink the surprise. 219 of 300 jobs
+  finish under budget, exactly as an outside computation predicts;
+  three repair targets converge in 39, 37 and 20 attempts,
+  reproducibly.
+- **Provenance is queryable from inside.** The evolved winner and
+  the repaired program each print their text, their generation, why
+  they exist and the length of their descent, with no help from
+  Python.
+- **The world is declared.** Two processes exchange datagrams, a file
+  is read, the clock is consulted, each under a boundary that names
+  the kind of effect while the host names the places. A program that
+  did not declare an effect cannot reach it, and the compiler says so
+  before the run.
+- **Programs are integers.** Every one of the twelve, re-run from its
+  Stage-2 projection, gives the identical output and value, the
+  3 000-character game included.
+- **It runs anywhere Python does.** The core has no dependencies, so
+  the same programs run under CPython and PyPy, and the 716 tests pass
+  on both.
+- **What the programs found was fixed the same day.** Writing them
+  surfaced four edges -- in input, in self-reference, in program ids,
+  in arguments -- and each became a compile-time check, a prelude
+  function or a command-line form before the day ended, with a test
+  for every shape. The journal keeps the record.
 
 ## Measurements
 
@@ -328,7 +377,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         697 unit tests, stdlib only
+tests/         716 unit tests, stdlib only
 ```
 
 ## What LOVA still cannot do

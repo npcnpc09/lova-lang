@@ -91,7 +91,7 @@ class TestExecute(unittest.TestCase):
         result, _ = call("lova_execute", source="(merge {n} 1)", args=["41"])
         self.assertEqual(result["value_int"], 42)
         result, _ = call("lova_execute", source="(len (stdin))", stdin="abcd\n")
-        self.assertEqual(result["value_int"], 4)
+        self.assertEqual(result["value_int"], 5)          # the newline is kept (Q78)
 
     def test_a_trap_is_a_structured_error(self):
         result, is_error = call("lova_execute", source="(div 1 0)")

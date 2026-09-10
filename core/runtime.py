@@ -877,18 +877,25 @@ class Runtime:
             self.out_stream.write(text)
 
     def read_line(self) -> Optional[str]:
-        """The next input line, or None at end of input.
+        """The next input line, terminator included, or None at the end.
 
         Queued lines first, then ``input_source`` if one is set -- which
         is how the CLI attaches a terminal without letting a test or a
         generated program ever block on one.
+
+        M23 (Q78): the line keeps its newline.  Until then it was
+        stripped, and an empty line -- the empty string, which *is* the
+        empty list -- was indistinguishable from the end of the input,
+        so an interactive program could not ask again on Enter.  Now a
+        blank line is `(10)`, and `nil` means nothing arrived.  A
+        queued line without a terminator is passed as it is.
         """
         if self.input_lines:
             return self.input_lines.pop(0)
         if self.input_source is not None:
             line = self.input_source()
             if line:
-                return line.rstrip(chr(10))
+                return line
         return None
 
     def written(self) -> str:
@@ -2452,7 +2459,7 @@ def _op_STDIN(node: Node, rt: Runtime, chained: bool) -> Any:
     line = rt.read_line()
     if line is None:
         return NIL_VALUE          # end of input, not an error
-    return list_from([ord(ch) for ch in line])
+    return list_from([ord(ch) for ch in line])   # newline included (Q78)
 
 
 def _op_MAP_PUT(node: Node, rt: Runtime, chained: bool) -> Any:

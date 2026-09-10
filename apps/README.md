@@ -193,7 +193,7 @@ printf '5\n1\n9\n' | python -m core.cli run apps/tictactoe.lova 0
 
 Guess the number.  The secret comes off the clock, under a boundary
 the host has to grant; twelve lines, and two of the language's edges
-found in writing them (Q78, Q79 -- see below).
+found in writing them and closed the same day (Q78, Q79).
 
 ```
 python -m core.cli run apps/guess.lova 100 --allow clock
@@ -234,6 +234,59 @@ which itself needs no grant.
 python -m core.cli run apps/sandbox.lova 5000 < programs.txt
 ```
 
+### `evolve.lova`
+
+A function is a population (Axiom 6).  Five arithmetic programs are
+seeded into a pool scored by distance from a target, evolved for k
+generations with `lib/evolution.lova`, and the winner accounts for
+itself from inside the language: its text, its value, its generation,
+why it exists, how long its line of descent is.
+
+```
+python -m core.cli run apps/evolve.lova 42 60      # (mul (p 5) (tau 12)), distance 0
+python -m core.cli run apps/evolve.lova 1000 200   # (merge (mul 33 30) 9) = 999
+```
+
+### `repair.lova`
+
+Surprise is the debugger (Axiom 7).  A patient program violates a
+`conserve` contract; the repairer mutates it, keeps a mutation only
+if the surprise against the target shrinks, and stops at the first
+version that satisfies the contract -- then prints the fix, the
+attempts, its descent and its `why`.  Reproducible.
+
+```
+python -m core.cli run apps/repair.lova 42 30 200   # fixed in 39 attempts
+```
+
+### `batch.lova`
+
+Conservation is declared in the program (Axiom 4).  300 Collatz jobs,
+each under its own budget of nodes; the jobs that would cost more are
+stopped, caught and counted, and the batch reports what finished.
+
+```
+python -m core.cli run apps/batch.lova 300 2000     # finished: 219, over budget: 81
+```
+
+## Arguments
+
+A `{placeholder}` is filled from the command line in the order of
+its first appearance in the code, or by name:
+
+```
+python -m core.cli run apps/batch.lova 300 2000
+python -m core.cli run apps/batch.lova cost=2000 jobs=300
+```
+
+The newer programs declare their arguments first, so the order is
+visible at the top of the file:
+
+```
+(def jobs [] {jobs})
+(def cost [] {cost})
+```
+
 ## Why these particular programs?
 
 `is_perfect` and `coprime` use the four pieces that make LOVA actually
@@ -256,14 +309,14 @@ and the surprise trace is available to any AI post-hoc inspector.
 
 The list this section used to carry -- no output, no lists of lists,
 no modules, no provenance from inside -- landed between M11 and M18.
-What the two games found in M23 is what is missing now:
+What the twelve programs found in M23, and what became of it:
 
-- **`stdin` cannot tell a blank line from the end of input** (Q78):
-  both are `nil`, because `""` is the empty list.  An interactive
-  program cannot ask again on Enter; the games quit on it and say so.
-- **`(def f [] body)` is a constant, not a thunk** (Q79).  It is
-  evaluated once, where it is defined; a recursive reference inside
-  it compiles and traps at run time with an integer for a name.  A
+- **`stdin` keeps the line's terminator** (Q78, closed).  A blank
+  line is `(10)`; only the end of the input is `nil`; `chomp` strips
+  the newline when a program wants it gone.
+- **`(def f [] body)` is a constant, not a thunk** (Q79, closed as a
+  check).  It is evaluated once, where it is defined, so a recursive
+  reference inside it is refused at compile time, by name.  A
   function that takes nothing has to take a dummy argument.
 - **A boundary is lexical.**  A top-level helper cannot use an
   effect even when called from inside a boundary that declares it;
@@ -274,9 +327,11 @@ What the two games found in M23 is what is missing now:
   threads a three-element state through a fold that way.
 - **Speed.**  Solving the game is eleven million steps: 18 s on
   CPython, 3 s under PyPy.
-- **`hash` is the program's integer, not a digest** (Q80): 150
-  digits for a program holding a short string.  `sandbox.lova`'s
-  report shows it.
+- **`hash` is the program's integer, not a digest** (Q80, closed):
+  150 digits for a program holding a short string.  `(digest p)` folds
+  it to eighteen; `sandbox.lova` reports by it.
+- **Arguments** (Q81, closed): `name=value` on the command line fills
+  the placeholder it names, in any order.
 - **`net-recv` yields the payload alone** (Q72): a server answers to
   an address it was given, not to whoever wrote.  Since M23 a send
   goes out from the listening socket when one is granted, so the peer

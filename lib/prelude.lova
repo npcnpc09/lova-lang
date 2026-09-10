@@ -248,6 +248,16 @@
 
 (def lines [text] (split text 10))
 
+;; A line as `stdin` gives it, without its terminator (10, or 13 10).
+;; The end of the input is `nil`, and stays `nil`.
+(def chomp [line]
+  (if (or (nil? line) (ne (last line) 10))
+    line
+    (let body (take (sub (len line) 1) line)
+      (if (and (not (nil? body)) (eq (last body) 13))
+        (take (sub (len body) 1) body)
+        body))))
+
 ;; The words of `text`: runs of non-space characters.
 ;; `space` is written out as `(le c 32)` in the loop: it runs once per
 ;; character, and a call costs more than the six nodes it saves (M23).
@@ -314,6 +324,17 @@
 ;; Presence is `map-get` with a default the caller knows is not a
 ;; stored value -- there is no `map-has`, because two arbitrary values
 ;; cannot be compared in LOVA.
+
+;; --- programs -------------------------------------------------------
+;;
+;; `hash` is the program's own integer -- its byte sequence read as a
+;; number (Exp 01) -- which for a program holding a short string runs
+;; to a hundred and fifty digits.  `digest` folds it to a fixed width
+;; for a report, a roster or a log: the residue modulo the Mersenne
+;; prime 2^61 - 1, eighteen digits at most.  Not a cryptographic hash;
+;; a stable, short, near-unique id (Q80).
+
+(def digest [p] (mod (hash p) 2305843009213693951))
 
 (def map-of [pairs]
   (fold (lambda m (lambda e (map-put m (head e) (head (tail e))))) (nil) pairs))

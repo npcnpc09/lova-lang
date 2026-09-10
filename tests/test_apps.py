@@ -45,13 +45,13 @@ class TicTacToe(unittest.TestCase):
         self.assertIn("the computer plays 3", out)
         self.assertIn("X X O", out)
 
-    def test_bad_input_is_asked_again_and_a_blank_line_quits(self):
+    def test_bad_input_and_a_blank_line_are_asked_again(self):
         code, out, err = _run(["run", "apps/tictactoe.lova", str(X___O_CENTRE)],
-                              "x\n9\n\n")
+                              "x\n\n9\n")
         self.assertEqual(code, 0)
-        # "x" is asked again; "9" is a free square and is played; the
-        # blank line is indistinguishable from end of input (Q78) and quits.
-        self.assertEqual(out.count("pick the number"), 1)
+        # "x" and the blank line are asked again (Q78); "9" is a free
+        # square and is played; the end of the input quits.
+        self.assertEqual(out.count("pick the number"), 2)
         self.assertIn("bye", out)
         self.assertIn("=> 0", err)
 
@@ -72,10 +72,11 @@ class Guess(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("--allow clock", err)
 
-    def test_a_blank_line_gives_up(self):
+    def test_the_end_of_input_gives_up_and_a_blank_line_does_not(self):
         code, out, err = _run(["run", "apps/guess.lova", "3", "--allow", "clock"], "\n")
         self.assertEqual(code, 0)
-        self.assertIn("bye", out)
+        self.assertIn("a number, please", out)        # the blank line (Q78)
+        self.assertIn("bye", out)                     # then the end of input
         self.assertIn("=> 0", err)
 
 
@@ -154,6 +155,73 @@ class Ping(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("pong ping 1", out)
         self.assertIn("=> 1", err)
+
+
+class Batch(unittest.TestCase):
+
+    def test_jobs_over_budget_are_caught_and_counted(self):
+        # Python agrees: 219 of 1..300 reach 1 within the 2000-node budget.
+        code, out, err = _run(["run", "apps/batch.lova", "300", "2000"])
+        self.assertEqual(code, 0)
+        self.assertIn("finished: 219", out)
+        self.assertIn("over budget: 81", out)
+        self.assertIn("=> 219", err)
+
+    def test_arguments_may_be_named_in_any_order(self):
+        # Q81: `name=value` fills the placeholder it names.
+        code, out, _err = _run(["run", "apps/batch.lova", "cost=2000", "jobs=300"])
+        self.assertEqual(code, 0)
+        self.assertIn("finished: 219", out)
+
+    def test_a_missing_argument_says_which(self):
+        with self.assertRaises(SystemExit) as ctx:
+            _run(["run", "apps/batch.lova", "jobs=300"])
+        self.assertIn("cost", str(ctx.exception))
+
+
+class Repair(unittest.TestCase):
+
+    def test_the_patient_is_repaired_and_accounts_for_itself(self):
+        code, out, err = _run(["run", "apps/repair.lova", "42", "30", "200"])
+        self.assertEqual(code, 0)
+        self.assertIn("patient: (merge (mul 6 9) 1)", out)
+        self.assertIn("fixed: (merge (mul 4 8) 10)", out)      # 42, reproducibly
+        self.assertIn("attempts: 39", out)
+        self.assertIn("why: mutate", out)
+        self.assertIn("=> 39", err)
+
+
+class Evolve(unittest.TestCase):
+
+    def test_the_pool_converges_and_the_winner_explains_itself(self):
+        code, out, err = _run(["run", "apps/evolve.lova", "42", "60"])
+        self.assertEqual(code, 0)
+        self.assertIn("value: 42", out)
+        self.assertIn("distance: 0", out)
+        self.assertIn("winner: (", out)
+        self.assertIn("=> 0", err)
+
+
+class StageTwoRoundTrip(unittest.TestCase):
+    """A real program projected to the Stage-2 surface runs identically."""
+
+    def test_the_game_runs_from_its_projection(self):
+        import os
+        import tempfile
+        args = ["apps/tictactoe.lova", str(X_X_O_CENTRE)]
+        _code, want, want_err = _run(["run"] + args, "3\n")
+        _code, projection, _ = _run(["emit"] + args + ["--form", "stage2"])
+        self.assertNotIn("(", projection)
+        fd, path = tempfile.mkstemp(suffix=".s2")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(projection)
+        try:
+            code, got, got_err = _run(["run", path, "--stage2"], "3\n")
+        finally:
+            os.remove(path)
+        self.assertEqual(code, 0)
+        self.assertEqual(got, want)
+        self.assertIn("=> 1", got_err)
 
 
 if __name__ == "__main__":

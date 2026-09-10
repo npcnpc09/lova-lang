@@ -37,7 +37,7 @@ with errors surfaced later.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import FrozenSet, Any, Dict, List, Optional, Set, Tuple
 
 from core.tokens import (
     APPLY, BUDGET, CONS, CONSERVE, DEVIATION, DIV, GCD, HEAD, IDENTITY,
@@ -145,8 +145,19 @@ def _chain_names(node: Node) -> Set[int]:
     return names
 
 
-def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
-    """Walk the tree; every REF must bind to a name in ``env``."""
+def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...],
+                 pending: FrozenSet[int] = frozenset()) -> None:
+    """Walk the tree; every REF must bind to a name in ``env``.
+
+    ``pending`` (M23, Q79) holds the names of the enclosing binding
+    group whose values have not been computed at this point: the
+    binding being defined and the later members of its chain.  A
+    reference to one is legal under a ``lambda`` -- the body runs
+    later, when the group is complete, which is what makes a letrec
+    -- and a fault anywhere else, because the runtime installs a
+    binding only after its value exists.  Until Q79 such a reference
+    compiled and trapped at run time with an integer for a name.
+    """
     if node.op == LIT_INT:
         return
     if node.op == QUOTE:
@@ -182,8 +193,13 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
         # reference used to be an unbound-ref error -- so nothing that
         # used to compile changes meaning.
         group = env | _chain_names(node)
-        _scope_check(node.args[1], group, path + (node.op, 1))
-        _scope_check(node.args[2], group, path + (node.op, 2))
+        name_id = int(name_node.args[0])
+        # The value runs before this binding and the rest of its chain
+        # are installed; the body runs after this one is.
+        _scope_check(node.args[1], group, path + (node.op, 1),
+                     pending | frozenset(_chain_names(node)))
+        _scope_check(node.args[2], group, path + (node.op, 2),
+                     pending - {name_id})
         return
     if node.op == LAMBDA:
         # (lambda param body) -- param is a LiteralInt; body sees it bound.
@@ -205,6 +221,8 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
                 ),
             )
         param_id = int(param_node.args[0])
+        # A lambda body runs when applied, by which time the group that
+        # encloses it is complete: nothing is pending under a lambda.
         _scope_check(node.args[1], env | {param_id}, path + (node.op, 1))
         return
     if node.op == REF:
@@ -225,6 +243,23 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
                 ),
             )
         name_id = int(name_node.args[0])
+        if name_id in pending:
+            raise CompileError(
+                kind="unbound-ref",
+                detail={
+                    "name_id": name_id,
+                    "bound_names": sorted(env - pending),
+                    "reason": "strict-self-reference",
+                },
+                position_path=path + (node.op,),
+                offending_op=REF,
+                repair_hint=(
+                    f"REF {name_id} names a binding of this `let` group whose "
+                    "value is not yet computed where the reference is "
+                    "evaluated.  Reference it under a `lambda`, which runs "
+                    "later, or bind it earlier in the group."
+                ),
+            )
         if name_id not in env:
             raise CompileError(
                 kind="unbound-ref",
@@ -244,7 +279,7 @@ def _scope_check(node: Node, env: Set[int], path: Tuple[int, ...]) -> None:
     # Default: recurse into children
     for i, child in enumerate(node.args):
         if isinstance(child, Node):
-            _scope_check(child, env, path + (node.op, i))
+            _scope_check(child, env, path + (node.op, i), pending)
 
 
 # --- Pass 2: type check ----------------------------------------------------

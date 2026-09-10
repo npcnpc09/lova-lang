@@ -5,7 +5,8 @@
 ;;; Each line of the input is a LOVA program in the text surface.  The
 ;;; sandbox reads it into a program value, runs it under a budget of
 ;;; the given number of nodes, and prints one line: the program's
-;;; hash, and either its value or the fault it raised, by name.  A
+;;; digest (its integer, folded to eighteen digits -- Q80), and either
+;;; its value or the fault it raised, by name.  A
 ;;; program that loops for ever meets the budget; one that reads a
 ;;; file meets the boundary it did not declare; one that is not even
 ;;; a program is reported as such.  Nothing a line can do reaches the
@@ -37,15 +38,15 @@
   (let report (when-anomaly
                 (let p (read line)
                   (let v (budget {nodes} (eval p))
-                    (list 1 (append (text-of (hash p)) (append " => " (value-text v))))))
+                    (list 1 (append (text-of (digest p)) (append " => " (value-text v))))))
                 (lambda code (list 0 (append "fault: " (fault-name code)))))
     (seq (println (head (tail report)))
          (head report))))
 
 (def run-all [count]
   (let line (stdin)
-    (if (nil? line)
-      count
-      (run-all (merge count (run-line line))))))
+    (cond (nil? line) count
+          (nil? (words line)) (run-all count)          ; a blank line is not a program
+          (run-all (merge count (run-line line))))))
 
 (run-all 0)

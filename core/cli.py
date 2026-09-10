@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Any, List, Optional
+from typing import Dict, Any, List, Optional
 
 from core import surface2
 from core.compiler import CompileError, compile as lova_compile
@@ -54,11 +54,17 @@ def read_source(path: str) -> str:
 
 
 def substitute(source: str, args: List[str]) -> str:
-    """Fill ``{name}`` placeholders positionally from the command line.
+    """Fill ``{name}`` placeholders from the command line.
 
     ``apps/`` programs carry placeholders their drivers used to fill.
     An argument that is not an integer is quoted as a string literal,
     which is how ``palindrome.lova racecar`` works.
+
+    An argument ``name=value`` fills the placeholder it names (M23,
+    Q81); the rest fill the remaining placeholders in the order of
+    their first appearance in the code -- which a reader cannot see,
+    so a program that takes more than one is best read with its
+    arguments declared first, or run with them named.
     """
     import re
 
@@ -71,12 +77,24 @@ def substitute(source: str, args: List[str]) -> str:
             names.append(match.group(1))
     if not names:
         return source
-    if len(args) < len(names):
+    named: Dict[str, str] = {}
+    positional: List[str] = []
+    for arg in args:
+        key, sep, value = arg.partition("=")
+        if sep and key in names and key not in named:
+            named[key] = value
+        else:
+            positional.append(arg)
+    unnamed = [n for n in names if n not in named]
+    if len(positional) < len(unnamed):
         raise SystemExit(
-            f"program expects {len(names)} input(s) {names}, got {len(args)}"
+            f"program expects {len(names)} input(s) {names}, got "
+            f"{len(named) + len(positional)}; missing "
+            f"{unnamed[len(positional):]} (give them as name=value)"
         )
+    filled = list(named.items()) + list(zip(unnamed, positional))
     out = source
-    for name, value in zip(names, args):
+    for name, value in filled:
         try:
             int(value, 0)
             literal = value
@@ -98,7 +116,30 @@ def build(source: str, *, prelude: bool = True, stage2: bool = False,
         tree = parse(source)
     if not do_compile:
         return tree, None
-    return lova_compile(tree)
+    symbols = getattr(tree, "symbols", None)
+    try:
+        compiled, report = lova_compile(tree)
+    except CompileError as exc:
+        name_anomaly(exc.anomaly, symbols)
+        raise
+    compiled.symbols = symbols
+    return compiled, report
+
+
+def name_anomaly(anomaly: Any, symbols: Any) -> None:
+    """Add the surface spelling of a name the anomaly mentions (Q79).
+
+    The anomaly names an integer, because the integer is the name; a
+    person reading the report wants the word they wrote.
+    """
+    if symbols is None or not isinstance(anomaly, dict):
+        return
+    detail = anomaly.get("detail")
+    if not isinstance(detail, dict) or "name_id" not in detail:
+        return
+    name = symbols.name_of(detail["name_id"])
+    if name is not None:
+        detail["name"] = name
 
 
 # --- printing ----------------------------------------------------------------
@@ -244,6 +285,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return report_error(trap)
     except (ValueError, NotImplementedError) as exc:
         sys.stdout.flush()
+        name_anomaly(getattr(exc, "anomaly", None), getattr(tree, "symbols", None))
         return report_error(exc)
 
     sys.stdout.flush()

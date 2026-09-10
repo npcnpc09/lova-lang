@@ -84,6 +84,14 @@ class Frame:
     name: Optional[int]
     type: Optional[Type]
     base: int
+    # M23 (Q79).  ``pending``: a LET's name while its value is still
+    # being generated -- the runtime installs the binding only after
+    # the value exists, so a reference evaluated inside the value is
+    # unbound unless it sits under a lambda, which runs later.
+    # ``lam``: the frame is a lambda's, which is what shields a
+    # pending name.
+    pending: bool = False
+    lam: bool = False
 
 
 @dataclass
@@ -138,6 +146,9 @@ class GenState:
         wanted = self.stack[-1].ref_type
         seen: Dict[int, Frame] = {}
         for frame in self.bound_names():
+            if frame.pending and not any(
+                    f.lam and f.base > frame.base for f in self.scopes):
+                continue                          # Q79: strict self-reference
             seen[frame.name] = frame              # later shadows earlier
         out = []
         for name, frame in seen.items():
@@ -238,7 +249,8 @@ class GenState:
                 f"token 0x{token:02X} not in valid_next {sorted(valid)}"
             )
 
-        scopes = [Frame(f.name, f.type, f.base) for f in self.scopes]
+        scopes = [Frame(f.name, f.type, f.base, f.pending, f.lam)
+                  for f in self.scopes]
 
         # Closing a variadic?
         if token == END:
@@ -317,7 +329,8 @@ class GenState:
             if token == EXTERNAL_BOUNDARY:
                 children[0].role = "caps"
             if self.track_scope and token in (LET, LAMBDA):
-                scopes.append(Frame(name=None, type=None, base=base))
+                scopes.append(Frame(name=None, type=None, base=base,
+                                    pending=token == LET, lam=token == LAMBDA))
                 index = len(scopes) - 1
                 children[0].role, children[0].frame = "binder", index
                 if token == LET:
@@ -335,6 +348,12 @@ class GenState:
         # form was opened; when the form's subtree completes, the stack
         # is back at that depth and the name goes out of scope.
         live = [f for f in scopes if f.base < len(new_stack)]
+        for f in live:
+            # A LET's children are [body, value, binder] above ``base``;
+            # once only the body slot is left, the value is complete
+            # and the binding is installed.
+            if f.pending and len(new_stack) <= f.base + 1:
+                f.pending = False
         return GenState(stack=new_stack, scopes=live, track_scope=self.track_scope)
 
 

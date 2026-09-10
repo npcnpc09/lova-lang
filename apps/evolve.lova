@@ -1,0 +1,38 @@
+;;; evolve.lova  --  a function is a population; watch it converge
+;;;
+;;;   lova run apps/evolve.lova 1000 40
+;;;
+;;; Five arithmetic programs are seeded into a pool whose fitness is
+;;; the distance from the target given as the first argument.  The
+;;; pool is evolved for the number of generations given as the
+;;; second: each round retires the least fit, clones and mutates the
+;;; fittest.  Then the winner is asked to account for itself -- its
+;;; text, its value, its generation, why it exists, and how long its
+;;; line of descent is -- all from inside the language.  The value of
+;;; the program is the winner's remaining distance from the target.
+;;;
+;;; Written at M23 as the evolution scenario: Axiom 6 (a function is
+;;; a pool of variants) and Axiom 5 (provenance is intrinsic) in one
+;;; program, with `lib/evolution.lova` supplying the helpers.
+
+(use "evolution")
+
+(def score [] (lambda p (surprise {target} (eval p))))
+
+(def line [label v] (println (join (list label v) 32)))
+
+(let pool (evolve-n (defpop score
+                      (quote (mul 7 8))
+                      (quote (merge 100 (mul 3 3)))
+                      (quote (sigma 12))
+                      (quote (mul (p 5) (tau 12)))
+                      (quote (merge (mul 20 20) 1)))
+                    {generations})
+  (let winner (best pool)
+    (seq (line "winner:" (explain winner))
+         (line "value:" (text-of (eval winner)))
+         (line "distance:" (text-of (best-score pool)))
+         (line "generation:" (text-of (generation winner)))
+         (line "why:" (why winner))
+         (line "ancestors:" (text-of (len (lineage-query winner))))
+         (best-score pool))))

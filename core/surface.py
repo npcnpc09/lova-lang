@@ -126,6 +126,13 @@ class SymbolTable:
     def known(self, name: str) -> bool:
         return name in self._ids
 
+    def name_of(self, name_id: int) -> Optional[str]:
+        """The surface spelling of a name id, if this parse interned it."""
+        for name, ident in self._ids.items():
+            if ident == name_id:
+                return name
+        return None
+
     def gensym(self) -> int:
         """A name id no source can collide with.
 
@@ -214,6 +221,9 @@ def parse(src: str) -> Node:
         )
     for name_id, fn_node in reversed(definitions):
         body = Node(op=LET, args=[Lit(name_id), fn_node, body])
+    # The names, for whoever reports an error about one (M23, Q79).
+    # The integer is the program; the spelling is a courtesy.
+    body.symbols = syms
     return body
 
 

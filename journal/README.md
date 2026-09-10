@@ -491,11 +491,64 @@ inside a boundary, so the effectful helper of `ping.lova` is a
 `let`-bound lambda -- the third time the lexical boundary asked for a
 rewrite in five programs.
 
+**Four scenarios on the axioms themselves.** The eight programs so far
+used the language as a language. These four use what no other
+language has, one axiom each:
+
+- *A function is a population* (Axiom 6) -- `apps/evolve.lova`: five
+  arithmetic programs seeded into a pool scored by distance from a
+  target, evolved for k generations with `lib/evolution.lova`'s
+  helpers, and the winner asked to account for itself from inside:
+  `explain`, `eval`, `generation`, `why`, `lineage-query`. Target 42,
+  60 generations: `(mul (p 5) (tau 12))`, distance 0. Target 1000,
+  200 generations: `(merge (mul 33 30) 9)` = 999, twenty-second in
+  its line, "mutate strength=0.3 [lit:6->9]". 16 555 steps.
+- *Surprise is the debugger* (Axiom 7) -- `apps/repair.lova`: a
+  patient program, a `conserve` contract it violates, and a repairer
+  that mutates it and keeps a mutation only if the surprise against
+  the target shrinks. Targets 42, 100 and 7 from `(merge (mul 6 9)
+  1)`: fixed in 39, 37 and 20 attempts, reproducibly, and each fix
+  reports its descent and its `why`. A random walk without the
+  surprise signal gave up at 200; with it, hill-climbing converged
+  every time. Nothing here is Python.
+- *Conservation is declared in the program* (Axiom 4) --
+  `apps/batch.lova`: 300 Collatz jobs, each under its own 2 000-node
+  `budget`, the over-budget ones caught per job and counted rather
+  than left to run. 219 finished, 81 over budget -- exactly the 219
+  Python counts as reaching 1 in 75 steps. The batch survives its
+  expensive items and says which they were.
+- *Programs are integers* (Axiom 1) -- every app run from its
+  Stage-2 projection: 12/12 identical outputs and values, the game
+  included (2 977 characters, no parentheses). `tests/test_apps.py`
+  keeps the game's round trip.
+
+One thing the four found (Q81): a `{placeholder}` is filled from the
+command line in the order of its *first appearance in the code*, so
+`batch 300 2000` once meant 2 000 jobs at 300 nodes and `repair`
+once took its attempts for its strength. The idiom that fixes it is
+to declare the arguments first -- `(def jobs [] {jobs})` -- which
+is what the three programs now do; whether the CLI should take
+names is the question.
+
+**What the twelve found, fixed the same day.** Q78: `stdin` keeps
+the terminator, so Enter is `(10)` and only the end of the input is
+`nil`; the games ask again on a blank line. Q79: the scope pass
+carries the names of a binding group whose values are not yet
+computed and refuses a reference to one anywhere but under a lambda
+-- `(def f [] (... (f) ...))` is now a compile error that says
+`read-guess`, not `86` -- and the generator no longer offers such a
+name: Exp 16's 8/1000 runtime unbound references became 0. Q80:
+`(digest p)`, eighteen digits from `hash` at zero slots. Q81:
+`name=value` arguments. `tests/test_self_reference.py` pins the six
+shapes (strict self, under lambda, later sibling, earlier sibling,
+mutual recursion, zero-parameter def) on the compiler and the
+generator both.
+
 Where it stands on CPython: `_call` at ~1.5 µs (a frame, six
 attribute saves and restores, the depth check) is the largest single
-item, then the per-node prologue at ~0.3 µs. Tests 665 → 697. Q75
-answered; Q76 asks what the next floor is; Q78, Q79 and Q80 are what
-the five programs found.
+item, then the per-node prologue at ~0.3 µs. Tests 665 → 716. Q75
+answered; Q76 asks what the next floor is; Q78–Q81 were what the
+twelve programs found, and are closed.
 
 ### Milestone 7 (2026-09-09) — LOVA as a tool for agents
 Named at M6 and delivered after M21, because everything it exposes had
@@ -1270,14 +1323,35 @@ the corpus grows again.
   on a capability the sandbox does not grant. Eight programs in a
   thousand are a strict `let` self-reference the compiler accepts and
   the runtime traps; the M9 letrec left that open.
-- **Q80**: `hash` yields the program's own integer -- Exp 01's
+- ~~**Q81**~~: *closed 2026-09-10.* `name=value` on the command line
+  fills the placeholder it names, the rest fill positionally, and a
+  missing one is named in the error. The question as raised: a
+  `{placeholder}` is filled positionally in the order of
+  its first appearance in the code, which a reader cannot see and a
+  comment cannot fix (M22 ruled comments out so they could not decide
+  the order). Two of the twelve programs got their arguments crossed.
+  The declare-first idiom, `(def jobs [] {jobs})`, makes the order
+  visible; should the CLI also accept `jobs=300`, or a header the
+  program states?
+- ~~**Q80**~~: *closed 2026-09-10, at zero slots.* `(digest p)` in the
+  prelude is `(hash p)` modulo the Mersenne prime 2^61 - 1: eighteen
+  digits, stable, one line. `sandbox.lova` reports by it. The
+  question as raised: `hash` yields the program's own integer -- Exp 01's
   identity, `(merge (p 3) (tau 12))` = 55916975560956379404 -- which
   for a program holding a fifteen-character string is 150 digits.
   A sandbox's report, a lineage record, a population's roster all
   want a fixed-width id. A digest is a second notion of identity;
   is it worth having, and if so is it an operator (the table is
   full: Q74) or a library function over the bytes `hash` gives?
-- **Q79**: `(def f [] body)` is a constant evaluated where it is
+- ~~**Q79**~~: *closed 2026-09-10.* The scope pass tracks the names of
+  a binding group whose values are not yet computed and refuses a
+  reference to one anywhere but under a lambda (`unbound-ref`, reason
+  `strict-self-reference`, with the surface name in the CLI's report);
+  the generator no longer offers such a name, so Exp 16's 8/1000
+  became 0 (the one runtime `unbound-ref` left is `eval` of text
+  `read` at run time, which is the runtime's to check). A
+  zero-parameter `def` stays a constant. The question as raised:
+  `(def f [] body)` is a constant evaluated where it is
   defined, and a recursive reference inside it is a strict letrec
   self-reference: accepted by the compiler, an `unbound-ref` naming
   an integer at run time (found by hand in `guess.lova`; counted at
@@ -1286,7 +1360,11 @@ the corpus grows again.
   strictly and refuse the latter at compile time, with the name?  And
   should a zero-parameter `def` be a thunk -- which needs a way to
   apply a function to nothing, and `(apply f)` already means `f`?
-- **Q78**: `stdin` yields `nil` both at end of input and for an empty
+- ~~**Q78**~~: *closed 2026-09-10.* `stdin` keeps the line's
+  terminator; a blank line is `(10)` and only the end of the input
+  is `nil`. `chomp` in the prelude strips the terminator; `words`
+  never needed it. The games ask again on Enter. The question as
+  raised: `stdin` yields `nil` both at end of input and for an empty
   line, because the empty string is the empty list. An interactive
   program cannot ask again on Enter. Keep the newline on the line (a
   blank line is then `(10)`, and every consumer strips), signal end

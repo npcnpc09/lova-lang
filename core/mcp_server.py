@@ -233,7 +233,7 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
         max_steps=int(params.get("max_steps", CLI_MAX_STEPS)),
         max_call_depth=int(params.get("max_depth", CLI_MAX_DEPTH)),
         granted=granted, net_send_to=send_to, net_listen_on=listen_on,
-        input_lines=stdin_text.splitlines() if stdin_text else [],
+        input_lines=stdin_text.splitlines(keepends=True) if stdin_text else [],
     )
     try:
         value = evaluate(tree, runtime)

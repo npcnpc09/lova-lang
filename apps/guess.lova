@@ -4,8 +4,7 @@
 ;;;
 ;;; The computer takes a number from 1 to n off the clock; you guess,
 ;;; it says higher or lower.  The value of the program is the number
-;;; of guesses it took, or 0 if you gave up (an empty line, or the end
-;;; of the input -- the two are one to `stdin`, Q78).
+;;; of guesses it took, or 0 if you gave up (the end of the input).
 ;;;
 ;;; Twelve lines, written alongside tictactoe.lova to see what the
 ;;; smallest interactive program needs: a source of randomness (the

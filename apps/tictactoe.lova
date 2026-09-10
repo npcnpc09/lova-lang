@@ -8,9 +8,9 @@
 ;;;
 ;;; You are X and move first; the computer is O and plays a memoised
 ;;; negamax, so it never loses.  Type the number of a free square, as
-;;; shown on the board.  An empty line, or the end of the input, ends
-;;; the game.  The value of the program is the winner: 1 you, 2 the
-;;; computer, 0 a draw or a quit.
+;;; shown on the board.  The end of the input ends the game.  The
+;;; value of the program is the winner: 1 you, 2 the computer, 0 a
+;;; draw or a quit.
 ;;;
 ;;; The second real program (M23; wordfreq was the first), written to
 ;;; find out what a turn-based game needs from the language.  What it
@@ -105,10 +105,9 @@
                (println "a draw"))
          w)))
 
-;; A move from the player: a free square, or -1 to stop.  A blank line
-;; stops too, and not by choice: `stdin` yields the empty list both at
-;; end of input and for an empty line, because "" *is* `nil` (Q78).
-;; Anything else -- text, a taken square -- is asked again.
+;; A move from the player: a free square, or -1 at the end of the
+;; input.  Anything else -- text, a taken square, a blank line -- is
+;; asked again.  (Until Q78 a blank line was `nil` too, and quit.)
 (def read-move [b]
   (let line (stdin)
     (if (nil? line)
@@ -134,5 +133,5 @@
                           (announce b3)
                           (play b3 (nth r 2))))))))))))
 
-(seq (println "you are X and move first; type the number of a square (an empty line quits)")
+(seq (println "you are X and move first; type the number of a square")
      (play {start} (nil)))

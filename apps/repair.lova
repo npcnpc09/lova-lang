@@ -1,0 +1,59 @@
+;;; repair.lova  --  a program that repairs another program
+;;;
+;;;   lova run apps/repair.lova 55 30 200
+;;;
+;;; The patient is `(merge (mul 6 9) 1)`, which is 55 when it should be
+;;; the target given as the first argument -- but the target is yours
+;;; to choose, so make the patient wrong by choosing anything else.
+;;; The contract is `conserve`: the patient's value must equal the
+;;; target, and a run that does not is a conservation anomaly (code
+;;; 3), which the repairer catches.  On each failure it mutates the
+;;; patient -- a literal nudged, an operator swapped -- at the
+;;; strength given as the second argument, keeps the mutation only if
+;;; it brings the value closer (the surprise is the signal), tries up
+;;; to the number of attempts given as the third, and stops at the
+;;; first version that satisfies the contract.  It then prints the fixed text, how many
+;;; attempts it took, and the fix's line of descent back to the
+;;; original.  The value of the program is the attempts used, or 0 if
+;;; the budget of attempts ran out.
+;;;
+;;; Written at M23 as the self-repair scenario: Axiom 7 (a deviation is
+;;; a structured anomaly) driving Axiom 6's `mutate`, with Axiom 5's
+;;; lineage recording every step.  Nothing here is Python.
+
+;; The arguments, declared first: a `{placeholder}` is filled from the
+;; command line in the order of its first appearance in the code.
+(def target [] {target})
+(def strength [] {strength})
+(def attempts [] {attempts})
+
+(def line [label v] (println (join (list label v) 32)))
+
+;; 1 when `p` meets the contract, 0 when it violates it or faults.
+(def holds [p]
+  (when-anomaly (seq (conserve target (eval p)) 1)
+                (lambda code 0)))
+
+;; How far `p` is from the contract: the surprise of its value against
+;; the target, or a large number if it faults.  This is the signal that
+;; guides the repair (Axiom 7): a mutation is kept only if it shrinks it.
+(def gap [p]
+  (when-anomaly (surprise target (eval p))
+                (lambda code 1000000)))
+
+(def attempt [p n]
+  (cond (holds p)
+          (seq (line "fixed:" (explain p))
+               (line "attempts:" (text-of n))
+               (line "descent:" (text-of (len (lineage-query p))))
+               (line "why:" (why p))
+               n)
+        (ge n attempts)
+          (seq (line "gave up after" (text-of n)) 0)
+        (let candidate (mutate p strength)
+          (attempt (if (lt (gap candidate) (gap p)) candidate p) (inc n)))))
+
+(let patient (quote (merge (mul 6 9) 1))
+  (seq (line "patient:" (explain patient))
+       (line "target:" (text-of target))
+       (attempt patient 0)))

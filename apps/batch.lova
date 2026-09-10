@@ -1,0 +1,40 @@
+;;; batch.lova  --  a batch of jobs, each under its own cost contract
+;;;
+;;;   lova run apps/batch.lova 300 2000
+;;;
+;;; For every n from 1 to the first argument, count the Collatz steps
+;;; to 1 -- but each job may spend at most the second argument in
+;;; nodes.  A job that would cost more is stopped by its `budget`, the
+;;; anomaly is caught, and the job is recorded as over budget rather
+;;; than left to run.  The batch prints how many jobs finished, how
+;;; many were over budget, and the longest trajectory among those that
+;;; finished.  The value of the program is the number that finished.
+;;;
+;;; Written at M23 as the cost-contract scenario: Axiom 4 (conservation
+;;; is declared in the program, not policed outside it) as something
+;;; a program uses per job, so a batch survives its expensive items
+;;; and says which they were.
+
+;; The arguments, declared first: a `{placeholder}` is filled from the
+;; command line in the order of its first appearance in the code.
+(def jobs [] {jobs})
+(def cost [] {cost})
+
+(def next [n] (if (mod n 2) (merge (mul 3 n) 1) (div n 2)))
+
+(def steps [n acc]
+  (if (eq n 1) acc (steps (next n) (inc acc))))
+
+;; The step count, or -1 when the job ran out of budget.
+(def job [n]
+  (when-anomaly (budget cost (steps n 0))
+                (lambda code -1)))
+
+(def finished [rs] (filter (lambda r (ge r 0)) rs))
+
+(let results (map job (range 1 (inc jobs)))
+  (let done (finished results)
+    (seq (println (join (list "finished:" (text-of (len done))) 32))
+         (println (join (list "over budget:" (text-of (sub (len results) (len done)))) 32))
+         (println (join (list "longest:" (text-of (fold (lambda a (lambda b (max a b))) 0 done))) 32))
+         (len done))))

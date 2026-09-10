@@ -107,7 +107,14 @@ class TestInput(unittest.TestCase):
         self.assertEqual(list_to_python(run("(stdin)", rt)),
                          [ord(c) for c in "queued"])
         self.assertEqual(list_to_python(run("(stdin)", rt)),
-                         [ord(c) for c in "from-queue-later"])
+                         [ord(c) for c in "from-queue-later\n"])   # Q78: kept
+        self.assertIs(run("(stdin)", rt), NIL_VALUE)
+
+    def test_a_blank_line_is_not_the_end_of_input(self):
+        # Q78: Enter is `(10)`; only nothing at all is `nil`.
+        lines = iter(["\n", ""])
+        rt = Runtime(input_source=lambda: next(lines))
+        self.assertEqual(list_to_python(run("(stdin)", rt)), [10])
         self.assertIs(run("(stdin)", rt), NIL_VALUE)
 
 
