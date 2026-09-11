@@ -128,8 +128,12 @@ the interpreter's speed as an attempts number, Q90; compile faults
 fixed in one attempt every time); Exp 20 re-ran the eight with cost
 attribution in the step trap (31 against 26, the search 3/2/4 -- the
 rewrites read rather than guessed, and one misread because the list
-counted calls; it ranks by steps now, and `nth` is native). (4) is
-still unmeasured (Q88).
+counted calls; it ranks by steps now, and `nth` is native). Exp 21
+measured (4)'s repair half: eight one-token faults planted in programs
+already written, 30 attempts against 28, 672 characters against 391,
+27 108 read against 12 069 -- every fault found by reading before any
+feedback, so at that size repair cost is reading and density is
+charged on every repair (Q95: the size where reading fails).
 
 Standing invariants: Axioms 3, 4, 5, 6, 7, 9. **Demoted to design
 preferences: Axioms 1, 2, 8, 10** -- the integer encoding is the
@@ -512,6 +516,16 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**Exp 21** (2026-09-11) gave the fourth number its first value, and it
+is NULL for the language: a one-token fault planted in a program of
+20-40 lines is found by reading in either language before any
+feedback (47 of 48), so the repair leg at that size measures program
+length -- LOVA 2.35× longer, 1.7× more written, 2.2× more read -- and
+the structured anomaly never gets to speak. Every anomaly that was
+read (the sessions' own bad patches) located its fault in one attempt,
+on both sides. The claim lives at a size reading cannot cover (Q95)
+and in programs that carry their examples (Q96).
+
 **Exp 20** (2026-09-11) made the step trap say where the steps went.
 `hot` ranks functions by the steps spent in their own body (an
 anonymous lambda charged to the def that wrote it), with call counts
@@ -733,7 +747,7 @@ plus the text family 0x40-0x4D since M25: 78 tokens in all. The
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-783 unit tests passing, 20 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA) (pb11 has a v1 pilot + v2 re-run),
+787 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 14 first-class apps, **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

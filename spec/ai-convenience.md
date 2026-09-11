@@ -111,6 +111,19 @@ budget and is native at zero slots; the card says what costs. The
 number that names the next change is unchanged: the natural search is
 10-37M steps against 7M (Q90, Q94).
 
+**Fourth measurement (Exp 21, 2026-09-11, the fourth number's repair
+half: eight one-token faults planted in programs already written,
+three sessions per language):** attempts 30 against 28, characters
+written 672 against 391, characters read 27 108 against 12 069, for
+given programs 2.35× longer. Forty-seven of forty-eight faults were
+found by reading the program before any feedback; the failure
+feedback located an original fault zero times on either side. NULL at
+this size: repair cost is reading, and reading scales with length, so
+density is charged on every repair, not once at writing. The nine
+instrument attempts (offset spans on a console that prints CRLF) are
+fixed. The claim that a located anomaly beats a traceback stands
+untested until the faults are ones reading cannot find (Q95).
+
 ## 4. What the measure asks of the design
 
 Consequences, each a change the numbers above would reward:

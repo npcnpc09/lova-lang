@@ -250,7 +250,7 @@ def _records(lang: str, checks: bool = False) -> List[Dict[str, Any]]:
     if not path.exists():
         return []
     recs = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
-    return recs if checks else [r for r in recs if r.get("how") != "check"]
+    return recs if checks else [r for r in recs if r.get("how") not in ("check", "given")]
 
 
 def _last_submission(lang: str, task_id: str) -> Optional[str]:

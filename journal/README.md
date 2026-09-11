@@ -306,6 +306,30 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Experiment 21 (2026-09-11) — The repair leg: a fault planted in a program already written
+Q88, the yardstick's fourth number, first value. Exp 19's eight tasks,
+each with a program written for it (LOVA: session o5's, as it passed;
+Python: the reference) and one semantic fault planted at the analogous
+place in both -- a dropped `neg`, a period not stripped, a sort key's
+sign, a duplicated win line, a count for a sum, `<` for `<=` twice, an
+edge relaxed one way. Three Opus sessions per language: LOVA 24/24 in
+30 attempts, Python 24/24 in 28; emitted 672 chars against 391, read
+27 108 against 12 069, for given programs 2.35× longer. **47 of 48
+faults were found by reading the program before any feedback**; the
+harness's failure feedback located an original fault zero times on
+either side, so Axiom 7's channel never got to speak. Nine of the ten
+extra attempts were the instrument -- character-offset spans, CRLF on
+the console, a hand count off by one -- and every one of those bad
+patches was located exactly by the anomaly (LOVA) or the `SyntaxError`
+(Python) and undone in one attempt. **NULL for the language at this
+size**: repair cost is reading, and reading scales with length, so
+density is charged on every repair. `patch --find <text>` and
+`--dry-run` in the harness; `given` is not an attempt.
+`journal/experiment_21.md`; Q88 measured; Q95 (repair at a size where
+reading fails, run-time faults, the span and `hot` against a
+traceback), Q96 (programs that carry `example` forms), Q97 (density as
+a repair cost; the Stage-2 surface). Tests 783 → 787.
+
 ### Experiment 20 (2026-09-11) — Does cost attribution turn a blind rewrite into a read one?
 Q91. Exp 19's tasks and rules, three more Opus sessions (o4-o6) with
 `hot` in the step trap: 24/24 green, 31 attempts against run 2's 35,
@@ -1697,9 +1721,20 @@ the corpus grows again.
   what slot or family cost, against the ~25× a native `nth` gave?
 - **Q92**: ten sessions per language on one model, Exp 18's and 19's
   tasks together, so the per-task attempt distribution is load-bearing.
-- **Q88**: the reuse leg of the yardstick: a session given
-  `tictactoe.lova` and a variant task, against the same in Python, and
-  whether `why` on the result recovers its origin.
+- **Q88** *(measured in part by Exp 21, 2026-09-11)*: the reuse leg
+  of the yardstick. The repair half: eight one-token faults in
+  programs of 20-40 lines, three sessions per language -- 30 attempts
+  against 28, 672 characters against 391, 27 108 read against 12 069,
+  every fault found by reading before feedback. NULL at this size;
+  the variant-task half and `why` on the result are still open, and
+  the size where reading fails is Q95.
+- **Q95**: the repair leg at a size where reading fails: faults with
+  run-time symptoms in `apps/`-sized programs, the span and `hot`
+  against a traceback, on the same faults.
+- **Q96**: is a program that carries `example` forms repaired in fewer
+  attempts than the same program without them?
+- **Q97**: density as a repair cost -- 2.2× read per touch at Stage 1;
+  what does the Stage-2 surface do to it?
 - **Q89**: is the list of names in scope worth its place in an
   unbound-name anomaly, when the card lists them and the hint carries
   the nearest? It is most of the 823 chars such a fault costs to read.
@@ -1870,6 +1905,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 21 | 2026-09-11 | The repair leg: a planted fault | Done (3 sessions × 2 languages, 8 faults) | **NULL for the language, WIN for the measurement.** LOVA 24/24 in 30 attempts, Python 24/24 in 28; emitted 672 vs 391 chars, read 27 108 vs 12 069 (programs 2.35× longer). 47 of 48 faults found by reading before any feedback; failure feedback located an original fault 0 times on either side. 9 of 10 extra attempts were offset arithmetic in the harness (fixed: `--find`, `--dry-run`). Repair cost is reading, so density is charged per repair. Q95-Q97. |
 | 20 | 2026-09-11 | Cost attribution: blind rewrite to read one | Done (3 sessions, LOVA, Opus, 8 tasks) | **PARTIAL.** With `hot` in the step trap, h04 3/2/4 attempts against run 2's 6/3/4 (31 vs 35 in all); every session rewrote from the list, one was misled by it (ranked by calls: `inc` led). The trap ranks by steps in each function's own body now; that read `nth` as 3.9M of 7M. `nth`/`take`/`drop`/`last`/`append` native at zero slots via shape-keeping `text-slice`/`text-cat`; the natural first attempt 1.3-3.1× cheaper, still over budget. Slotted `Closure`/`Runtime`: interpreter 15% faster net. Card: cost section, six facts. Harness: `check`. Q93, Q94. |
 | 19 | 2026-09-11 | The loop where first attempts fail | Done (3 sessions × 2 languages × 2 runs, 8 tasks) | **PARTIAL.** Run 1 found four instrument defects (a numeric-looking text as an integer, a budget 30× tighter than the Python clock, a hint asserting non-termination, parse errors without a position), fixed. Run 2: LOVA 24/24 in 35 attempts, Python 24/24 in 26; parity on seven tasks, the game-tree search 6/3/4 vs 1/1/1, every extra attempt a rewrite for cost. Compile faults fixed in one attempt every time. The step trap now attributes cost by function. Q90-Q92. |
 | 18 | 2026-09-10 | The agent loop: the four numbers | Done, pilot (1 session × 2 languages × 10 tasks) | **PARTIAL.** A fresh Claude session with the card and a `submit` command: LOVA 10/10 in 11 attempts, Python 10/10 in 10; the one LOVA miss (an operator passed by name) fixed from the hint in one try; emitted 3 184 vs 2 431 chars; feedback 1 114 chars for the one failure, none on the Python side, so that number is one-sided; scaffolding a function call with a budget vs a subprocess with a timeout. Every hindrance named was a card gap, closed. Q87-Q89 raised. |

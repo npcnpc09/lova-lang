@@ -9,6 +9,7 @@ references, which is what `dry-run` does.
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from experiments import experiment_18_agent_loop as e18
 from experiments import experiment_19_agent_loop_apps as e19
@@ -106,6 +107,63 @@ class Exp19Feedback(unittest.TestCase):
     def test_the_budget_is_at_parity_with_the_wall_clock(self):
         self.assertEqual(e18.BUDGET, 7_000_000)
         self.assertEqual(e18.PY_TIMEOUT, 10.0)
+
+
+class RepairHarness(unittest.TestCase):
+    """Exp 21: the repair leg's instrument."""
+
+    def setUp(self):
+        # Binding a session rebinds the shared harness's tasks and log
+        # path; put them back so the other classes see Exp 18's.
+        self._saved = (e18.TASKS, e18.BY_ID, e18.RESULTS)
+
+    def tearDown(self):
+        e18.TASKS, e18.BY_ID, e18.RESULTS = self._saved
+
+    def test_every_planted_fault_is_one_edit_away_from_its_reference(self):
+        from experiments import experiment_21_repair as e21
+        for tid, (what, lova_edit, py_edit) in e21.FAULTS.items():
+            for lang, ref, edit in (("lova", e21.REFERENCE_LOVA, lova_edit), ("python", e21.REFERENCE_PY, py_edit)):
+                given = e21.GIVEN[tid][lang]
+                self.assertNotEqual(given, ref[tid], (tid, lang))
+                self.assertEqual(ref[tid].count(edit[0]), 1, (tid, lang, what))
+                self.assertEqual(ref[tid].replace(edit[0], edit[1], 1), given, (tid, lang, what))
+
+    def test_the_added_tests_are_in_place(self):
+        from experiments import experiment_21_repair as e21
+        self.assertEqual(len(e21.BY_ID["h04"].tests), 5)
+        self.assertEqual(len(e21.BY_ID["h07"].tests), 5)
+        self.assertEqual(e21.BY_ID["h07"].tests[-1]["expected"], 7)
+
+    def test_a_patch_may_name_the_text_it_replaces(self):
+        import contextlib, io, tempfile
+        from experiments import experiment_21_repair as e21
+        with tempfile.TemporaryDirectory() as tmp:
+            e21.RESULTS = Path(tmp)
+            e21._bind("_t")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = e21.main(["patch", "--session", "_t", "--lang", "python", "--task", "h06",
+                               "--find", "a < out[-1][1]", "--replacement", "a <= out[-1][1]", "--dry-run"])
+            self.assertEqual(rc, 0)
+            self.assertIn("would replace 'a < out[-1][1]'", out.getvalue())
+            self.assertIn("a <= out[-1][1]", out.getvalue())
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = e21.main(["patch", "--session", "_t", "--lang", "python", "--task", "h06",
+                               "--find", "out", "--replacement", "x", "--dry-run"])
+            self.assertEqual(rc, 2)
+            self.assertIn("must occur exactly once", out.getvalue())
+
+    def test_reading_the_given_program_is_not_an_attempt(self):
+        import tempfile
+        from experiments import experiment_21_repair as e21
+        with tempfile.TemporaryDirectory() as tmp:
+            e21.RESULTS = Path(tmp)
+            e21._bind("_t")
+            e18._append("python", {"task": "h06", "how": "given", "read_chars": 10, "time": 0})
+            self.assertEqual(e18._records("python"), [])
+            self.assertEqual(len(e18._records("python", checks=True)), 1)
 
 
 class CostAttribution(unittest.TestCase):
