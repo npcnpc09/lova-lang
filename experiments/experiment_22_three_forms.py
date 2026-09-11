@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.compiler import CompileError, compile as lova_compile          # noqa: E402
 from core.runtime import evaluate, Runtime, list_to_python, NIL_VALUE    # noqa: E402
-from core.surface import parse as parse1                                 # noqa: E402
+from core.surface import parse as parse1, NAME_TO_TOKEN                   # noqa: E402
 from core import surface2                                                # noqa: E402
 from core.tokens import decode, encode, SIGNATURES                        # noqa: E402
 from core.surface2 import SYMBOLS                                          # noqa: E402
@@ -211,46 +211,89 @@ def _s2_examples() -> str:
     return "\n".join(rows)
 
 
-def _symbol_table() -> str:
-    # Only the operators the tasks need, plus the structural ones.
-    from core.surface import NAME_TO_TOKEN
-    names = ["merge", "sub", "mul", "div", "mod", "neg", "gcd", "p", "tau", "sigma", "mobius",
-             "eq", "ne", "lt", "gt", "le", "ge", "if", "lambda", "apply", "let", "ref",
-             "cons", "head", "tail", "nil", "nil?",
-             "map", "filter", "fold", "reverse", "range", "any", "sort-by", "zip",
-             "text-len", "text-cat", "text-slice", "text-int", "int-text"]
+def _SUB_NAMES():
+    # The substrate's own operators for the ten tasks: comparison and
+    # branch are deviation/threshold/if-surprise, not the Stage-1 macros
+    # (Q101).  Ordered for the table.
+    return ["merge", "mul", "div", "mod", "gcd", "p", "tau", "sigma", "mobius",
+            "deviation", "threshold", "if-surprise",
+            "lambda", "ref", "cons", "head", "tail", "nil", "nil?",
+            "map", "filter", "fold", "reverse", "range", "any", "sort-by", "zip",
+            "text-len", "text-cat", "text-slice", "text-int", "int-text"]
+
+
+_OPERATORS_SUB = """The operators (this is the whole set; there is no standard library, and
+there is no sub, neg, lt, gt, eq or if -- those are text-only spellings.
+Build them from what is here):
+
+  arithmetic   (merge a b)=a+b   (mul a b)=a*b   (div a b)=a//b   (mod a b)
+               (gcd a b)  (p n)  (tau n)  (sigma n)  (mobius n)
+               subtraction is (merge a (mul -1 b));  negation is (mul -1 a)
+  compare      (deviation a b)  signed: positive if a>b, zero if a==b, negative if a<b
+               (threshold x)    1 if x>0, else 0
+               so a>b is (threshold (deviation a b)); a<b is (threshold (deviation b a));
+               a==b is (if-surprise (deviation a b) 0 1); a!=b is (if-surprise (deviation a b) 1 0)
+  branch       (if-surprise c then else)   non-zero c chooses then
+  functions    (lambda x body)  ONE parameter; curry for two: (lambda a (lambda b ...))
+  lists        (cons x xs) (head xs) (tail xs) (nil) (nil? xs)
+  list ops     (map f xs) (filter f xs) (fold f acc xs) [f called (f acc x)]
+               (reverse xs) (range a b)=a..b-1 (any f xs) (sort-by less xs) (zip xs ys)
+  text         "abc"; (text-len v)=length of a text OR a list; (text-cat a b);
+               (text-slice t i j) (text-int t) (int-text n)
+
+An operator is not a value: to pass one to map/fold, wrap it in a lambda.
+There is no list literal: build a list with cons and nil, e.g.
+(cons 5 (cons 3 (cons 8 (cons 1 (nil))))) is the list 5 3 8 1."""
+
+
+def _arity_table() -> str:
     rows = []
-    for n in names:
+    for n in _SUB_NAMES():
         tok = NAME_TO_TOKEN.get(n)
         if tok is None:
             continue
-        rows.append(f"  {SYMBOLS[tok]}  {n}")
+        ar = SIGNATURES[tok]["arity"]
+        rows.append((n, tok, ar))
+    return rows
+
+
+def _symbol_table() -> str:
+    rows = []
+    for n, tok, ar in _arity_table():
+        rows.append(f"  {SYMBOLS[tok]}  {n:12s} arity {ar}")
     return "\n".join(rows)
 
 
+def _ref_scheme() -> str:
+    from core.surface2 import REF_SYMBOLS
+    pairs = ", ".join(f"{i}->{REF_SYMBOLS[i]}" for i in range(6))
+    return pairs
+
+
 def card_s2() -> str:
-    return f"""# LOVA, Stage-2 form
+    return rf"""# LOVA, Stage-2 form (substrate operators)
 
 A program is a stream of one character per operator, no parentheses.
-An operator's arguments follow it in order; a variadic operator (list,
-lambda's group) is closed by `;`.  A reference to the k-th enclosing
-`\\`-bound parameter is a single character (`0`..`9` for the innermost
-ten).  An integer is written in decimal; a text is `"..."`.  Two
-digits that would run together are separated by one space.
+An operator's arguments follow it in order; you must emit exactly as
+many as its arity (table below).  A variadic list is closed by `;`.
+An integer is written in decimal; a text is `"..."`.  Two digits that
+would otherwise run together are separated by one space.
 
-The symbol for each operator you may use:
+Functions and references.  `\` (lambda) is followed by its parameter's
+NUMBER (a digit) and then the body.  Number your lambdas 0, 1, 2, ...
+in the order you open them, outermost first.  Inside a body you REFER
+to a bound parameter by a LETTER, not its number: {_ref_scheme()}.
+So `\0*AA` is (lambda a (mul a a)); `\0\1+AL` is (lambda a (lambda b (merge a b))).
+
+The symbol and arity of each operator:
 
 {_symbol_table()}
 
-Structure of a call: the operator's symbol, then each argument written
-the same way.  `\\` (lambda) is followed by a parameter and a body;
-inside the body the parameter is referenced by its depth digit.
-
-Examples (the Stage-1 form on the left is only to show the meaning):
+Examples (Stage-1 on the left shows the meaning only):
 
 {_s2_examples()}
 
-{_OPERATORS}
+{_OPERATORS_SUB}
 
 Write each of these ten programs as a Stage-2 stream.
 
@@ -259,38 +302,43 @@ Write each of these ten programs as a Stage-2 stream.
 
 
 def _tok_examples() -> str:
+    from core.surface import parse as _p
     rows = []
-    for src in ["(merge 2 3)", "(gcd 48 36)", "(range 1 4)"]:
-        data = encode(parse1(src))
-        rows.append(f"  {src:<20s} ->  {' '.join(str(b) for b in data)}")
+    for src in ["(merge 2 3)", "(gcd 48 36)", "(range 1 4)", "(threshold (deviation 5 2))"]:
+        data = encode(_p(src))
+        rows.append(f"  {src:<28s} ->  {' '.join(str(b) for b in data)}")
     return "\n".join(rows)
 
 
 def card_tok() -> str:
-    from core.surface import NAME_TO_TOKEN
-    names = ["merge", "sub", "mul", "div", "mod", "neg", "gcd", "p", "tau", "sigma", "mobius",
-             "eq", "ne", "lt", "gt", "le", "ge", "if", "lambda", "apply", "let", "ref",
-             "cons", "head", "tail", "nil", "nil?",
-             "map", "filter", "fold", "reverse", "range", "any", "sort-by", "zip",
-             "text-len", "text-cat", "text-slice", "text-int", "int-text"]
     rows = []
-    for n in names:
-        tok = NAME_TO_TOKEN.get(n)
-        if tok is not None:
-            rows.append(f"  {tok:>3d}  {n}")
+    for n, tok, ar in _arity_table():
+        rows.append(f"  {tok:>3d}  {n:12s} arity {ar}")
     table = "\n".join(rows)
-    return f"""# LOVA, raw-token form
+    return f"""# LOVA, raw-token form (substrate operators)
 
 A program is the byte stream of its tree, written as space-separated
 DECIMAL byte values.  Each node is: the operator's byte, then its
-arguments' bytes in order.  A variadic operator (list, and a lambda
-group) ends with byte 0 (END).
+arguments' bytes in order -- exactly as many as its arity (table
+below).  A variadic list ends with byte 0 (END).  A fixed-arity
+operator (including lambda, arity 2) takes NO end marker.
 
-An integer literal is THREE-or-more bytes: byte 1 (LIT_INT), then a
-length byte n, then the value as n bytes, signed, big-endian.  So 5 is
-`1 1 5`; 48 is `1 1 48`; 300 is `1 2 1 44`.
+An integer literal is byte 1 (LIT_INT), then a length byte n, then the
+value as n bytes, signed, big-endian.  5 is `1 1 5`; 48 is `1 1 48`;
+-1 is `1 1 255`; 300 is `1 2 1 44`.
 
-The operator bytes you may use:
+A lambda is byte 44, then its parameter (a LIT_INT: number your lambdas
+0,1,2,... outermost first, so `1 1 0`, `1 1 1`, ...), then the body.  A
+reference to a bound parameter is byte 47 (REF) then that number as a
+LIT_INT: a reference to parameter 0 is `47 1 1 0`.
+
+There is no sub, neg, lt, gt, eq or if: subtraction is merge with
+(mul -1 b); a>b is (threshold (deviation a b)); a<b is (threshold
+(deviation b a)); equality and branching use if-surprise (byte 42,
+arity 3), non-zero chooses the then-branch.  There is no list literal:
+use cons (byte 4) and nil (byte 21).
+
+The byte and arity of each operator:
 
 {table}
 
