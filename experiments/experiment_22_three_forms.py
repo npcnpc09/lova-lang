@@ -90,9 +90,12 @@ PROMPTS: Dict[str, str] = {
 
 # --- scoring: assemble a form back into a tree, run, check -------------------
 
+MAX_STEPS = 2_000_000          # raised by a larger task set (Exp 23)
+
+
 def _answer(tree) -> Any:
     compiled, _ = lova_compile(tree)
-    value = evaluate(compiled, Runtime(max_steps=2_000_000))
+    value = evaluate(compiled, Runtime(max_steps=MAX_STEPS))
     if value is NIL_VALUE:
         return []
     if isinstance(value, str) or isinstance(value, int):
@@ -194,7 +197,7 @@ parenthesised, the operator named.  Examples:
 
 {_OPERATORS}
 
-Write each of these ten programs as one Stage-1 s-expression.  The
+Write each of these {len(TASKS)} programs as one Stage-1 s-expression.  The
 answer is in parentheses after each; your program must produce it.
 
 {_TASK_LINES}
@@ -295,7 +298,7 @@ Examples (Stage-1 on the left shows the meaning only):
 
 {_OPERATORS_SUB}
 
-Write each of these ten programs as a Stage-2 stream.
+Write each of these {len(TASKS)} programs as a Stage-2 stream.
 
 {_TASK_LINES}
 """
@@ -346,7 +349,7 @@ Examples:
 
 {_tok_examples()}
 
-Write each of these ten programs as a decimal byte stream.
+Write each of these {len(TASKS)} programs as a decimal byte stream.
 
 {_TASK_LINES}
 """
@@ -470,7 +473,7 @@ def cmd_dry_run(args) -> int:
             line.append(f"{form}={'ok' if r['passed'] else 'FAIL ' + str(r.get('detail', r.get('got')))}")
             ok = ok and r["passed"]
         print("  " + "  ".join(line))
-    print("  all ten tasks round-trip and evaluate in all three forms" if ok else "  PROBLEM above")
+    print(f"  all {len(TASKS)} tasks round-trip and evaluate in all three forms" if ok else "  PROBLEM above")
     return 0 if ok else 1
 
 
