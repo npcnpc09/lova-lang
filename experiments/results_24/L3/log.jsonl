@@ -1,0 +1,17 @@
+{"task": "c01", "tokens": "fold", "accepted": 1, "refused": false, "reason": null, "time": 1789140798.3583508}
+{"task": "c01", "tokens": "lambda 0 lambda 1", "accepted": 4, "refused": false, "reason": null, "time": 1789140805.6441495}
+{"task": "c01", "tokens": "merge ref 0 mul ref 1 ref 1", "accepted": 8, "refused": false, "reason": null, "time": 1789140811.7445796}
+{"task": "c01", "tokens": "0 range 1 6", "accepted": 4, "refused": false, "reason": null, "time": 1789140817.46424}
+{"task": "c01", "final": true, "passed": true, "got": "55", "tokens": 17, "written": 17, "refusals": 0, "frontier": false, "time": 1789140822.8109882}
+{"task": "c04", "tokens": "fold lambda 0 lambda 1 if-surprise threshold deviation ref 0 ref 1", "accepted": 12, "refused": false, "reason": null, "time": 1789140837.7247162}
+{"task": "c04", "tokens": "ref 0 ref 1 0 cons 4 cons 9 cons 2 cons 9 cons 5 nil", "accepted": 16, "refused": false, "reason": null, "time": 1789140844.7280414}
+{"task": "c04", "final": true, "passed": true, "got": "9", "tokens": 28, "written": 28, "refusals": 0, "frontier": false, "time": 1789140850.5707104}
+{"task": "b04", "tokens": "let 0 lambda 1 if-surprise ref 1", "accepted": 7, "refused": false, "reason": null, "time": 1789140875.4702735}
+{"task": "b04", "tokens": "merge mod ref 1 10 apply ref 0 div ref 1 10 ;", "accepted": 13, "refused": false, "reason": null, "time": 1789140881.8223147}
+{"task": "b04", "tokens": "0 apply ref 0 1048576 ;", "accepted": 6, "refused": false, "reason": null, "time": 1789140886.9728208}
+{"task": "b04", "final": true, "passed": true, "got": "31", "tokens": 26, "written": 26, "refusals": 0, "frontier": false, "time": 1789140892.2466025}
+{"task": "b01", "tokens": "let 0 lambda 1 if-surprise deviation ref 1 1", "accepted": 9, "refused": false, "reason": null, "time": 1789140910.2598765}
+{"task": "b01", "tokens": "merge 1 apply ref 0 if-surprise mod ref 1 2", "accepted": 10, "refused": false, "reason": null, "time": 1789140916.1181097}
+{"task": "b01", "tokens": "merge mul 3 ref 1 1 div ref 1 2 ;", "accepted": 11, "refused": false, "reason": null, "time": 1789140921.6884573}
+{"task": "b01", "tokens": "0 apply ref 0 27 ;", "accepted": 6, "refused": false, "reason": null, "time": 1789140927.0592976}
+{"task": "b01", "final": true, "passed": true, "got": "111", "tokens": 36, "written": 36, "refusals": 0, "frontier": false, "time": 1789140932.3383605}

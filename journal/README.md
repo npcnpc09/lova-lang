@@ -560,6 +560,48 @@ readable code in the repository. The language card teaches them.
 
 Tests 727 → 747.
 
+### Experiment 24 (2026-09-11) - linear authoring of the substrate (Q105)
+Exp 23 showed the substrate was never actually authored -- both Stage-2
+sessions built a tree and flattened it. So this removes the tree: a
+session emits the program left to right into LOVA's own generation
+state machine (Axiom 3), each token checked against the well-typed
+successors, nothing revisable, the stream finished only when no slot is
+open. Tokens by name, not by Stage-2 symbol, to isolate the substrate's
+structure from its density. Two arms: `frontier` reports open slots and
+what may come next, `blind` says nothing. Four graded tasks.
+
+**16 of 16 passed, zero refused tokens, zero restarts, and all four
+sessions produced identical-length programs in both arms** (17/28/26/36
+tokens, shorter than the canonical solutions). The frontier made no
+measurable difference to anything.
+
+And all four sessions, asked directly, said they **held the tree**:
+"the linearisation was a mechanical transcription step, not an act of
+composition". One named the giveaway -- "the tell is the refusal count;
+zero refusals across 107 tokens is what reading out a finished plan
+looks like" -- and another traced the cause to the rule itself:
+"knowing that a wrong token is permanent made me want more certainty
+before the first token, not less ... linear emission did not produce
+linear composition, it produced *more* up-front composition." The
+write-once rule meant to force incremental authoring forced its
+opposite.
+
+What the type constraint bought: nothing measurable. At a Value slot 79
+of 86 tokens qualify; it narrowed usefully exactly once per program, at
+a function-typed slot, where it enforced "an operator is not a value"
+for free. Both aided sessions ranked the open-slot count above the
+token list. The three real costs are things the checker does not check:
+`apply`'s `;` is "bracket-matching with the brackets removed";
+irreversibility bought a knowingly worse program (a fold seeded with a
+wrong-in-general constant, because fixing it meant restructuring an
+emitted layer); and a well-typed wrong guess is silent, with a full
+restart as the only remedy. `journal/experiment_24.md`; Q105 answered
+-- the substrate is emittable, not authorable, by a current model, and
+Stage 2/3 are serialisation rather than thinking; Q108 (render the
+pending stack, not the alphabet), Q109 (the size where transcription
+breaks), Q110 (a model trained on the stream), Q111 (allow one
+retraction and see if composition appears).
+
 ### Experiment 23 (2026-09-11) - does the substrate form hold at size? (Q104)
 Six tasks under Exp 22's rules but 2x-5x the size, each needing
 recursion through a let-bound self-referencing lambda, the last with
@@ -1854,9 +1896,26 @@ the corpus grows again.
   all three forms were written first-try (30/30) with no wrong values.
   The qualification is the finding: neither Stage-2 session authored in
   Stage-2; both composed a tree and serialised it.
-- **Q105**: linear authoring -- can a model emit Stage-2 left-to-right
-  without composing a tree first, and at what cost? The experiment that
-  actually tests the substrate as an authoring surface.
+- ~~**Q105**~~ *(answered by Exp 24, 2026-09-11)*: no. Four sessions
+  emitted 16 of 16 programs into the generation state machine with zero
+  refusals, and all four reported composing the tree first and reading
+  it out. The substrate is emittable, not authorable, by a current
+  model; Stage 2 and Stage 3 are serialisation, not thinking.
+- **Q108**: render the pending stack, not the alphabet -- replace the
+  valid-token frontier with "slots open, which operator owns each, and
+  whether `;` is legal here", and re-run Exp 24. All four sessions
+  asked for exactly this, and the state machine already holds it.
+- **Q109**: the size where transcription breaks. These programs fit in
+  working memory, which is why nobody composed forward. At what token
+  count does a session start discovering at token k that it wanted
+  something else at token k-3?
+- **Q110**: a model trained on the stream -- every finding so far is
+  about a model that has read millions of trees and no LOVA bytes. The
+  fine-tune corpus exists; does a taught model compose in the substrate
+  or merely transcribe faster?
+- **Q111**: allow one retraction. Exp 24's F7 says the write-once rule
+  is what forced the tree-holding; letting a session un-emit the last
+  token is the control that would test it.
 - **Q106**: a diagnostic for the silent reference error -- can the
   compiler flag a reference whose binder is plausibly wrong (a shadow,
   an out-of-scope number, a binding never used)? It is the one mistake
@@ -2058,6 +2117,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 24 | 2026-09-11 | Linear authoring of the substrate (Q105) | Done (4 sessions, Opus, 2 arms, 4 tasks) | **WIN for the measurement, NULL for the claim.** 16/16 passed with zero refused tokens and zero restarts, identical programs in both arms; the type-constrained frontier changed nothing. All four sessions reported composing the tree first and transcribing it -- one identifying the zero-refusal count as the proof, another tracing the cause to the no-revision rule, which produced *more* up-front tree-building. The substrate is emittable, not authorable, by a current model. The real costs (variadic `;`, arity debt, semantic guesses) are all outside what the checker checks. Q108-Q111. |
 | 23 | 2026-09-11 | Does the substrate form hold at size? (Q104) | Done (5 sessions, Opus, 6 tasks 2x-5x larger) | **PARTIAL.** 30/30 first-try in all three forms, no wrong values; Stage-2's cost edge grew to 2.0x the s-expression on what was emitted. But neither Stage-2 session authored in Stage-2 -- both composed a tree and serialised it with an external binding table, so the substrate is shown as a storage/transport form, not an authoring one (Q105). All three substrate sessions named the same silent risk: a swapped reference is well-typed, so it is a wrong value with no diagnostic (Q106). The byte encoding proved the easy part; the missing vocabulary is the cost. A card defect (six reference letters where the form has ten) distorted one program -- the third card confound in this family (Q107). |
 | 22 | 2026-09-11 | The three-form experiment (Q100) | Done (5 sessions, Opus, cost + generation axes) | **PARTIAL.** Cost: s2 1.36x cheaper than s1 in LLM tokens on dense code, tok 2.71x MORE. Generation first-try s1 100% / s2 85% / tok 60%, attempts/task 1.00 / 1.25 / 2.00 -- reliability degrades toward the substrate. The s2/tok cards, projected from the s-expression, dropped nine comparison/branch macros (no byte) and the arities parentheses supply, so those greens are contaminated (synthesis, hard-coding, reverse-engineering from decode errors) -- the ruling's point shown. For a current model the s-expression is the authoring surface. Q101-Q103. |
 | 21 | 2026-09-11 | The repair leg: a planted fault | Done (3 sessions × 2 languages, 8 faults) | **NULL for the language, WIN for the measurement.** LOVA 24/24 in 30 attempts, Python 24/24 in 28; emitted 672 vs 391 chars, read 27 108 vs 12 069 (programs 2.35× longer). 47 of 48 faults found by reading before any feedback; failure feedback located an original fault 0 times on either side. 9 of 10 extra attempts were offset arithmetic in the harness (fixed: `--find`, `--dry-run`). Repair cost is reading, so density is charged per repair. Q95-Q97. |

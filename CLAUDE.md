@@ -183,6 +183,27 @@ form invites is a wrong value with no diagnostic, outside Axiom 3's
 guarantee (Q106). The byte encoding itself proved the easy part; the
 cost is the substrate's missing vocabulary. `journal/experiment_23.md`.
 
+**Exp 24** (2026-09-11) answered Q105 and it is the sharpest result of
+the series. Four sessions emitted programs left to right into the
+generation state machine -- Axiom 3 offered as an authoring interface,
+nothing revisable -- and passed 16 of 16 with **zero refused tokens and
+zero restarts**, producing identical programs whether or not the
+machine told them what could come next. Then every one of them, asked
+directly, said it had **composed the tree first and transcribed it**:
+"the linearisation was a mechanical transcription step, not an act of
+composition", and "the tell is the refusal count -- zero refusals is
+what reading out a finished plan looks like". One traced the cause to
+the write-once rule itself, which "did not produce linear composition,
+it produced *more* up-front composition". So the substrate is
+**emittable but not authorable** by a current model, and Stage 2 and
+Stage 3 are serialisation formats rather than a way of thinking. The
+type constraint proved inert except at function-typed slots, and
+disjoint from the three real costs -- the variadic `;`, the arity debt,
+and semantic guesses that are well-typed and therefore silent. What
+every session wanted instead of the valid-token list was a rendering of
+the pending stack, which the machine already holds (Q108).
+`journal/experiment_24.md`.
+
 ## The goal (owner's ruling, 2026-09-10)
 
 **LOVA has one goal: an AI uses it more conveniently than any other
