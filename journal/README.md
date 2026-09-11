@@ -560,6 +560,31 @@ readable code in the repository. The language card teaches them.
 
 Tests 727 → 747.
 
+### The ruling (2026-09-11) — the design method
+After M27, the owner asked what the remaining experiments would yield
+and got the estimate: parity with Python on writing and repairing
+small programs, one structural advantage (execution under a budget
+with declared capabilities), nothing that reads "more convenient
+than any other language". The owner's diagnosis, accepted: **LOVA
+was designed with existing languages as its template**, not from the
+purpose outward. The Stage-1 surface is a Lisp, the prelude a
+standard library, M24-M27 each made LOVA more like Python, the
+yardstick measures Python's own workflow against Python, and every
+experiment's judge was a human-written hidden test -- a reviewer
+under another name. The model doing the design, left to itself, will
+build another human language. Three rules, recorded in `CLAUDE.md`
+("The design method"): design from the AI's operations, not from
+syntax, and the paradigm-lineage criterion is reversed; text takes no
+part in design, decisions are made on the integer sequence and
+experiments have the model emit tokens; the model's behaviour decides
+between representations by measured experiment, not the designer's
+taste. The limit is stated with them: the output will still carry the
+shape of human code, and what the rules buy is that every part holds
+its place by an experiment. First step: the three-form experiment --
+the same tasks in Stage-1 text, the Stage-2 surface and raw tokens,
+generated and repaired -- so the numbers say whether the text layer
+stays at all. Q100.
+
 ### The ruling (2026-09-10) — one goal, four numbers
 An outsider's review of the architecture at the end of M23 found that
 the project's goal had been two goals folded together since the first
@@ -1750,6 +1775,11 @@ the corpus grows again.
   Three sessions, the same tasks.
 - ~~**Q94**~~: *closed by M27, 2026-09-11.* A list family of eight at
   0x50-0x57; 4-25× per element; the natural search's cost is Q99.
+- **Q100**: the three-form experiment (the ruling of 2026-09-11):
+  the same tasks generated and repaired in Stage-1 text, the Stage-2
+  surface and raw tokens; which form does the model emit most
+  reliably, repair most cheaply, verify by itself? The answer decides
+  whether the text layer stays.
 - **Q98**: a `def` whose name is an operator's (`range`, `any`, `map`
   ...) is read as the operator at every call site, silently. A compile
   warning, or an error?

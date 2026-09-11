@@ -48,9 +48,11 @@ concurrency (Actors → CSP → dataflow), verification (types → dependent
 types → proof assistants), variance/evolution (generics → GP → AutoML),
 and provenance (git → Unison → SBOM). Each trajectory has a natural next
 step; LOVA is where all seven next-steps converge. See
-`spec/paradigm-inheritance.md` for the full ancestor map. Every design
-decision from here on is assessed against paradigm lineage — if a
-proposed feature has no ancestor trajectory, it is suspicious.
+`spec/paradigm-inheritance.md` for the full ancestor map. *The rule
+that followed here from 2026-04-23 to 2026-09-11 -- "if a proposed
+feature has no ancestor trajectory, it is suspicious" -- is reversed
+by the ruling below: an ancestor is not a reason, and a feature enters
+the language only with evidence that an AI needs it.*
 
 ## What this project IS
 
@@ -109,6 +111,48 @@ vocabulary. Key transferred concepts:
 | Surprise (per-theory, Exp 78) | Debug / mutation signal |
 | Evolution engine (dedup, clone, mutate) | `defpop` / variant dispatch |
 | Lineage (uid/parent/root, Exp 55) | Program provenance chain |
+
+## The design method (owner's ruling, 2026-09-11)
+
+The owner's finding, after twenty-one experiments: LOVA was designed
+with existing languages as its template. The Stage-1 surface is a
+Lisp; the prelude is a standard library; the last four milestones
+each made LOVA more like Python; the yardstick measures Python's
+workflow with Python as the baseline, so parity is its ceiling; and
+every experiment judged right and wrong by human-written hidden
+tests, which is a human reviewer under another name. None of it was
+designed from the purpose -- an AI writing, checking and repairing
+programs with no person reading -- outward. Left to itself the model
+doing this design will build another human language, because human
+code is all it has learned from. So three rules, structural, not a
+matter of intent:
+
+1. **Design from the AI's operations, not from syntax.** List what an
+   unsupervised AI actually does in a task -- read the task, emit
+   tokens, check, run, observe the deviation, repair, leave evidence --
+   and admit only primitives that serve one of those actions. Nothing
+   enters because another language has it. The paradigm-lineage rule
+   above is reversed: an ancestor is not a reason.
+2. **Text takes no part in design.** Every decision is made on the
+   integer sequence; experiments have the model emit tokens directly
+   (Q47, never yet run); text exists only as the `explain` output for
+   a person auditing after the fact. The moment a decision is made on
+   an s-expression, human-language intuition is back in the room.
+3. **The model's behaviour decides the language, not the designer's
+   taste.** A representation earns its place by experiment: the same
+   semantics, the same tasks, and the form the model emits most
+   reliably, repairs most cheaply and verifies by itself wins. A
+   design that has not been put against an alternative in a measured
+   run is a proposal, not a decision.
+
+The honest limit: what the model produces will still carry the shape
+of human code, because it has no other source. What the rules buy is
+that every part of the language holds its place by an experiment
+saying an AI needs it, not by a lineage saying a language had it.
+
+First step under the rules: the three-form experiment. The same tasks
+generated and repaired in Stage-1 text, the Stage-2 surface, and raw
+tokens, so the numbers say whether the whole text layer stays.
 
 ## The goal (owner's ruling, 2026-09-10)
 

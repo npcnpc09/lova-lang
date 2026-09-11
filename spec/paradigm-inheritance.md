@@ -11,6 +11,15 @@
 > This document traces each LOVA primitive and axiom to its paradigm
 > ancestors, so that the design is grounded in the history of
 > programming languages rather than floating above it.
+>
+> **Superseded as a design rule (owner's ruling, 2026-09-11).** The
+> map below is history, kept. It is no longer a criterion: a feature
+> with an ancestor is not thereby justified, and one without is not
+> thereby suspect. What admits a feature now is evidence that an AI
+> needs it (`CLAUDE.md`, "The design method"). The owner's finding
+> that led here: designing by ancestry built a Lisp with a standard
+> library, which is why twenty-one experiments found parity with
+> Python and nothing more.
 
 ## The seven trajectories
 
