@@ -56,14 +56,14 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 
 ```
 ; lists
-(len xs) (sum xs) (product xs) (reverse xs) (append xs ys) (nth xs k)
-(last xs) (take n xs) (drop n xs) (contains xs v) (same a b)
+(len xs) (sum xs) (product xs) (append xs ys) (nth xs k) (last xs)
+(take n xs) (drop n xs) (contains xs v) (same a b)
 ; higher order
-(map f xs) (filter f xs) (fold f acc xs) (any f xs) (all f xs) (zip xs ys)
+(all f xs)
 ; sorting
-(sort-by less xs) (sort xs)
+(sort xs)
 ; construction
-(range a b) (repeat x n)
+(repeat x n)
 ; integers
 (even n) (odd n) (inc n) (pow b e) (gcd2 a b) (digits n)
 ; text
@@ -78,6 +78,13 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 ```
 
 Notes: `(nth xs k)` The element of `xs` at 0-based index `k`; a fault past the end.  `(words text)` The words of `text`: runs of non-space characters.  `(join parts sep)` Join `parts` with `sep` between them; `sep` a codepoint or a text.  `(text-of n)` An integer as decimal text.  `(text-lt a b)` Lexicographic order on texts or codepoint lists, so `(sort-by text-lt words)`.  `(map-count m k)` `m` with the count under `k` one higher: the word-count step.
+
+List operators: `map` `filter` `fold` `reverse` `range` `any` `sort-by` `zip`. `(map f xs)`, `(filter f xs)` (keeps x where `(f x)` is
+non-zero), `(fold f acc xs)` (calls `(f acc x)`), `(reverse xs)`,
+`(range a b)` (a to b-1), `(any f xs)` (1 or 0, stops at the first
+hit), `(sort-by less xs)` (stable; `(less a b)` non-zero puts a first),
+`(zip xs ys)` (two-element lists, to the shorter). One step an element,
+plus the function called.
 
 Text operators: `text-len` `text-cat` `text-slice` `text-find` `text-split` `text-join` `text-chars` `text-of-chars` `text-cmp` `text-int` `int-text` `text?` `text-trim`. `(text-slice t start end)`, `(text-find t needle)` (-1 if
 absent), `(text-split t sep)` (`""` splits on whitespace), `(text-join
@@ -97,11 +104,12 @@ is a `step-limit-exceeded` anomaly whose `hot` detail lists the
 functions the steps went to. An operator costs 1 step, a call to a
 `def` about 3 plus its body. Cheap: `nth`, `take`, `drop`, `append`,
 `last`, `len` (a few steps, native), `map-get`, `map-put`, `get`, `put`
-(~4), the `text-*` operators. Linear: `map`, `filter`, `fold`,
-`reverse`, `range`, `sum`, `any`, `contains`, `zip` cost 20-40 steps per
-element, `sort` about 200. A search that reads and rebuilds a list at
-every node costs millions of steps; carry the state as a map, a text or
-a packed integer instead.
+(~4), the `text-*` operators. The list operators cost one step an
+element plus the function called (`map` with a one-operator body about
+6 an element; `sort-by` one comparison per step, n log n of them);
+`sum`, `contains`, `all` are folds. A search that rebuilds a list at
+every node still costs millions of steps; carry the state as a map, a
+text or a packed integer.
 
 ## Contracts and effects (rarely needed for a task)
 

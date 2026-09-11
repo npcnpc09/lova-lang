@@ -40,6 +40,7 @@ FAMILIES = [
     ("Effects / IO", 0x30, 0x37),
     ("Meta / lineage", 0x38, 0x3F),
     ("Text", 0x40, 0x4D),
+    ("List", 0x50, 0x57),
 ]
 
 
@@ -50,8 +51,9 @@ def _implemented() -> set:
     ``_TYPE_INFO`` exactly when the runtime learned to evaluate it, and
     that same set is what type-directed generation may emit.
     """
-    from core.tokens import LIT_TEXT, TEXT_FAMILY
-    return set(TYPED_TOKENS) | set(TEXT_FAMILY) | {LIT_TEXT}    # the text family is typed but not generated (M25)
+    from core.tokens import LIT_TEXT, TEXT_FAMILY, LIST_FAMILY
+    # The text and list families are typed but not generated (M25, M27).
+    return set(TYPED_TOKENS) | set(TEXT_FAMILY) | set(LIST_FAMILY) | {LIT_TEXT}
 
 
 def _in_types(sig: dict) -> str:
@@ -103,7 +105,8 @@ def render() -> str:
         "",
         "LOVA's core is **64 operators**, one byte each, and since M25 a",
         "**text family of 14** at 0x40-0x4D (Q85; Axiom 8's ceiling was",
-        "demoted to a preference on 2026-09-10).",
+        "demoted to a preference on 2026-09-10) and since M27 a **list",
+        "family of 8** at 0x50-0x57 (Q94: the walkers, one step an element).",
         "Tokens are grouped into 8 families of 8 operators.  Arguments",
         "follow each operator as typed-slot tokens; types are positional,",
         "not annotated.  See `spec/paradigm-inheritance.md` for the",

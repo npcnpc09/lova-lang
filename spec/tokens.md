@@ -8,7 +8,8 @@
 
 LOVA's core is **64 operators**, one byte each, and since M25 a
 **text family of 14** at 0x40-0x4D (Q85; Axiom 8's ceiling was
-demoted to a preference on 2026-09-10).
+demoted to a preference on 2026-09-10) and since M27 a **list
+family of 8** at 0x50-0x57 (Q94: the walkers, one step an element).
 Tokens are grouped into 8 families of 8 operators.  Arguments
 follow each operator as typed-slot tokens; types are positional,
 not annotated.  See `spec/paradigm-inheritance.md` for the
@@ -17,7 +18,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  77 of the 78 tokens are implemented.
+  85 of the 86 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -145,6 +146,19 @@ Legend:
 | 0x4C | `text?` | 1 | Value | Int | - | **impl** |
 | 0x4D | `text-trim` | 1 | Value | Text | - | **impl** |
 
+## List (0x50 - 0x57)
+
+| Byte | Name | Arity | In types | Out type | Effects | Status |
+|---|---|---|---|---|---|---|
+| 0x50 | `map` | 2 | Fn, Value | List | - | **impl** |
+| 0x51 | `filter` | 2 | Fn, Value | List | - | **impl** |
+| 0x52 | `fold` | 3 | Fn, Value, Value | Value | - | **impl** |
+| 0x53 | `reverse` | 1 | Value | List | - | **impl** |
+| 0x54 | `range` | 2 | Int, Int | List | - | **impl** |
+| 0x55 | `any` | 2 | Fn, Value | Int | - | **impl** |
+| 0x56 | `sort-by` | 2 | Fn, Value | List | - | **impl** |
+| 0x57 | `zip` | 2 | Value, Value | List | - | **impl** |
+
 ## Slot conventions
 
 - Every fixed-arity operator is followed immediately by its
@@ -268,9 +282,9 @@ the identifier was a convenience for whoever typed it.
 - 2026-04-23 - initial draft (stub).
 - 2026-04-24 - complete, hand-transcribed from SIGNATURES at M5.
   Recorded as 19/64 implemented; `TYPED_TOKENS` in fact held 18.
-- 2026-09-10 - M9.  0x0B / 0x0C reallocated from the
+- 2026-09-11 - M9.  0x0B / 0x0C reallocated from the
   never-implemented mock-theta placeholders `phi3` / `psi7` to `mul`
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  77/78 operators implemented.
+  85/86 operators implemented.

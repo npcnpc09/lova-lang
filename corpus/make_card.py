@@ -26,7 +26,7 @@ CARD = ROOT / "corpus" / "language_card.md"
 
 # Helpers the prelude keeps for its own use; a program has no reason to
 # call them, so the card does not list them.
-INTERNAL = {"rev-onto", "merge-by", "le2", "ge2", "iterate", "parse-digits", "space", "digit"}
+INTERNAL = {"le2", "ge2", "iterate", "parse-digits", "space", "digit"}
 
 _SECTION = re.compile(r"^;; --- (.+?) -+\s*$")
 _DEF = re.compile(r"^\(def ([^\s\[]+) \[([^\]]*)\]")
@@ -92,10 +92,17 @@ def text_ops_line() -> str:
     return "Text operators: " + " ".join(f"`{n}`" for n in names) + "."
 
 
+def list_ops_line() -> str:
+    from core.tokens import SIGNATURES, LIST_FAMILY
+    names = [SIGNATURES[t]["name"] for t in sorted(LIST_FAMILY)]
+    return "List operators: " + " ".join(f"`{n}`" for n in names) + "."
+
+
 def render() -> str:
     template = TEMPLATE.read_text(encoding="utf-8")
     return (template.replace("{{LIBRARY}}", library_block())
-                    .replace("{{TEXT_OPS}}", text_ops_line()))
+                    .replace("{{TEXT_OPS}}", text_ops_line())
+                    .replace("{{LIST_OPS}}", list_ops_line()))
 
 
 def main(argv=None) -> int:

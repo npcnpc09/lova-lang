@@ -134,6 +134,10 @@ SYMBOLS: Dict[int, str] = {
 # and the literal characters, and the family needs fourteen.
 for _tok, _sym in zip(sorted(t for t in SYMBOLS if t >= 0x40), "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞ"):
     SYMBOLS[_tok] = _sym
+# The list family (M27) continues the Greek capitals (Ο is skipped: it
+# is not Latin O, and a reader should not have to check).
+for _tok, _sym in zip(range(0x50, 0x58), "ΠΡΣΤΥΦΧΨ"):
+    SYMBOLS[_tok] = _sym
 assert len(SYMBOLS) == len(SIGNATURES), f"symbol table must cover every token, has {len(SYMBOLS)}"
 assert len(set(SYMBOLS.values())) == len(SYMBOLS), "symbols must be distinct"
 assert not (set(SYMBOLS.values()) & set("0123456789-")), \

@@ -104,6 +104,7 @@ from core.tokens import (
     CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CAPABILITY_OF,
     capability_names, NET_RECV, NET_SEND, SIGNAL, MAP_GET, MAP_PAIRS, MAP_PUT,
     LIT_TEXT, TEXT_LEN, TEXT_CAT, TEXT_SLICE, TEXT_FIND, TEXT_SPLIT, TEXT_JOIN, TEXT_CHARS, TEXT_OF_CHARS, TEXT_CMP, TEXT_INT, INT_TEXT, IS_TEXT, TEXT_TRIM,
+    LIST_MAP, LIST_FILTER, LIST_FOLD, LIST_REVERSE, LIST_RANGE, LIST_ANY, LIST_SORT_BY, LIST_ZIP,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -2307,6 +2308,111 @@ def _op_TEXT_JOIN(node: Node, rt: Runtime, chained: bool) -> Any:
     return sep.join(_as_text(p, "text-join") for p in list_to_python(_as_list(parts, "text-join")))
 
 
+# --- the list family (M27, Q94) ---------------------------------------------
+#
+# Each walker charges one step an element, checked against the ceiling
+# the way a `loop-until` iteration is, and calls the function it was
+# given through `_call`, so the function's own steps are counted and
+# charged (Exp 20) to the def that wrote it.
+
+def _as_fn(v: Any, ctx: str) -> Any:
+    if v.__class__ is Closure or v.__class__ is LoopFn:
+        return v
+    raise DomainTrap(
+        "type-violation",
+        f"{ctx}: the function slot holds {_kind_of(v)} {format_repr(v)}, not a function",
+        {"operator": ctx, "expected": "Fn", "got": _kind_of(v)},
+        "pass a `lambda` or the name of a `def`; an operator is not a value -- "
+        "wrap it, `(lambda x (op x))`",
+    )
+
+
+def _tick(rt: Runtime, n: int = 1) -> None:
+    rt.steps += n
+    if rt.steps > rt.max_steps:
+        raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+
+
+def _op_LIST_MAP(node: Node, rt: Runtime, chained: bool) -> Any:
+    f = _as_fn(_eval(node.args[0], rt), "map")
+    xs = list_to_python(_as_list(_eval(node.args[1], rt), "map"))
+    out = []
+    for x in xs:
+        _tick(rt)
+        out.append(_call(f, x, rt))
+    return list_from(out)
+
+
+def _op_LIST_FILTER(node: Node, rt: Runtime, chained: bool) -> Any:
+    f = _as_fn(_eval(node.args[0], rt), "filter")
+    xs = list_to_python(_as_list(_eval(node.args[1], rt), "filter"))
+    out = []
+    for x in xs:
+        _tick(rt)
+        if _as_int(_call(f, x, rt), "filter") != 0:
+            out.append(x)
+    return list_from(out)
+
+
+def _op_LIST_FOLD(node: Node, rt: Runtime, chained: bool) -> Any:
+    f = _as_fn(_eval(node.args[0], rt), "fold")
+    acc = _eval(node.args[1], rt)
+    xs = list_to_python(_as_list(_eval(node.args[2], rt), "fold"))
+    for x in xs:
+        _tick(rt)
+        acc = _call(_call(f, acc, rt), x, rt)
+    return acc
+
+
+def _op_LIST_REVERSE(node: Node, rt: Runtime, chained: bool) -> Any:
+    xs = list_to_python(_as_list(_eval(node.args[0], rt), "reverse"))
+    _tick(rt, len(xs))
+    xs.reverse()
+    return list_from(xs)
+
+
+def _op_LIST_RANGE(node: Node, rt: Runtime, chained: bool) -> Any:
+    a = _as_int(_eval(node.args[0], rt), "range")
+    b = _as_int(_eval(node.args[1], rt), "range")
+    _tick(rt, max(0, b - a))            # the ceiling before the allocation
+    return list_from(range(a, b))
+
+
+def _op_LIST_ANY(node: Node, rt: Runtime, chained: bool) -> Any:
+    f = _as_fn(_eval(node.args[0], rt), "any")
+    xs = list_to_python(_as_list(_eval(node.args[1], rt), "any"))
+    for x in xs:
+        _tick(rt)
+        if _as_int(_call(f, x, rt), "any") != 0:
+            return 1
+    return 0
+
+
+def _op_LIST_SORT_BY(node: Node, rt: Runtime, chained: bool) -> Any:
+    import functools
+    less = _as_fn(_eval(node.args[0], rt), "sort-by")
+    xs = list_to_python(_as_list(_eval(node.args[1], rt), "sort-by"))
+
+    # `a` before `b` when (less a b) and not (less b a): so a `le`
+    # comparator sorts as `lt` does, and both are stable -- the prelude's
+    # merge sort kept equal keys in order under `le` (tests/test_library)
+    # and the sort must not depend on which the author wrote.
+    def compare(a: Any, b: Any) -> int:
+        _tick(rt)
+        ab = _as_int(_call(_call(less, a, rt), b, rt), "sort-by") != 0
+        ba = _as_int(_call(_call(less, b, rt), a, rt), "sort-by") != 0
+        return -1 if ab and not ba else (1 if ba and not ab else 0)
+    return list_from(sorted(xs, key=functools.cmp_to_key(compare)))
+
+
+def _op_LIST_ZIP(node: Node, rt: Runtime, chained: bool) -> Any:
+    xs = list_to_python(_as_list(_eval(node.args[0], rt), "zip"))
+    ys = list_to_python(_as_list(_eval(node.args[1], rt), "zip"))
+    n = min(len(xs), len(ys))
+    _tick(rt, n)
+    return list_from(list_from([x, y]) for x, y in zip(xs[:n], ys[:n]))
+
+
 def _op_TEXT_CHARS(node: Node, rt: Runtime, chained: bool) -> Any:
     v = _eval(node.args[0], rt)
     return _text_chars(v, "text-chars") if isinstance(v, str) else _as_list(v, "text-chars")
@@ -3216,6 +3322,9 @@ def _eval_unimplemented(node: Node, rt: Runtime) -> Any:
 # Operator dispatch (M22).  One hash per node where a chain of
 # comparisons used to walk past fifty operators to reach `ref`.
 _HANDLERS = {
+    LIST_MAP: _op_LIST_MAP, LIST_FILTER: _op_LIST_FILTER, LIST_FOLD: _op_LIST_FOLD,
+    LIST_REVERSE: _op_LIST_REVERSE, LIST_RANGE: _op_LIST_RANGE, LIST_ANY: _op_LIST_ANY,
+    LIST_SORT_BY: _op_LIST_SORT_BY, LIST_ZIP: _op_LIST_ZIP,
     LIT_TEXT: _op_LIT_TEXT,
     TEXT_LEN: _op_TEXT_LEN, TEXT_CAT: _op_TEXT_CAT, TEXT_SLICE: _op_TEXT_SLICE,
     TEXT_FIND: _op_TEXT_FIND, TEXT_SPLIT: _op_TEXT_SPLIT, TEXT_JOIN: _op_TEXT_JOIN,

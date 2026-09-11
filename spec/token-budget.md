@@ -429,6 +429,33 @@ because Structural was full where those operators belong. That is the
 8×8 family constraint charging rent, and it is the concrete case for
 Q39.
 
+## As implemented (M27, 2026-09-11): a list family
+
+The second family past 0x3F, after the text family (M25). The
+numbers that called for it: Exp 19 and Exp 20 measured the game-tree
+search at two to four extra attempts, every one a rewrite for cost,
+and Exp 20's step attribution read the cost as the prelude's list
+walkers -- `nth` first (made native at zero slots through a
+shape-keeping `text-slice`), then `map` / `filter` / `fold` / `any` /
+`range` at 20-40 steps an element, the price of `loop-until` with a
+cons-cell state. Eight operators at 0x50-0x57, one step an element:
+
+| Byte | Name | Was (prelude, steps/element) | Now |
+|---|---|---|---|
+| 0x50 | `map` | 39 | 5 |
+| 0x51 | `filter` | 35 | 5 |
+| 0x52 | `fold` | 22 | 5 |
+| 0x53 | `reverse` | 17 | 2 |
+| 0x54 | `range` | 20 | 2 |
+| 0x55 | `any` | ~25 (no early exit cost saving) | 1 + the call, stops at the first hit |
+| 0x56 | `sort-by` | 213 (merge sort over `iterate`) | 8 (one comparison a step) |
+| 0x57 | `zip` | ~30 | 1 |
+
+Zero slots were spent in the core 64; 0x4E-0x4F stay free for the text
+family. `sum`, `product`, `contains`, `all` remain prelude idioms over
+the operators at one lambda call an element. The validator admits the
+family and the samplers do not emit it (the text family's rule, M25).
+
 ## Decision checklist
 
 - [x] ~~Approve or amend the 10-slot allocation~~ — 6 spent (lists +

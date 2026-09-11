@@ -211,6 +211,11 @@ annotations).
 0x30-0x37   Effects / IO          external-boundary / net-send / net-recv
                                   fs-read / fs-write / stdout / stdin / clock
 0x38-0x3F   Meta / lineage        lineage-query / why / trace / explain
+0x40-0x4D   Text (M25)            text literal, text-len / -cat / -slice / -find /
+                                  -split / -join / -chars / -of-chars / -cmp /
+                                  -int, int-text, text?, text-trim
+0x50-0x57   List (M27)            map / filter / fold / reverse / range / any /
+                                  sort-by / zip -- one step an element
 ```
 
 **Slot budget.** 31 of 64 implemented, 33 reserved — but of those 33,
@@ -438,7 +443,7 @@ experiment details.
 | 5. Lineage intrinsic | ✅ in the language (M14) | 04; `uid`/`why`/`lineage-query` are operators |
 | 6. Populations over individuals | ✅ in the language (M15) | 05 from Python, 15 from inside; the Evolution family is 8/8 |
 | 7. Surprise as debugger | ✅ | 01 + 06 (structured anomaly) |
-| 8. Small core, dense tokens | preference since 2026-09-10 | 64 core tokens + a text family of 14 (M25), 1 byte each |
+| 8. Small core, dense tokens | preference since 2026-09-10 | 64 core tokens + a text family of 14 (M25) + a list family of 8 (M27), 1 byte each |
 | 9. No PnL objective | ✅ | design decision |
 | 10. Stage-coherent | ✅ | text ↔ integer lossless |
 
@@ -515,6 +520,22 @@ experiment details.
   work. Related: four runtime arithmetic sites trusted their slot type
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
+
+**M27** (2026-09-11) made the walkers operators. Exp 20 left the
+natural game-tree search at 10-37M steps against a 7M budget with the
+prelude's `map` / `filter` / `fold` / `any` / `range` as the cost, at
+20-40 steps an element over `loop-until`; the owner chose to close the
+deficit (Q94). A list family at 0x50-0x57 -- `map`, `filter`, `fold`,
+`reverse`, `range`, `any`, `sort-by`, `zip` -- one step an element plus
+the function called, the function's own steps charged to the def that
+wrote it. Semantics are the prelude's (`fold` calls `(f acc x)`;
+`sort-by` is stable under `lt` and `le` alike); programs are unchanged
+textually; `sum`, `product`, `contains`, `all` are one-line idioms over
+them and `rev-onto` / `merge-by` are gone. Per element: `map` 5 where
+it was 39, `fold` 5 where 22, `reverse` 2 where 17, `sort` 8 where
+213. The validator admits the family; the samplers do not emit it,
+like the text family. 86 tokens; `spec/tokens.md` regenerated; the
+card carries the family. Tests 787 → 805.
 
 **Exp 21** (2026-09-11) gave the fourth number its first value, and it
 is NULL for the language: a one-token fault planted in a program of
@@ -740,14 +761,15 @@ proved the token table could not beat) and on LOVABench 2.00× →
 density by 70%; node count is a poor proxy in both directions.
 
 **63 / 64 core operators runtime-implemented** (the 64th is `END`),
-plus the text family 0x40-0x4D since M25: 78 tokens in all. The
-64-slot ceiling is a design preference since the ruling of
-2026-09-10; a new family is added when the four numbers call for it. See
+plus the text family 0x40-0x4D since M25 and the list family
+0x50-0x57 since M27: 86 tokens in all. The 64-slot ceiling is a design
+preference since the ruling of 2026-09-10; a new family is added when
+the four numbers call for it, and M27 is the second time they did. See
 `spec/tokens.md` for the complete table (generated) and
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-787 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+805 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 14 first-class apps, **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

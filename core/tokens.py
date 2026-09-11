@@ -120,6 +120,22 @@ INT_TEXT        = 0x4B   # (int-text n)
 IS_TEXT         = 0x4C   # (text? v)
 TEXT_TRIM       = 0x4D   # (text-trim t)
 
+# Family 0x50-0x57  List (M27, Q94).  The walkers the prelude wrote over
+# `loop-until` cost 20-40 steps an element, and were the budget of every
+# search that read a list (Exp 19, Exp 20: `nth` alone was half of it,
+# and once `nth` was native the rest of the budget was these).  The same
+# eight functions, one operator each: one step an element, plus the
+# function they call.  Where an operator says Value for a list it
+# accepts a text as its codepoints, like every list operator since M25.
+LIST_MAP        = 0x50   # (map f xs)
+LIST_FILTER     = 0x51   # (filter f xs) -- x kept where (f x) is non-zero
+LIST_FOLD       = 0x52   # (fold f acc xs) -- f called as (f acc x)
+LIST_REVERSE    = 0x53   # (reverse xs)
+LIST_RANGE      = 0x54   # (range a b) -- a .. b-1
+LIST_ANY        = 0x55   # (any f xs) -- 1 at the first x with (f x) non-zero, else 0
+LIST_SORT_BY    = 0x56   # (sort-by less xs) -- stable; (less a b) non-zero puts a first
+LIST_ZIP        = 0x57   # (zip xs ys) -- two-element lists, to the shorter
+
 
 # --- signatures (arity + semantic family for the decoder) -------------------
 
@@ -152,6 +168,15 @@ SIGNATURES = {
     INT_TEXT:     {"name": "int-text",      "arity": 1, "family": "text"},
     IS_TEXT:      {"name": "text?",         "arity": 1, "family": "text"},
     TEXT_TRIM:    {"name": "text-trim",     "arity": 1, "family": "text"},
+    # List (M27)
+    LIST_MAP:     {"name": "map",           "arity": 2, "family": "list"},
+    LIST_FILTER:  {"name": "filter",        "arity": 2, "family": "list"},
+    LIST_FOLD:    {"name": "fold",          "arity": 3, "family": "list"},
+    LIST_REVERSE: {"name": "reverse",       "arity": 1, "family": "list"},
+    LIST_RANGE:   {"name": "range",         "arity": 2, "family": "list"},
+    LIST_ANY:     {"name": "any",           "arity": 2, "family": "list"},
+    LIST_SORT_BY: {"name": "sort-by",       "arity": 2, "family": "list"},
+    LIST_ZIP:     {"name": "zip",           "arity": 2, "family": "list"},
     # Number theory
     P:            {"name": "p",             "arity": 1, "family": "nt"},
     TAU:          {"name": "tau",           "arity": 1, "family": "nt"},
@@ -219,7 +244,8 @@ SIGNATURES = {
 
 CORE_TOKENS = 64          # the original table, 0x00-0x3F
 TEXT_TOKENS = 14          # the Text family, 0x40-0x4D (M25)
-assert len(SIGNATURES) == CORE_TOKENS + TEXT_TOKENS,     f"Token table must have exactly {CORE_TOKENS + TEXT_TOKENS} entries, found {len(SIGNATURES)}"
+LIST_TOKENS = 8           # the List family, 0x50-0x57 (M27)
+assert len(SIGNATURES) == CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS,     f"Token table must have exactly {CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS} entries, found {len(SIGNATURES)}"
 
 
 # --- typed-slot extensions (Milestone 2) ------------------------------------
@@ -458,6 +484,23 @@ for _tok, _extra in _TEXT_TYPE_INFO.items():
 # it is a literal, admitted by type like the integer literal is).
 TEXT_FAMILY = frozenset(t for t in _TEXT_TYPE_INFO if t != LIT_TEXT)
 
+# The list family (M27): typed for the compiler, admitted by the
+# validator, kept out of generation with the text family until a
+# sampler can fill an Fn slot with more than a reference.
+_LIST_TYPE_INFO = {
+    LIST_MAP:     {"in_types": [FN, VALUE], "out_type": LIST},
+    LIST_FILTER:  {"in_types": [FN, VALUE], "out_type": LIST},
+    LIST_FOLD:    {"in_types": [FN, VALUE, VALUE], "out_type": VALUE},
+    LIST_REVERSE: {"in_types": [VALUE], "out_type": LIST},
+    LIST_RANGE:   {"in_types": [INT, INT], "out_type": LIST},
+    LIST_ANY:     {"in_types": [FN, VALUE], "out_type": INT},
+    LIST_SORT_BY: {"in_types": [FN, VALUE], "out_type": LIST},
+    LIST_ZIP:     {"in_types": [VALUE, VALUE], "out_type": LIST},
+}
+for _tok, _extra in _LIST_TYPE_INFO.items():
+    SIGNATURES[_tok].update(_extra)
+LIST_FAMILY = frozenset(_LIST_TYPE_INFO)
+
 # Operators whose result type is their operands' rather than their own.
 #
 # ``(if c a b)`` is whatever its branches are, ``(let n v body)``
@@ -472,7 +515,7 @@ TEXT_FAMILY = frozenset(t for t in _TEXT_TYPE_INFO if t != LIT_TEXT)
 # is not determined by the slot it sits in.  The compiler checks that
 # case separately.
 RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL, HEAD,
-                                     EXTERNAL_BOUNDARY, SIGNAL, MAP_GET})
+                                     EXTERNAL_BOUNDARY, SIGNAL, MAP_GET, LIST_FOLD})
 
 # ``REF`` is the other operator whose result type is not its declared
 # one: it is whatever the binding holds.  The compiler resolves that

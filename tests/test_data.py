@@ -366,7 +366,7 @@ class TestSlotBudget(unittest.TestCase):
         self.assertEqual(len(TYPED_TOKENS), 63)
 
     def test_the_core_is_still_64_operators(self):
-        self.assertEqual(len(SIGNATURES), 78)      # 64 core + the text family (M25)
+        self.assertEqual(len(SIGNATURES), 86)      # 64 core + the text family (M25) + the list family (M27)
 
     def test_reallocated_slots_carry_their_new_meaning(self):
         expected = {

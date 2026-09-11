@@ -35,31 +35,20 @@
   (apply (loop-until done step) state))
 
 ;; --- lists ----------------------------------------------------------
+;;
+;; `map` / `filter` / `fold` / `reverse` / `range` / `any` / `sort-by` /
+;; `zip` are operators since M27 (Q94): one step an element where the
+;; `iterate` forms they replaced cost 20-40.  What remains here is the
+;; idioms over them.
+
 
 (def len [xs] (text-len xs))          ; native since M25; a text or a list
 
-(def sum [xs]
-  (merge 0 (head (iterate (cons 0 xs)
-                          (lambda s (nil? (tail s)))
-                          (lambda s (cons (merge (head s) (head (tail s)))
-                                          (tail (tail s))))))))
+(def sum [xs] (fold (lambda a (lambda x (merge a x))) 0 xs))
 
-(def product [xs]
-  (merge 0 (head (iterate (cons 1 xs)
-                          (lambda s (nil? (tail s)))
-                          (lambda s (cons (mul (head s) (head (tail s)))
-                                          (tail (tail s))))))))
+(def product [xs] (fold (lambda a (lambda x (mul a x))) 1 xs))
 
-;; Reverse `xs` onto `acc`: the one loop every other list function is
-;; built from.
-(def rev-onto [xs acc]
-  (tail (iterate (cons xs acc)
-                 (lambda s (nil? (head s)))
-                 (lambda s (cons (tail (head s))
-                                 (cons (head (head s)) (tail s)))))))
 
-(def reverse [xs]
-  (rev-onto xs (nil)))
 
 ;; Native since Exp 20: `text-cat` keeps a list's shape, so this is a
 ;; few steps where the walk was ~25 an element.
@@ -86,11 +75,7 @@
 
 (def drop [n xs] (text-slice xs n (len xs)))
 
-(def contains [xs v]
-  (if (head (iterate (cons 0 xs)
-                     (lambda s (or (head s) (nil? (tail s))))
-                     (lambda s (cons (eq (head (tail s)) v) (tail (tail s))))))
-    1 0))
+(def contains [xs v] (any (lambda x (eq x v)) xs))
 
 ;; Two lists of integers, element for element -- or two texts.  `text-cmp`
 ;; compares codepoints, so a list of any integers compares too.
@@ -102,71 +87,19 @@
 ;; because a parameter's type is unknown to the checker (journal Q43),
 ;; and it runs because `apply` takes any value as an argument.
 
-(def map [f xs]
-  (reverse (tail (iterate (cons xs (nil))
-                          (lambda s (nil? (head s)))
-                          (lambda s (cons (tail (head s))
-                                          (cons (f (head (head s))) (tail s))))))))
 
-(def filter [f xs]
-  (reverse (tail (iterate (cons xs (nil))
-                          (lambda s (nil? (head s)))
-                          (lambda s (cons (tail (head s))
-                                          (if (f (head (head s)))
-                                            (cons (head (head s)) (tail s))
-                                            (tail s))))))))
 
-(def fold [f acc xs]
-  (head (iterate (cons acc xs)
-                 (lambda s (nil? (tail s)))
-                 (lambda s (cons (f (head s) (head (tail s))) (tail (tail s)))))))
 
-(def any [f xs]
-  (if (head (iterate (cons 0 xs)
-                     (lambda s (or (head s) (nil? (tail s))))
-                     (lambda s (cons (f (head (tail s))) (tail (tail s))))))
-    1 0))
 
-(def all [f xs]
-  (if (head (iterate (cons 1 xs)
-                     (lambda s (or (not (head s)) (nil? (tail s))))
-                     (lambda s (cons (f (head (tail s))) (tail (tail s))))))
-    1 0))
+(def all [f xs] (not (any (lambda x (not (f x))) xs)))
 
-(def zip [xs ys]
-  (reverse (tail (tail (iterate
-    (cons xs (cons ys (nil)))
-    (lambda s (or (nil? (head s)) (nil? (head (tail s)))))
-    (lambda s (cons (tail (head s))
-                    (cons (tail (head (tail s)))
-                          (cons (list (head (head s)) (head (head (tail s))))
-                                (tail (tail s)))))))))))
 
 ;; --- sorting --------------------------------------------------------
 ;;
 ;; Merge sort: the halving recurses log n deep, the merge iterates.
 ;; `less` is a two-argument function; `(sort xs)` is ascending.
 
-(def sort-by [less xs]
-  (if (or (nil? xs) (nil? (tail xs)))
-    xs
-    (let half (div (len xs) 2)
-      (merge-by less (sort-by less (take half xs))
-                     (sort-by less (drop half xs))))))
 
-(def merge-by [less a b]
-  (let f (iterate
-           (cons a (cons b (nil)))
-           (lambda s (or (nil? (head s)) (nil? (head (tail s)))))
-           (lambda s (if (less (head (head s)) (head (head (tail s))))
-                       (cons (tail (head s))
-                             (cons (head (tail s))
-                                   (cons (head (head s)) (tail (tail s)))))
-                       (cons (head s)
-                             (cons (tail (head (tail s)))
-                                   (cons (head (head (tail s))) (tail (tail s))))))))
-    (rev-onto (tail (tail f))
-              (if (nil? (head f)) (head (tail f)) (head f)))))
 
 (def le2 [a b] (le a b))
 (def ge2 [a b] (ge a b))
@@ -174,10 +107,6 @@
 
 ;; --- construction ---------------------------------------------------
 
-(def range [a b]
-  (tail (iterate (cons (sub b 1) (nil))
-                 (lambda s (lt (head s) a))
-                 (lambda s (cons (sub (head s) 1) (cons (head s) (tail s)))))))
 
 (def repeat [x n]
   (tail (iterate (cons n (nil))

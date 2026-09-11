@@ -412,6 +412,38 @@ measured in part; Q87 (the loop at `apps/` size, ten sessions), Q88
 (the reuse leg), Q89 (is the bound-name list worth its bulk). Tests
 766 → 767.
 
+### Milestone 27 (2026-09-11) — The walkers are operators
+Q94, the owner's choice after Exp 21: close the one measured deficit
+before testing the claim where it might hold. Exp 20 had left the
+natural game-tree search at 10-37M steps against 7M, the cost being
+the prelude's `map` / `filter` / `fold` / `any` / `range` at 20-40
+steps an element over `loop-until`. A list family at 0x50-0x57 --
+`map`, `filter`, `fold`, `reverse`, `range`, `any`, `sort-by`, `zip`
+-- one step an element plus the function called, with the function's
+steps charged (Exp 20) to the def that wrote it; the validator admits
+it and the samplers do not emit it, like the text family. Semantics
+are the prelude's: `fold` calls `(f acc x)`, `range` is a..b-1, `any`
+stops at the first hit, `sort-by` is stable and takes `lt` or `le`
+alike (the merge sort was stable under `le` only, and Python's sort
+with a `le` comparator is not a strict weak order -- so a precedes b
+when `(less a b)` and not `(less b a)`). Programs are unchanged
+textually; `sum`, `product`, `contains`, `all` are one-line idioms
+over the operators; `rev-onto` and `merge-by` are gone. Per element:
+`map` 5 (was 39), `filter` 5 (35), `fold` 5 (22), `reverse` 2 (17),
+`range` 2 (20), `sort` 8 (213). The Stage-2 surface takes eight more
+Greek capitals. 86 tokens; `spec/tokens.md` and the card regenerated.
+One thing to watch (Q98): a program's own `(def range ...)` now
+defines a name that the parser reads as the operator at every call
+site, silently; no corpus program does this today. **Q99, replayed
+the same day:** the six natural first attempts at the game-tree search
+cost 6.3M, 6.8M, 9.5M, 23.6M, 26.9M and 29.3M steps (native `nth`
+alone: 9.9M-36.6M; the M22 prelude: 24M to over 40M). Two of six fit
+the 7M budget where none did. In the four that do not, the cost is the
+program's own win-check and board-rebuild loops (`winloop`,
+`line-win`, `setat`: 2-4M each) with `nth` at 8 steps a call a third
+of it -- the algorithm's node visits, at ~400 000 steps a second. What
+remains is Q90's question, not the library's. Tests 787 → 805.
+
 ### Milestone 26 (2026-09-10) — A boundary is a region
 The third tax the twelve programs paid: a boundary is lexical (M19),
 which is what lets the compiler refuse an undeclared effect before
@@ -1716,9 +1748,16 @@ the corpus grows again.
 - **Q93**: with steps in the ranking, native `nth`, and a cost section
   on the card, does the natural h04 pass in one rewrite, or in none?
   Three sessions, the same tasks.
-- **Q94**: `map` / `filter` / `fold` / `reverse` / `range` at 20-40
-  steps an element are the cost that remains after Exp 20. Native, at
-  what slot or family cost, against the ~25× a native `nth` gave?
+- ~~**Q94**~~: *closed by M27, 2026-09-11.* A list family of eight at
+  0x50-0x57; 4-25× per element; the natural search's cost is Q99.
+- **Q98**: a `def` whose name is an operator's (`range`, `any`, `map`
+  ...) is read as the operator at every call site, silently. A compile
+  warning, or an error?
+- **Q99** *(replay half answered by M27)*: the natural game-tree
+  search under the list family: two of six first attempts fit 7M
+  (6.3M, 6.8M), four do not (9.5M-29.3M), their cost now the program's
+  own loops at ~400 000 steps a second. What Q93's session count
+  becomes is the open half.
 - **Q92**: ten sessions per language on one model, Exp 18's and 19's
   tasks together, so the per-task attempt distribution is load-bearing.
 - **Q88** *(measured in part by Exp 21, 2026-09-11)*: the reuse leg
