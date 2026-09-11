@@ -170,6 +170,19 @@ author small closed programs; its remaining case is zero-shot
 familiarity and the untested scaling risks (global lambda numbering,
 silent digit-run spacing), which is Q104. `journal/experiment_22.md`.
 
+**Exp 23** (2026-09-11) ran Q104 at 2x-5x the program size: all three
+forms written first-try by every session (30/30), no wrong values, and
+Stage-2's cost edge grew to 2.0x the s-expression on what was actually
+emitted. The qualification is the result: **neither Stage-2 session
+authored in Stage-2** -- both composed a tree and flattened it, keeping
+an external name-to-letter table -- so the substrate is demonstrated as
+a storage and transport form and remains untested as an authoring one
+(Q105). All three substrate sessions named the same silent risk: a
+swapped or shadowed reference stays well-typed, so the one mistake the
+form invites is a wrong value with no diagnostic, outside Axiom 3's
+guarantee (Q106). The byte encoding itself proved the easy part; the
+cost is the substrate's missing vocabulary. `journal/experiment_23.md`.
+
 ## The goal (owner's ruling, 2026-09-10)
 
 **LOVA has one goal: an AI uses it more conveniently than any other

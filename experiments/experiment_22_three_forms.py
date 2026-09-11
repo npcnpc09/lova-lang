@@ -269,7 +269,7 @@ def _symbol_table() -> str:
 
 def _ref_scheme() -> str:
     from core.surface2 import REF_SYMBOLS
-    pairs = ", ".join(f"{i}->{REF_SYMBOLS[i]}" for i in range(6))
+    pairs = ", ".join(f"{i}->{REF_SYMBOLS[i]}" for i in range(len(REF_SYMBOLS)))
     return pairs
 
 

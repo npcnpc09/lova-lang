@@ -456,6 +456,62 @@ family. `sum`, `product`, `contains`, `all` remain prelude idioms over
 the operators at one lambda call an element. The validator admits the
 family and the samplers do not emit it (the text family's rule, M25).
 
+## Q102 (2026-09-11): should compare and branch be operators?
+
+Experiment 22 found that nine spellings an author uses constantly --
+`sub`, `neg`, `eq`, `ne`, `lt`, `gt`, `le`, `ge`, `if` -- are Stage-1
+**macros with no byte**, so they do not exist in the substrate and a
+card projected from the text promised operators the byte stream cannot
+spell.  That raised the design question: if the substrate is what an AI
+is meant to author, do the operators an author needs every line belong
+in the table rather than in a text layer that cannot be projected?
+
+Costed, not argued.  `if` is not at issue: it maps 1:1 onto
+`if-surprise`, which is already an operator.  The rest expand like
+this, and the extra bytes are what a dedicated operator would save:
+
+| macro | expansion | extra bytes |
+|---|---|---|
+| `lt` / `gt` | `(threshold (deviation b a))` | 1 |
+| `neg` | `(mul -1 a)` | 3 |
+| `sub` a b, b a **literal** | folds to `(merge a -b)` | **0** |
+| `sub` a b, b a variable | `(merge a (mul -1 b))` | 4 |
+| `eq` / `ne` | `(if-surprise (deviation a b) 0 1)` | 7 |
+| `le` / `ge` | `(if-surprise (threshold (deviation a b)) 0 1)` | 9 |
+
+Measured over the sixteen reference programs of Experiments 22 and 23
+(one-line and larger, operator-only):
+
+| task set | bytes now | bytes saved if all were operators |
+|---|---|---|
+| c, one-line (10) | 265 | 16 (6%) |
+| b, larger (6) | 587 | 27 (5%) |
+
+**Verdict: not worth the slots on current evidence.** Three reasons,
+all measured:
+
+1. **The cheap cases are common and the dear cases are rare.** The
+   recursion idiom `(sub n 1)` -- by far the most frequent use -- costs
+   nothing, because the constant-folder turns it into one `merge` with
+   a negative literal.  `lt`/`gt` cost a single byte.  Only `eq`, `ne`,
+   `le`, `ge` are expensive, and across sixteen programs they appear
+   five times.
+2. **The total is 5-6% of program bytes**, against six to eight slots.
+   The 64-slot ceiling is a preference since 2026-09-10, but a family
+   is added when the four numbers call for it, and a 5% byte saving on
+   the substrate form does not.
+3. **A model does not need them as primitives.** Q101 gave three
+   sessions a card stating `a>b` is `(threshold (deviation a b))` and
+   `a==b` is `(if-surprise (deviation a b) 0 1)`, and all three wrote
+   every task first-try in the substrate forms, building comparison and
+   branching from the recipe without error.  The gap Exp 22 measured
+   was the card's silence, not the table's shape.
+
+What would reopen it: evidence that the expansions cause *errors* at
+program scale rather than merely costing bytes -- a writer mis-nesting
+`if-surprise (threshold (deviation ...)) 0 1` where a single `le` would
+have been unmistakable.  That is what Experiment 23 (Q104) watches for.
+
 ## Decision checklist
 
 - [x] ~~Approve or amend the 10-slot allocation~~ — 6 spent (lists +

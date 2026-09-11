@@ -560,6 +560,36 @@ readable code in the repository. The language card teaches them.
 
 Tests 727 → 747.
 
+### Experiment 23 (2026-09-11) - does the substrate form hold at size? (Q104)
+Six tasks under Exp 22's rules but 2x-5x the size, each needing
+recursion through a let-bound self-referencing lambda, the last with
+eight distinct names. Five Opus sessions (s1 x2, s2 x2, tok x1):
+**30 of 30 first-try, no wrong values, no failures of any kind** -- the
+silent-corruption scaling failure Q101 predicted did not appear. Cost
+separated further: Stage-2 is 1.68x cheaper than the s-expression on
+the canonical solutions and 2.0x on what the sessions actually emitted
+(33 tokens a task against 66), the byte form 2.6x dearer. But the
+number hides the finding: **neither Stage-2 session composed in
+Stage-2.** Both built a tree first and flattened it, keeping an
+external name-to-letter table -- "the stream was a serialisation step,
+not an authoring step" -- and both said linear emission is where a slip
+would land. All three substrate sessions independently named the same
+structural risk: a swapped or shadowed reference is still well-typed,
+so it yields a wrong value with no diagnostic, the one mistake the form
+invites and the one Axiom 3 cannot catch. The tok session's verdict was
+the opposite of the expected one: the byte encoding is the easy part
+(prefix plus fixed arity re-synchronises structurally, a missing END is
+a parse error), and the cost is the missing vocabulary -- hand-currying
+and expanded comparison -- at 1.5-2x Python's authoring effort. For the
+third time in this family a card defect, not the form, distorted a
+result: the Stage-2 card printed six reference letters where the form
+has ten, so one session inlined a sub-expression three times rather
+than name it. Fixed. `journal/experiment_23.md`; Q104 answered -- the
+substrate is vindicated as a storage and transport form, untested as an
+authoring one; Q105 (linear authoring), Q106 (a diagnostic for the
+silent reference error), Q107 (regenerate the cards from the token
+table; `let` and `apply` are absent from all of them).
+
 ### Experiment 22 (2026-09-11) - the three-form experiment (Q100)
 The first experiment under the design-method ruling: put the three
 forms of a LOVA program against each other as the thing the model must
@@ -1809,11 +1839,31 @@ the corpus grows again.
   Three sessions, the same tasks.
 - ~~**Q94**~~: *closed by M27, 2026-09-11.* A list family of eight at
   0x50-0x57; 4-25× per element; the natural search's cost is Q99.
-- **Q100**: the three-form experiment (the ruling of 2026-09-11):
-  the same tasks generated and repaired in Stage-1 text, the Stage-2
-  surface and raw tokens; which form does the model emit most
-  reliably, repair most cheaply, verify by itself? The answer decides
-  whether the text layer stays.
+- ~~**Q100**~~ *(answered in part by Exp 22-23, 2026-09-11)*: the
+  three-form experiment. On the emit axis, once each form has a card
+  built from its own operators, all three are written first-try at both
+  sizes tested; they separate on cost, Stage-2 saving 1.36x on
+  one-liners and 2.0x at size. The repair axis is still Q103.
+- ~~**Q101**~~ *(answered, 2026-09-11)*: a substrate-native card took
+  s2 to 20/20 and tok to 10/10 first-try. The Exp-22 gap was the card.
+- ~~**Q102**~~ *(costed, 2026-09-11, `spec/token-budget.md`)*: making
+  compare and subtract operators would save 5-6% of substrate bytes;
+  the common `(sub n 1)` already folds free and a model builds the rest
+  from the recipe first-try. Not worth the slots on current evidence.
+- ~~**Q104**~~ *(answered by Exp 23, 2026-09-11)*: at 2x-5x the size
+  all three forms were written first-try (30/30) with no wrong values.
+  The qualification is the finding: neither Stage-2 session authored in
+  Stage-2; both composed a tree and serialised it.
+- **Q105**: linear authoring -- can a model emit Stage-2 left-to-right
+  without composing a tree first, and at what cost? The experiment that
+  actually tests the substrate as an authoring surface.
+- **Q106**: a diagnostic for the silent reference error -- can the
+  compiler flag a reference whose binder is plausibly wrong (a shadow,
+  an out-of-scope number, a binding never used)? It is the one mistake
+  the substrate form invites and the one Axiom 3 cannot catch.
+- **Q107**: the cards are not self-sufficient -- `let` and `apply` are
+  absent from the operator table of all three, and the tok card has no
+  text literal. Generate every card from the token table itself.
 - **Q98**: a `def` whose name is an operator's (`range`, `any`, `map`
   ...) is read as the operator at every call site, silently. A compile
   warning, or an error?
@@ -2008,6 +2058,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 23 | 2026-09-11 | Does the substrate form hold at size? (Q104) | Done (5 sessions, Opus, 6 tasks 2x-5x larger) | **PARTIAL.** 30/30 first-try in all three forms, no wrong values; Stage-2's cost edge grew to 2.0x the s-expression on what was emitted. But neither Stage-2 session authored in Stage-2 -- both composed a tree and serialised it with an external binding table, so the substrate is shown as a storage/transport form, not an authoring one (Q105). All three substrate sessions named the same silent risk: a swapped reference is well-typed, so it is a wrong value with no diagnostic (Q106). The byte encoding proved the easy part; the missing vocabulary is the cost. A card defect (six reference letters where the form has ten) distorted one program -- the third card confound in this family (Q107). |
 | 22 | 2026-09-11 | The three-form experiment (Q100) | Done (5 sessions, Opus, cost + generation axes) | **PARTIAL.** Cost: s2 1.36x cheaper than s1 in LLM tokens on dense code, tok 2.71x MORE. Generation first-try s1 100% / s2 85% / tok 60%, attempts/task 1.00 / 1.25 / 2.00 -- reliability degrades toward the substrate. The s2/tok cards, projected from the s-expression, dropped nine comparison/branch macros (no byte) and the arities parentheses supply, so those greens are contaminated (synthesis, hard-coding, reverse-engineering from decode errors) -- the ruling's point shown. For a current model the s-expression is the authoring surface. Q101-Q103. |
 | 21 | 2026-09-11 | The repair leg: a planted fault | Done (3 sessions × 2 languages, 8 faults) | **NULL for the language, WIN for the measurement.** LOVA 24/24 in 30 attempts, Python 24/24 in 28; emitted 672 vs 391 chars, read 27 108 vs 12 069 (programs 2.35× longer). 47 of 48 faults found by reading before any feedback; failure feedback located an original fault 0 times on either side. 9 of 10 extra attempts were offset arithmetic in the harness (fixed: `--find`, `--dry-run`). Repair cost is reading, so density is charged per repair. Q95-Q97. |
 | 20 | 2026-09-11 | Cost attribution: blind rewrite to read one | Done (3 sessions, LOVA, Opus, 8 tasks) | **PARTIAL.** With `hot` in the step trap, h04 3/2/4 attempts against run 2's 6/3/4 (31 vs 35 in all); every session rewrote from the list, one was misled by it (ranked by calls: `inc` led). The trap ranks by steps in each function's own body now; that read `nth` as 3.9M of 7M. `nth`/`take`/`drop`/`last`/`append` native at zero slots via shape-keeping `text-slice`/`text-cat`; the natural first attempt 1.3-3.1× cheaper, still over budget. Slotted `Closure`/`Runtime`: interpreter 15% faster net. Card: cost section, six facts. Harness: `check`. Q93, Q94. |
