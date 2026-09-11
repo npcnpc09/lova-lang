@@ -1,0 +1,11 @@
+{"task": "c01", "attempt": 1, "passed": false, "emitted_chars": 16, "emitted_llm": 17, "program": "Σ\u0000\u0001+AL0Π\u0000*AAΥ1 6", "result": {"passed": false, "stage": "parse", "detail": "ValueError: unknown symbol '\\x00' at 1"}, "time": 1789128488.386063}
+{"task": "c05", "attempt": 1, "passed": true, "emitted_chars": 6, "emitted_llm": 4, "program": "g48 36", "result": {"passed": true, "stage": "run", "got": 12, "want": 12}, "time": 1789128490.9422758}
+{"task": "c10", "attempt": 1, "passed": true, "emitted_chars": 3, "emitted_llm": 2, "program": "s12", "result": {"passed": true, "stage": "run", "got": 28, "want": 28}, "time": 1789128493.4959946}
+{"task": "c01", "attempt": 2, "passed": true, "emitted_chars": 19, "emitted_llm": 20, "program": "Σ\\0\\1+AL0Π\\0*AAΥ1 6", "result": {"passed": true, "stage": "run", "got": 55, "want": 55}, "time": 1789128541.3577917}
+{"task": "c02", "attempt": 1, "passed": true, "emitted_chars": 15, "emitted_llm": 17, "program": "ΒΡ\\0%+A1 2Υ0 20", "result": {"passed": true, "stage": "run", "got": 10, "want": 10}, "time": 1789128544.071288}
+{"task": "c03", "attempt": 1, "passed": true, "emitted_chars": 11, "emitted_llm": 12, "program": "^Τ:5:3:8:1~", "result": {"passed": true, "stage": "run", "got": 1, "want": 1}, "time": 1789128546.9331212}
+{"task": "c04", "attempt": 1, "passed": true, "emitted_chars": 23, "emitted_llm": 23, "program": "^ΤΧ\\0\\1/L+A1:4:9:2:9:5~", "result": {"passed": true, "stage": "run", "got": 9, "want": 9}, "time": 1789128549.752195}
+{"task": "c06", "attempt": 1, "passed": true, "emitted_chars": 13, "emitted_llm": 14, "program": "Σ\\0\\1+AL0Υ1 7", "result": {"passed": true, "stage": "run", "got": 21, "want": 21}, "time": 1789128552.6249237}
+{"task": "c07", "attempt": 1, "passed": true, "emitted_chars": 15, "emitted_llm": 10, "program": "ΒΓ\"foo\"\"barbaz\"", "result": {"passed": true, "stage": "run", "got": 9, "want": 9}, "time": 1789128555.3522234}
+{"task": "c08", "attempt": 1, "passed": true, "emitted_chars": 20, "emitted_llm": 19, "program": "^Χ\\0\\1/L+A1:5:3:8:1~", "result": {"passed": true, "stage": "run", "got": 1, "want": 1}, "time": 1789128558.1795716}
+{"task": "c09", "attempt": 1, "passed": true, "emitted_chars": 20, "emitted_llm": 19, "program": "Φ\\0*/+A1 8/8+A1Υ0 10", "result": {"passed": true, "stage": "run", "got": 1, "want": 1}, "time": 1789128561.069298}

@@ -560,6 +560,31 @@ readable code in the repository. The language card teaches them.
 
 Tests 727 → 747.
 
+### Experiment 22 (2026-09-11) - the three-form experiment (Q100)
+The first experiment under the design-method ruling: put the three
+forms of a LOVA program against each other as the thing the model must
+emit -- s1 the s-expression, s2 the Stage-2 surface, tok the raw token
+bytes -- on ten closed operator-only programs. Cost axis (no model):
+s2 costs 141 LLM tokens to s1's 192 (1.36x cheaper on dense code, far
+below the number-theory 5.38x), tok costs 520 (2.71x MORE -- the
+substrate as bytes is the costliest form to emit, not the cheapest).
+Generation axis (Opus 4.8): first-try 100% / 85% / 60% for s1 / s2 /
+tok, attempts a task 1.00 / 1.25 / 2.00 -- reliability degrades toward
+the substrate. But the s2/tok greens are contaminated: the cards were
+projected from the s-expression, so nine comparison/branch macros
+(sub, neg, eq, ne, lt, gt, le, ge, if) with no byte vanished while the
+prose still promised them, and the arities that parentheses give for
+free had to be reverse-engineered from decode errors. One s2 session
+synthesised comparison from integer division; another hard-coded three
+answers; the tok session learned fold/lambda/sort-by arities from the
+"trailing bytes" error. That is rule 1 and rule 2 of the ruling shown:
+a card made on the text does not transfer to the substrate. For a
+current model the s-expression is the authoring surface; nothing
+supports authoring in raw tokens. `journal/experiment_22.md`; Q100
+answered in part; Q101 (a substrate-native card), Q102 (should compare
+and if be operators, not text macros), Q103 (the repair axis of the
+three forms).
+
 ### The ruling (2026-09-11) — the design method
 After M27, the owner asked what the remaining experiments would yield
 and got the estimate: parity with Python on writing and repairing
@@ -1974,6 +1999,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 22 | 2026-09-11 | The three-form experiment (Q100) | Done (5 sessions, Opus, cost + generation axes) | **PARTIAL.** Cost: s2 1.36x cheaper than s1 in LLM tokens on dense code, tok 2.71x MORE. Generation first-try s1 100% / s2 85% / tok 60%, attempts/task 1.00 / 1.25 / 2.00 -- reliability degrades toward the substrate. The s2/tok cards, projected from the s-expression, dropped nine comparison/branch macros (no byte) and the arities parentheses supply, so those greens are contaminated (synthesis, hard-coding, reverse-engineering from decode errors) -- the ruling's point shown. For a current model the s-expression is the authoring surface. Q101-Q103. |
 | 21 | 2026-09-11 | The repair leg: a planted fault | Done (3 sessions × 2 languages, 8 faults) | **NULL for the language, WIN for the measurement.** LOVA 24/24 in 30 attempts, Python 24/24 in 28; emitted 672 vs 391 chars, read 27 108 vs 12 069 (programs 2.35× longer). 47 of 48 faults found by reading before any feedback; failure feedback located an original fault 0 times on either side. 9 of 10 extra attempts were offset arithmetic in the harness (fixed: `--find`, `--dry-run`). Repair cost is reading, so density is charged per repair. Q95-Q97. |
 | 20 | 2026-09-11 | Cost attribution: blind rewrite to read one | Done (3 sessions, LOVA, Opus, 8 tasks) | **PARTIAL.** With `hot` in the step trap, h04 3/2/4 attempts against run 2's 6/3/4 (31 vs 35 in all); every session rewrote from the list, one was misled by it (ranked by calls: `inc` led). The trap ranks by steps in each function's own body now; that read `nth` as 3.9M of 7M. `nth`/`take`/`drop`/`last`/`append` native at zero slots via shape-keeping `text-slice`/`text-cat`; the natural first attempt 1.3-3.1× cheaper, still over budget. Slotted `Closure`/`Runtime`: interpreter 15% faster net. Card: cost section, six facts. Harness: `check`. Q93, Q94. |
 | 19 | 2026-09-11 | The loop where first attempts fail | Done (3 sessions × 2 languages × 2 runs, 8 tasks) | **PARTIAL.** Run 1 found four instrument defects (a numeric-looking text as an integer, a budget 30× tighter than the Python clock, a hint asserting non-termination, parse errors without a position), fixed. Run 2: LOVA 24/24 in 35 attempts, Python 24/24 in 26; parity on seven tasks, the game-tree search 6/3/4 vs 1/1/1, every extra attempt a rewrite for cost. Compile faults fixed in one attempt every time. The step trap now attributes cost by function. Q90-Q92. |

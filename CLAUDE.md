@@ -150,9 +150,19 @@ of human code, because it has no other source. What the rules buy is
 that every part of the language holds its place by an experiment
 saying an AI needs it, not by a lineage saying a language had it.
 
-First step under the rules: the three-form experiment. The same tasks
-generated and repaired in Stage-1 text, the Stage-2 surface, and raw
-tokens, so the numbers say whether the whole text layer stays.
+First step under the rules, now run (Exp 22, Q100): the same ten
+closed tasks emitted in Stage-1 text, the Stage-2 surface and raw
+tokens. Stage-2 costs a third fewer LLM tokens on dense code, raw
+bytes cost 2.71x more; first-try reliability was 100% / 85% / 60%
+across the three forms, degrading toward the substrate. The finding is
+the ruling's own: a card projected from the s-expression carries its
+comparison/branch macros (which the substrate has no byte for) and
+omits the arities its parentheses supply, so the substrate forms could
+not be fairly tested from it -- a substrate-native card is Q101, and
+whether compare and `if` should be operators rather than text macros
+is Q102. For a model as it exists now the s-expression is the
+authoring surface; nothing measured supports authoring in raw tokens.
+`journal/experiment_22.md`.
 
 ## The goal (owner's ruling, 2026-09-10)
 
