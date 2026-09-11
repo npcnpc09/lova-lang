@@ -338,7 +338,8 @@ How LOVA does each, in the order of the table:
 3. `(boundary "fs-read" ...)` declares the kind of effect, `--allow`
    names the places; an undeclared effect is a compile error.
 4. Step and depth ceilings are built in: a loop that never ends is a
-   structured anomaly, never a hang.
+   structured anomaly, never a hang, and a run over budget names the
+   functions the steps went to.
 5. `(budget n ...)` per call, per job, per untrusted line; the program
    catches its own overrun.
 6. `quote`, `eval`, `read`, `explain`, `hash`: a program is one

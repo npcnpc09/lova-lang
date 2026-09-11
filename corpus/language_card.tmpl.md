@@ -9,6 +9,7 @@ floats and no mutable variables.
 ```
 (def name [param ...] body)      ; a function; several may precede the expression
 (def k [] value)                 ; no parameters: a constant, computed once; use it as k, not (k)
+                                 ; defs may call each other in any order (mutual recursion is fine)
 (f a b)                          ; call a defined function (curried under the hood)
 (lambda x body)                  ; an anonymous function of ONE parameter
 (let name value body)            ; bind name in body (recursive under a lambda)
@@ -35,18 +36,21 @@ are what it says about itself, and `lova check` runs them.
 
 Comparisons return 1 or 0: `(eq a b) (ne a b) (lt a b) (gt a b) (le a b)
 (ge a b)`. Logic: `(not x) (and a b) (or a b)`, short-circuit. `(even n)`,
-`(odd n)`.
+`(odd n)`. A negative literal is written `-3`.
 
 ## Lists, text, records
 
 `(nil)` is the empty list; `(cons x xs)` prepends; `(head xs)` and
 `(tail xs)`; `(nil? xs)` tests emptiness. `(list 1 2 3)` builds a list.
-A string literal `"abc"` is a text; `(eq a b)` compares texts, and every
-list function reads a text as its codepoints (`(head "abc")` is 97).
-`(rec x 1 y 2)` is a record with named fields, `(get r x)` reads one,
-`(put r x 9)` is `r` with `x` set. Use a record, not a list taken apart
-by position, to carry several values through a fold or a recursion:
-`(get st memo)` rather than `(nth st 2)`.
+A string literal `"abc"` is a text (`\n`, `\t`, `\"` and `\\` are
+escapes); `(eq a b)` compares texts, and every list function reads a
+text as its codepoints (`(head "abc")` is 97). `words`, `lines` and
+`split` yield texts. `(rec x 1 y 2)` is a record with named fields,
+`(get r x)` reads one, `(put r x 9)` is `r` with `x` set; a field name
+is a bare symbol, never evaluated, so `x` may also be a variable. Use a
+record, not a list taken apart by position, to carry several values
+through a fold or a recursion: `(get st memo)` rather than `(nth st 2)`.
+The empty map is `(nil)`: `(map-put (nil) k v)` starts one.
 
 The library, always available (this index is generated from `lib/prelude.lova`):
 
@@ -62,6 +66,19 @@ of a `def`. An operator (`merge`, `sub`, `mul`, `text-int`, ...) is not a
 value and cannot be passed by name: wrap it, `(lambda a (lambda b (merge a
 b)))`. `fold` calls `(f acc x)`; write a two-argument fold step as
 `(lambda a (lambda x ...))`.
+
+## Cost
+
+A program runs under a step budget the host sets; a run that exceeds it
+is a `step-limit-exceeded` anomaly whose `hot` detail lists the
+functions the steps went to. An operator costs 1 step, a call to a
+`def` about 3 plus its body. Cheap: `nth`, `take`, `drop`, `append`,
+`last`, `len` (a few steps, native), `map-get`, `map-put`, `get`, `put`
+(~4), the `text-*` operators. Linear: `map`, `filter`, `fold`,
+`reverse`, `range`, `sum`, `any`, `contains`, `zip` cost 20-40 steps per
+element, `sort` about 200. A search that reads and rebuilds a list at
+every node costs millions of steps; carry the state as a map, a text or
+a packed integer instead.
 
 ## Contracts and effects (rarely needed for a task)
 

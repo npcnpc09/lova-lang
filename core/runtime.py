@@ -263,7 +263,7 @@ def mobius(n: int) -> int:
 # these classes are how they differ at run time.
 
 
-@dataclass
+@dataclass(slots=True)
 class Closure:
     """A unary function value — ``(lambda param body)`` plus its scope.
 
@@ -278,6 +278,18 @@ class Closure:
     body: Node
     env: Dict[int, Any]
     name: Optional[int] = None   # binding name, when known (debug only)
+    # Exp 19 / Exp 20 -- what a step trap reports: how often this named
+    # function was called and the steps its body spent itself, callees
+    # excluded.  An anonymous lambda has no counters of its own; it
+    # carries ``owner``, the named closure whose body wrote it, and its
+    # steps are that function's -- `nth`'s loop bodies count as `nth`,
+    # not as `iterate`.  Counters live here rather than in a dict on
+    # the runtime because one attribute increment per call boundary is
+    # what the interpreter can afford (journal Exp 20: the dict form
+    # cost 15-19% on call-heavy programs).
+    owner: Any = None
+    calls: int = 0
+    own: int = 0
     # M19 -- the capabilities in force where the lambda was written.  A
     # boundary is lexical: the body may use what the boundary around
     # its *definition* declared, wherever it is eventually applied.
@@ -841,7 +853,7 @@ def _as_int(v: Any, ctx: str) -> int:
 
 # --- runtime state -----------------------------------------------------------
 
-@dataclass
+@dataclass(slots=True)
 class Runtime:
     """Evaluator state carried through a program run."""
 
@@ -865,10 +877,18 @@ class Runtime:
     # independent of whether the program declares a BUDGET.
     call_depth: int = 0
     steps: int = 0
-    # Exp 19: calls per named function, so a step trap can say which
-    # functions the budget went to.  One dict increment per call of a
-    # named closure; the inner closures of a curried def are unnamed.
-    calls: Dict[int, int] = field(default_factory=dict)
+    # Exp 19 / Exp 20: where the steps went, so a step trap ranks
+    # functions by cost rather than by how often they were called (call
+    # counts sent a session to inline `inc`; journal Exp 20).
+    # ``current`` is the named closure whose body is running (an
+    # anonymous lambda counts as the def that wrote it), ``mark`` the
+    # step count when that last changed; the interval since ``mark`` is
+    # flushed to ``current.own`` only when the function changes, so a
+    # self-recursive call costs one comparison.  ``named`` lists every
+    # closure a `let` gave a name, which is the trap's roster.
+    current: Any = None
+    mark: int = 0
+    named: List[Any] = field(default_factory=list)
     # The compiled closure of the node a LET is about to evaluate as its
     # *body*, and None otherwise.  A LET that finds its own closure here
     # is directly nested in another's body, so the two belong to one
@@ -1100,9 +1120,10 @@ def _enrich_trap(trap, rt: Runtime) -> None:
     # Exp 19: a step trap names where the budget went.  Six sessions
     # hit the ceiling on a game-tree search and had to guess which of
     # their functions was the cost; the counts make it a reading.
-    if trap.anomaly.get("kind") in ("step-limit-exceeded", "recursion-depth-exceeded") and rt.calls:
-        hot = sorted(rt.calls.items(), key=lambda kv: -kv[1])[:8]
-        trap.anomaly["detail"]["calls"] = [[name_id, count] for name_id, count in hot]
+    if trap.anomaly.get("kind") in ("step-limit-exceeded", "recursion-depth-exceeded"):
+        hot = _cost_by_function(rt)
+        if hot:
+            trap.anomaly["detail"]["calls"] = hot
     # Kind-specific repair hints.  Only overwrite the generic hint if no
     # body-level offender was identified by the probe — when one IS set
     # (Q20), the CONSERVE handler has already written a more specific hint
@@ -1330,6 +1351,26 @@ def _require_capability(rt: Runtime, op: int, name: str) -> None:
         )
 
 
+def _cost_by_function(rt: Runtime) -> List[List[int]]:
+    """[name_id, self steps, calls] for the eight costliest functions.
+
+    Exp 20.  Every boundary between named functions flushes the steps
+    since the last one to the function that was running, so at trap
+    time only the open interval is unsettled; it belongs to ``current``
+    -- the frames in flight need no walk.  Two closures with one name
+    (a def evaluated twice) are one row.
+    """
+    open_steps = rt.steps - rt.mark
+    steps: Dict[int, int] = {}
+    calls: Dict[int, int] = {}
+    for fn in rt.named:
+        own = fn.own + (open_steps if fn is rt.current else 0)
+        steps[fn.name] = steps.get(fn.name, 0) + own
+        calls[fn.name] = calls.get(fn.name, 0) + fn.calls
+    hot = sorted(steps.items(), key=lambda kv: -kv[1])[:8]
+    return [[name_id, n, calls[name_id]] for name_id, n in hot if n > 0]
+
+
 def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
     """Apply a LOVA function value to one argument.
 
@@ -1361,10 +1402,20 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
             "apply a `lambda` or a `loop-until`, or a name bound to one",
         )
 
-    name = fn.name
-    if name is not None:
-        calls = rt.calls
-        calls[name] = calls.get(name, 0) + 1
+    if fn.name is not None:
+        fn.calls += 1
+        me = fn
+    else:
+        me = fn.owner
+    outer = rt.current
+    if me is not outer:
+        # Exp 20: the steps since the last boundary were the outer
+        # function's own; settle them and start the inner's interval.
+        steps = rt.steps
+        if outer is not None:
+            outer.own += steps - rt.mark
+        rt.mark = steps
+        rt.current = me
     rt.call_depth += 1
     if rt.call_depth > rt.max_call_depth:
         depth = rt.call_depth
@@ -1393,6 +1444,12 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
         rt.caps = saved_caps
         rt.enclosed = saved_enclosed
         rt.call_depth -= 1
+        if me is not outer:
+            steps = rt.steps
+            if me is not None:
+                me.own += steps - rt.mark
+            rt.mark = steps
+            rt.current = outer
 
 
 def _eval(node: Node, rt: Runtime) -> Any:
@@ -1968,6 +2025,7 @@ def _compile_LET(node: Node, rt: Runtime) -> Any:
                 value = value_code(rt)
                 if value.__class__ is Closure and value.name is None:
                     value.name = name_id
+                    rt.named.append(value)
                 scope[name_id] = value
                 rt.let_chain = body_code     # the body may continue the group
                 return body_code(rt)
@@ -1997,7 +2055,7 @@ def _compile_LAMBDA(node: Node, rt: Runtime) -> Any:
                 raise StepTrap(steps=rt.steps, limit=rt.max_steps)
             return Closure(param=param, body=body, env=rt.env,
                            caps=rt.caps, enclosed=rt.enclosed,
-                           code=body_code)
+                           code=body_code, owner=rt.current)
         except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
             _trapped(trap, rt, node)
             raise
@@ -2207,14 +2265,26 @@ def _op_TEXT_LEN(node: Node, rt: Runtime, chained: bool) -> Any:
 
 
 def _op_TEXT_CAT(node: Node, rt: Runtime, chained: bool) -> Any:
-    return _as_text(_eval(node.args[0], rt), "text-cat") + _as_text(_eval(node.args[1], rt), "text-cat")
+    # Exp 20: two texts make a text; anything else makes a list, a text
+    # read as its codepoints -- which is what the prelude's `append`
+    # did by walking, at ~25 steps an element.  The shape-keeping text
+    # operators (`text-len` since M25, `text-cat` and `text-slice`
+    # since Exp 20) are how a list is indexed, cut and joined in a few
+    # steps without a slot for a vector.
+    a = _eval(node.args[0], rt)
+    b = _eval(node.args[1], rt)
+    if isinstance(a, str) and isinstance(b, str):
+        return a + b
+    return list_from(list_to_python(_as_list(a, "text-cat")) + list_to_python(_as_list(b, "text-cat")))
 
 
 def _op_TEXT_SLICE(node: Node, rt: Runtime, chained: bool) -> Any:
-    t = _as_text(_eval(node.args[0], rt), "text-slice")
+    v = _eval(node.args[0], rt)
     start = _as_int(_eval(node.args[1], rt), "text-slice")
     end = _as_int(_eval(node.args[2], rt), "text-slice")
-    return t[max(0, start):max(0, end)]
+    if isinstance(v, str):
+        return v[max(0, start):max(0, end)]
+    return list_from(list_to_python(_as_list(v, "text-slice"))[max(0, start):max(0, end)])
 
 
 def _op_TEXT_FIND(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -3043,6 +3113,7 @@ def _op_LET(node: Node, rt: Runtime, chained: bool) -> Any:
         value = _eval(node.args[1], rt)
         if isinstance(value, Closure) and value.name is None:
             value.name = name_id
+            rt.named.append(value)
         scope[name_id] = value
         return _eval(node.args[2], rt)
     finally:
@@ -3092,6 +3163,7 @@ def _op_LAMBDA(node: Node, rt: Runtime, chained: bool) -> Any:
         env=rt.env,
         caps=rt.caps,
         enclosed=rt.enclosed,
+        owner=rt.current,
     )
 
 

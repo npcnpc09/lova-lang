@@ -158,13 +158,20 @@ class StepTrap(BudgetTrap):
             "offending_op_name": "",
             "valid_alternatives": (),
             "repair_hint": (
-                f"the run spent its whole budget of {limit} steps and was "
-                "stopped here.  Either the program does not terminate -- "
-                "check the base case of the recursion -- or the work is "
-                "larger than the budget, which is the host's setting "
-                "(`--max-steps`, `max_steps`), not a fault in the program; "
-                "a search over a game tree or a large input can cost "
-                "millions of steps"
+                f"the budget of {limit} steps ran out.  The span is where "
+                "the counter expired, not where the cost is; `hot` in the "
+                "detail is: the steps each function spent in its own body, "
+                "costliest first.  If a library walker leads (`map`, "
+                "`filter`, `fold`, `reverse`, `range`, `sum`, `any`, "
+                "`contains` cost 20-40 steps per element, `sort` ~200; "
+                "`nth`, `take`, `drop`, `append`, `len`, `map-get`, `get` "
+                "a few steps), change the representation -- a map keyed "
+                "by index, a text, a packed integer -- before the "
+                "algorithm; if a function of yours leads, cut work there; "
+                "if the program cannot reach its base case, fix that; if "
+                "the work is genuinely this large, the budget is the "
+                "host's setting (`--max-steps`, `max_steps`), not a fault "
+                "in the program"
             ),
         }
 

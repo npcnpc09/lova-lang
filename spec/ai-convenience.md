@@ -100,6 +100,17 @@ step trap now says where the budget went (`hot`), and a run reports
 its cost on success. The number that names the next change: the
 interpreter's speed, now measured as attempts (Q90).
 
+**Third measurement (Exp 20, 2026-09-11, the same eight tasks, three
+more LOVA sessions with `hot` in the step trap):** attempts 31 against
+run 2's 35, the game-tree search 3, 2, 4 against 6, 3, 4; every session
+rewrote from the list, one was misled by it because it counted calls
+(a three-step helper led a two-hundred-step walk). Feedback per failure
+799 chars over 7 failures. The numbers that moved the design: the trap
+ranks by steps spent in each function's own body; `nth` was half the
+budget and is native at zero slots; the card says what costs. The
+number that names the next change is unchanged: the natural search is
+10-37M steps against 7M (Q90, Q94).
+
 ## 4. What the measure asks of the design
 
 Consequences, each a change the numbers above would reward:

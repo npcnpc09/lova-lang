@@ -260,11 +260,12 @@ def _bind(session: str) -> None:
 
 
 def cmd_report(args) -> int:
-    sessions = sorted(p.name for p in RESULTS.iterdir() if p.is_dir()) if RESULTS.exists() else []
+    # A session named with a leading underscore is a replay, not data.
+    sessions = sorted(p.name for p in RESULTS.iterdir() if p.is_dir() and not p.name.startswith("_")) if RESULTS.exists() else []
     if args.session:
         sessions = [args.session]
     langs = [args.lang] if args.lang else ["lova", "python"]
-    print(f"  {'lang':7s} {'session':8s} {'tasks':>5s} {'green':>5s} {'first':>5s} {'attempts':>8s} {'emitted':>8s} {'feedback':>9s} {'fails':>5s}")
+    print(f"  {'lang':7s} {'session':8s} {'tasks':>5s} {'green':>5s} {'first':>5s} {'attempts':>8s} {'emitted':>8s} {'feedback':>9s} {'fails':>5s} {'checks':>6s}")
     grand: Dict[str, Dict[str, int]] = {}
     for lang in langs:
         for session in sessions:
@@ -272,20 +273,21 @@ def cmd_report(args) -> int:
             recs = loop._records(lang)
             if not recs:
                 continue
+            checks = sum(1 for r in loop._records(lang, checks=True) if r.get("how") == "check")
             tasks = sorted({r["task"] for r in recs})
             green = sum(any(r["passed"] for r in recs if r["task"] == t) for t in tasks)
             first = sum(1 for t in tasks if next(r for r in recs if r["task"] == t)["passed"])
             emitted = sum(r["emitted_chars"] for r in recs)
             fails = [r for r in recs if not r["passed"]]
             feedback = sum(r["feedback_chars"] for r in fails)
-            print(f"  {lang:7s} {session:8s} {len(tasks):5d} {green:5d} {first:5d} {len(recs):8d} {emitted:8d} {feedback:9d} {len(fails):5d}")
-            g = grand.setdefault(lang, {"tasks": 0, "green": 0, "first": 0, "attempts": 0, "emitted": 0, "feedback": 0, "fails": 0})
+            print(f"  {lang:7s} {session:8s} {len(tasks):5d} {green:5d} {first:5d} {len(recs):8d} {emitted:8d} {feedback:9d} {len(fails):5d} {checks:6d}")
+            g = grand.setdefault(lang, {"tasks": 0, "green": 0, "first": 0, "attempts": 0, "emitted": 0, "feedback": 0, "fails": 0, "checks": 0})
             for k, v in (("tasks", len(tasks)), ("green", green), ("first", first), ("attempts", len(recs)),
-                         ("emitted", emitted), ("feedback", feedback), ("fails", len(fails))):
+                         ("emitted", emitted), ("feedback", feedback), ("fails", len(fails)), ("checks", checks)):
                 g[k] += v
     for lang, g in grand.items():
         per_fail = g["feedback"] // g["fails"] if g["fails"] else 0
-        print(f"  {lang:7s} {'all':8s} {g['tasks']:5d} {g['green']:5d} {g['first']:5d} {g['attempts']:8d} {g['emitted']:8d} {g['feedback']:9d} {g['fails']:5d}   feedback/failure {per_fail}")
+        print(f"  {lang:7s} {'all':8s} {g['tasks']:5d} {g['green']:5d} {g['first']:5d} {g['attempts']:8d} {g['emitted']:8d} {g['feedback']:9d} {g['fails']:5d} {g['checks']:6d}   feedback/failure {per_fail}")
     return 0
 
 
@@ -311,6 +313,10 @@ def main(argv=None) -> int:
     p.add_argument("--task", required=True, choices=list(BY_ID))
     p.add_argument("--span", nargs=2, type=int, required=True); p.add_argument("--replacement", required=True)
     p.set_defaults(func=loop.cmd_patch)
+    p = sub.add_parser("check"); p.add_argument("--session", required=True)
+    p.add_argument("--lang", required=True, choices=["lova", "python"])
+    p.add_argument("--task", required=True, choices=list(BY_ID)); p.add_argument("--file", required=True)
+    p.set_defaults(func=lambda a: (_bind(a.session), loop.cmd_check(a))[1])
     p = sub.add_parser("show"); p.add_argument("--session", required=True)
     p.add_argument("--lang", required=True); p.add_argument("--task", required=True)
     p.set_defaults(func=loop.cmd_show)

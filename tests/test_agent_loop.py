@@ -99,7 +99,8 @@ class Exp19Feedback(unittest.TestCase):
         a = tool_execute({"source": "(def f [n] (if n (merge 1 (f (sub n 1))) 0))\n(f 5000)",
                           "max_steps": 1000})["anomaly"]
         self.assertEqual(a["kind"], "step-limit-exceeded")
-        self.assertIn("or the work is larger than the budget", a["repair_hint"])
+        self.assertIn("if the work is genuinely this large", a["repair_hint"])
+        self.assertIn("not where the cost is", a["repair_hint"])
         self.assertNotIn("does not terminate within", a["repair_hint"])
 
     def test_the_budget_is_at_parity_with_the_wall_clock(self):
@@ -108,19 +109,50 @@ class Exp19Feedback(unittest.TestCase):
 
 
 class CostAttribution(unittest.TestCase):
-    """Exp 19, run 2: a step trap says where the budget went."""
+    """Exp 19, run 2: a step trap says where the budget went.
+
+    Exp 20: in steps spent in each function's own body, not in calls --
+    three sessions read call counts as costs and inlined one-line
+    helpers -- and an anonymous lambda's steps are charged to the def
+    that wrote it, so a prelude walker's loop bodies count as `nth`.
+    """
 
     SRC = ("(def fib [n] (if (lt n 2) n (merge (fib (sub n 1)) (fib (sub n 2)))))\n"
            "(def twice [x] (mul 2 x))\n(twice (fib 30))")
 
-    def test_the_step_trap_lists_the_most_called_functions(self):
+    def test_the_step_trap_ranks_functions_by_steps(self):
         from core.mcp_server import tool_execute
         a = tool_execute({"source": self.SRC, "max_steps": 300000})["anomaly"]
         self.assertEqual(a["kind"], "step-limit-exceeded")
-        self.assertEqual(a["detail"]["hot"][0][0], "fib")
-        self.assertGreater(a["detail"]["hot"][0][1], 1000)
-        self.assertIn("Most called: fib (", a["repair_hint"])
+        name, steps, calls = a["detail"]["hot"][0]
+        self.assertEqual(name, "fib")
+        self.assertGreater(steps, 250000)          # nearly the whole budget is fib's own body
+        self.assertGreater(calls, 1000)
+        self.assertIn("Where the steps went: fib (", a["repair_hint"])
         self.assertNotIn("calls", a["detail"])
+
+    def test_a_linear_recursion_in_flight_is_charged_to_its_function(self):
+        # Nothing has returned when the trap fires; the frames in flight
+        # are settled at trap time or the list would be empty.
+        from core.mcp_server import tool_execute
+        a = tool_execute({"source": "(def f [n] (if n (merge 1 (f (sub n 1))) 0))\n(f 5000)",
+                          "max_steps": 1000})["anomaly"]
+        name, steps, calls = a["detail"]["hot"][0]
+        self.assertEqual((name, calls), ("f", 111))
+        self.assertGreater(steps, 900)
+
+    def test_a_lambda_is_charged_to_the_def_that_wrote_it(self):
+        # `sum` is a loop-until over two lambdas inside `iterate`; the
+        # steps those lambdas spend are sum's, and `iterate` keeps only
+        # its own overhead.
+        from core.mcp_server import tool_execute
+        src = "(def big [] (range 0 400))\n(def walk [i acc] (if (eq i 0) acc (walk (sub i 1) (merge acc (sum big)))))\n(walk 1000 0)"
+        a = tool_execute({"source": src, "max_steps": 200000})["anomaly"]
+        hot = {name: (steps, calls) for name, steps, calls in a["detail"]["hot"]}
+        self.assertIn("sum", hot)
+        self.assertGreater(hot["sum"][0], 150000)
+        self.assertGreater(hot["sum"][0], hot.get("iterate", (0, 0))[0])
+        self.assertLess(hot.get("walk", (0, 0))[0], 10000)
 
     def test_the_cli_names_them_too(self):
         import contextlib, io, os, tempfile
@@ -134,7 +166,7 @@ class CostAttribution(unittest.TestCase):
                 main(["run", path, "--max-steps", "300000"])
         finally:
             os.remove(path)
-        self.assertIn("Most called: fib (", err.getvalue())
+        self.assertIn("Where the steps went: fib (", err.getvalue())
 
     def test_a_passing_run_reports_its_cost(self):
         r = e18.run_lova("(merge {s} 0)", e18.BY_ID["t01"])

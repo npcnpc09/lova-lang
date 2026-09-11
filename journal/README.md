@@ -306,6 +306,32 @@ the integer-size guard first, which is also a structured stop.
 Tests 618 → 665. The README's "initially usable" claim rests on this
 entry and its numbers.
 
+### Experiment 20 (2026-09-11) — Does cost attribution turn a blind rewrite into a read one?
+Q91. Exp 19's tasks and rules, three more Opus sessions (o4-o6) with
+`hot` in the step trap: 24/24 green, 31 attempts against run 2's 35,
+the game-tree search 3, 2, 4 attempts against 6, 3, 4 -- and every
+session says the list changed what it rewrote (all three would have
+attacked the node count; the list said the cost was per node, in list
+access). One session was misled by the list itself: it ranked by
+calls, so a three-step helper (`inc`, 53 485 calls) led a
+two-hundred-step walk, and the session inlined helpers and trapped
+again. So the trap now ranks by **steps spent in each function's own
+body** (an anonymous lambda charged to the def that wrote it), which
+read on run 2's program: `nth` 3.9M of 7M, list access three quarters
+of the budget, the user's own function five percent. `text-slice` and
+`text-cat` keep a list's shape now, so `nth`, `take`, `drop`, `last`
+and `append` are native at zero slots (13-19 steps where the walk cost
+80-400); the natural first attempt costs 1.3-3.1× fewer steps and
+still does not fit 7M (9.9M-36.6M). `Closure` and `Runtime` got
+`__slots__`, which paid for the attribution and 15% more. Card: a
+cost section with the measured numbers and six facts the sessions
+guessed (mutual recursion, `(nil)` as the empty map, `words` yields
+texts, negative literals, `\n`, field names as symbols). Harness:
+`check` (compile and the program's examples, no attempt spent),
+`tasks` states the budget, `patch --out`. `journal/experiment_20.md`;
+Q91 answered; Q93 (one rewrite, or none?), Q94 (native walkers or a
+native evaluator: Q90 sharpened). Tests 781 → 783.
+
 ### Experiment 19 (2026-09-10 / 11) — The loop where first attempts fail
 Q87. Eight bigger tasks -- a calculator with precedence, reports, the
 best tic-tac-toe move under perfect play, shortest paths, ledgers --
@@ -1654,12 +1680,21 @@ the corpus grows again.
   game-tree search LOVA took two to five more attempts, all rewrites
   for cost after a step trap with no attribution. The trap now names
   where the budget went. Ten sessions is Q92.
-- **Q90**: the interpreter's speed as an attempts number. The natural
-  minimax over a list board costs 40 million steps, an hour of CPython
-  against a second of Python; what does it cost on PyPy, and is a
-  native evaluator the change the numbers now call for?
-- **Q91**: does `hot` in the step trap turn the two blind rewrites
-  into one? Same tasks, three more sessions.
+- **Q90** *(sharpened by Exp 20)*: the interpreter's speed as an
+  attempts number. The natural minimax over a list board costs 10-37
+  million steps with native list access (was 24 to over 40) at
+  ~400 000 a second, against a second of Python; PyPy is not on this
+  machine. Is a native evaluator the change, or Q94's native walkers?
+- ~~**Q91**~~: *answered by Exp 20, 2026-09-11.* Yes, qualified: h04
+  13 → 9 attempts over three sessions, every session rewriting from
+  the list rather than guessing -- and one misled by it, because it
+  counted calls. It ranks by steps now.
+- **Q93**: with steps in the ranking, native `nth`, and a cost section
+  on the card, does the natural h04 pass in one rewrite, or in none?
+  Three sessions, the same tasks.
+- **Q94**: `map` / `filter` / `fold` / `reverse` / `range` at 20-40
+  steps an element are the cost that remains after Exp 20. Native, at
+  what slot or family cost, against the ~25× a native `nth` gave?
 - **Q92**: ten sessions per language on one model, Exp 18's and 19's
   tasks together, so the per-task attempt distribution is load-bearing.
 - **Q88**: the reuse leg of the yardstick: a session given
@@ -1835,6 +1870,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 20 | 2026-09-11 | Cost attribution: blind rewrite to read one | Done (3 sessions, LOVA, Opus, 8 tasks) | **PARTIAL.** With `hot` in the step trap, h04 3/2/4 attempts against run 2's 6/3/4 (31 vs 35 in all); every session rewrote from the list, one was misled by it (ranked by calls: `inc` led). The trap ranks by steps in each function's own body now; that read `nth` as 3.9M of 7M. `nth`/`take`/`drop`/`last`/`append` native at zero slots via shape-keeping `text-slice`/`text-cat`; the natural first attempt 1.3-3.1× cheaper, still over budget. Slotted `Closure`/`Runtime`: interpreter 15% faster net. Card: cost section, six facts. Harness: `check`. Q93, Q94. |
 | 19 | 2026-09-11 | The loop where first attempts fail | Done (3 sessions × 2 languages × 2 runs, 8 tasks) | **PARTIAL.** Run 1 found four instrument defects (a numeric-looking text as an integer, a budget 30× tighter than the Python clock, a hint asserting non-termination, parse errors without a position), fixed. Run 2: LOVA 24/24 in 35 attempts, Python 24/24 in 26; parity on seven tasks, the game-tree search 6/3/4 vs 1/1/1, every extra attempt a rewrite for cost. Compile faults fixed in one attempt every time. The step trap now attributes cost by function. Q90-Q92. |
 | 18 | 2026-09-10 | The agent loop: the four numbers | Done, pilot (1 session × 2 languages × 10 tasks) | **PARTIAL.** A fresh Claude session with the card and a `submit` command: LOVA 10/10 in 11 attempts, Python 10/10 in 10; the one LOVA miss (an operator passed by name) fixed from the hint in one try; emitted 3 184 vs 2 431 chars; feedback 1 114 chars for the one failure, none on the Python side, so that number is one-sided; scaffolding a function call with a budget vs a subprocess with a timeout. Every hindrance named was a card gap, closed. Q87-Q89 raised. |
 | 17 | 2026-09-10 | A model writes LOVA from one page | In progress (Claude, blind, N=80 × 2 languages) | **PARTIAL.** A fresh Claude session with no tools, given the one-page card and 80 LOVABench v3 prompts, single-shot: **LOVA 79/80, Python 79/80**, the same miss (pb19's misleading v1 prompt, fixed). Algorithmic 20/20 in both. The language costs the model no reliability; the benchmark is at its ceiling; the case for LOVA is what a program gets at run time. Harness, corpus (3 000 verified pairs) and fine-tune driver ready; the paid runs wait on a key. Q82, Q83 raised. |

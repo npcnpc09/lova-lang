@@ -125,7 +125,11 @@ scaffolding a function call against a subprocess); Exp 19 ran it on
 eight bigger ones (35 against 26: parity on seven tasks, the game-tree
 search 6/3/4 against 1/1/1, every extra attempt a rewrite for cost --
 the interpreter's speed as an attempts number, Q90; compile faults
-fixed in one attempt every time). (4) is still unmeasured (Q88).
+fixed in one attempt every time); Exp 20 re-ran the eight with cost
+attribution in the step trap (31 against 26, the search 3/2/4 -- the
+rewrites read rather than guessed, and one misread because the list
+counted calls; it ranks by steps now, and `nth` is native). (4) is
+still unmeasured (Q88).
 
 Standing invariants: Axioms 3, 4, 5, 6, 7, 9. **Demoted to design
 preferences: Axioms 1, 2, 8, 10** -- the integer encoding is the
@@ -508,6 +512,19 @@ experiment details.
   and could receive a closure, because `APPLY` declares `Int` while a
   partial application evaluates to a callable (Q35). All now coerce.
 
+**Exp 20** (2026-09-11) made the step trap say where the steps went.
+`hot` ranks functions by the steps spent in their own body (an
+anonymous lambda charged to the def that wrote it), with call counts
+beside -- the call ranking of Exp 19 had sent a session to inline a
+three-step helper. On the run-2 search it reads `nth` 3.9M of 7M, so
+`text-slice` / `text-cat` keep a list's shape and `nth` / `take` /
+`drop` / `last` / `append` are one native operator each, zero slots,
+13-19 steps where the walk cost 80-400. `Closure` and `Runtime` are
+slotted: the interpreter is ~15% faster with the attribution than it
+was without. The card has a cost section and six facts the sessions
+guessed; the harness has `check`. The natural game-tree search costs
+10-37M steps against a 7M budget and is the number Q90 / Q94 name.
+
 **M26** made a boundary a region, the card generated (`python -m
 corpus.make_card`; `tests/test_card.py` keeps it current), and a
 program the carrier of its own examples: `(example expr expected)`
@@ -716,7 +733,7 @@ plus the text family 0x40-0x4D since M25: 78 tokens in all. The
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-781 unit tests passing, 19 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language) (pb11 has a v1 pilot + v2 re-run),
+783 unit tests passing, 20 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA) (pb11 has a v1 pilot + v2 re-run),
 14 first-class apps, **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

@@ -61,16 +61,18 @@
 (def reverse [xs]
   (rev-onto xs (nil)))
 
-(def append [xs ys]
-  (if (and (text? xs) (text? ys))
-    (text-cat xs ys)
-    (rev-onto (reverse xs) ys)))
+;; Native since Exp 20: `text-cat` keeps a list's shape, so this is a
+;; few steps where the walk was ~25 an element.
+
+(def append [xs ys] (text-cat xs ys))
+
+;; Native since Exp 20 (`text-slice` keeps a list's shape): about six
+;; steps, where the walk cost ~25 an element and was half of a
+;; game-tree search's budget.
 
 ;; The element of `xs` at 0-based index `k`; a fault past the end.
 (def nth [xs k]
-  (head (tail (iterate (cons k xs)
-                       (lambda s (or (le (head s) 0) (nil? (tail s))))
-                       (lambda s (cons (sub (head s) 1) (tail (tail s))))))))
+  (head (text-slice xs k (merge k 1))))
 ;; Past the end, `head` of the empty list raises the same domain-error
 ;; every other out-of-range access does.  A silent zero here would have
 ;; been the one place the standard library broke Constraint 5 -- and it
@@ -78,20 +80,11 @@
 ;; way since M22.
 
 (def last [xs]
-  (head (reverse xs)))
+  (head (text-slice xs (sub (len xs) 1) (len xs))))
 
-(def take [n xs]
-  (reverse (tail (tail (iterate
-    (cons n (cons xs (nil)))
-    (lambda s (or (le (head s) 0) (nil? (head (tail s)))))
-    (lambda s (cons (sub (head s) 1)
-                    (cons (tail (head (tail s)))
-                          (cons (head (head (tail s))) (tail (tail s)))))))))))
+(def take [n xs] (text-slice xs 0 n))
 
-(def drop [n xs]
-  (tail (iterate (cons n xs)
-                 (lambda s (or (le (head s) 0) (nil? (tail s))))
-                 (lambda s (cons (sub (head s) 1) (tail (tail s)))))))
+(def drop [n xs] (text-slice xs n (len xs)))
 
 (def contains [xs v]
   (if (head (iterate (cons 0 xs)

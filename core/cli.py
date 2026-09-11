@@ -154,11 +154,15 @@ def name_anomaly(anomaly: Any, symbols: Any) -> None:
         return
     detail = anomaly.get("detail")
     if isinstance(detail, dict) and detail.get("calls"):
-        # Exp 19: where a step or depth budget went, by function name.
-        hot = [(symbols.name_of(i) or f"#{i}", n) for i, n in detail.pop("calls")]
-        detail["hot"] = [[name, n] for name, n in hot]
+        # Exp 19 / Exp 20: where a step or depth budget went, by function
+        # name -- the steps spent in each function's own body, and its
+        # calls.  Ranked by steps: three sessions read the call counts
+        # of Exp 19 as costs and inlined one-line helpers (journal Exp 20).
+        hot = [(symbols.name_of(i) or f"#{i}", steps, calls) for i, steps, calls in detail.pop("calls")]
+        detail["hot"] = [[name, steps, calls] for name, steps, calls in hot]
         anomaly["repair_hint"] = (anomaly.get("repair_hint", "") +
-            "  Most called: " + ", ".join(f"{name} ({n})" for name, n in hot) + ".")
+            "  Where the steps went: " +
+            ", ".join(f"{name} ({steps} steps in {calls} calls)" for name, steps, calls in hot) + ".")
     if not isinstance(detail, dict) or "name_id" not in detail:
         return
     name = symbols.name_of(detail["name_id"])

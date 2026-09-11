@@ -244,11 +244,13 @@ def _append(lang: str, record: Dict[str, Any]) -> None:
         fp.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def _records(lang: str) -> List[Dict[str, Any]]:
+def _records(lang: str, checks: bool = False) -> List[Dict[str, Any]]:
+    """The submissions (and, with ``checks``, the compile-only checks)."""
     path = _log_path(lang)
     if not path.exists():
         return []
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    recs = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    return recs if checks else [r for r in recs if r.get("how") != "check"]
 
 
 def _last_submission(lang: str, task_id: str) -> Optional[str]:
@@ -264,7 +266,57 @@ def cmd_tasks(args) -> int:
     for t in TASKS:
         names = ", ".join("{" + n + "}" for n in t.inputs) if args.lang == "lova" else ", ".join(t.inputs)
         print(f"{t.id}: {t.prompt}  [inputs: {names}]")
+    # Exp 20: a session learned the budget from its first trap; it is a
+    # design input for a search, so it is stated with the tasks.
+    if args.lang == "lova":
+        print(f"budget: each test runs under {BUDGET} steps.")
+    else:
+        print(f"budget: each test runs under a {PY_TIMEOUT:g} s wall clock.")
     return 0
+
+
+def check_lova(program: str, task: Task) -> str:
+    """Compile with the prelude and run the program's own `example` forms.
+
+    Exp 20: two of a session's three failures were one paren, each a
+    full submission; a check costs no attempt and is what `lova check`
+    gives any agent.  The placeholders are filled with a value of the
+    right type -- an empty text, zero -- so the program compiles; the
+    hidden tests are not touched.
+    """
+    from core.mcp_server import tool_check
+    dummies = [f'{k}=""' if isinstance(v, str) else f"{k}=0" for k, v in task.tests[0]["inputs"].items()]
+    r = tool_check({"source": program, "args": dummies})
+    if r["ok"]:
+        n = r.get("total", 0)
+        return f"OK: compiles; {n} example{'s' if n != 1 else ''} pass." if n else "OK: compiles (no examples)."
+    a = r["anomaly"]
+    keep = {k: a[k] for k in ("kind", "stage", "excerpt", "line", "col", "repair_hint", "detail", "message", "span") if k in a}
+    return "FAIL " + json.dumps(keep, ensure_ascii=False)
+
+
+def check_python(code: str) -> str:
+    import py_compile, tempfile, os
+    fd, path = tempfile.mkstemp(suffix=".py")
+    os.close(fd)
+    try:
+        Path(path).write_text(code, encoding="utf-8")
+        py_compile.compile(path, doraise=True)
+        return "OK: compiles."
+    except py_compile.PyCompileError as exc:
+        return "FAIL " + str(exc.msg).strip()
+    finally:
+        os.remove(path)
+
+
+def cmd_check(args) -> int:
+    program = Path(args.file).read_text(encoding="utf-8")
+    text = check_lova(program, BY_ID[args.task]) if args.lang == "lova" else check_python(program)
+    _append(args.lang, {"task": args.task, "how": "check", "emitted_chars": len(program),
+                        "feedback_chars": len(text), "passed": text.startswith("OK"),
+                        "feedback": text, "time": time.time()})
+    print(f"[{args.task} check] {text}")
+    return 0 if text.startswith("OK") else 1
 
 
 def feedback_text(lang: str, result: Dict[str, Any]) -> str:
@@ -316,6 +368,10 @@ def cmd_patch(args) -> int:
         return 2
     program = last[:start] + args.replacement + last[end:]
     print(f"patched: replaced {last[start:end]!r}")
+    if args.out:
+        # Exp 20: a session kept its file in step with the patched
+        # submission by hand; the harness can write it.
+        Path(args.out).write_text(program, encoding="utf-8")
     return _submit("lova", args.task, program, len(args.replacement), "patch")
 
 
@@ -385,7 +441,11 @@ def main(argv=None) -> int:
     p.set_defaults(func=cmd_submit)
     p = sub.add_parser("patch"); p.add_argument("--task", required=True, choices=list(BY_ID))
     p.add_argument("--span", nargs=2, type=int, required=True); p.add_argument("--replacement", required=True)
+    p.add_argument("--out", help="also write the patched source to this file")
     p.set_defaults(func=cmd_patch)
+    p = sub.add_parser("check"); p.add_argument("--lang", required=True, choices=["lova", "python"])
+    p.add_argument("--task", required=True, choices=list(BY_ID)); p.add_argument("--file", required=True)
+    p.set_defaults(func=cmd_check)
     p = sub.add_parser("show"); p.add_argument("--lang", required=True); p.add_argument("--task", required=True)
     p.set_defaults(func=cmd_show)
     p = sub.add_parser("report"); p.add_argument("--lang", required=True); p.set_defaults(func=cmd_report)
