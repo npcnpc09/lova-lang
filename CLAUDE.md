@@ -160,9 +160,15 @@ comparison/branch macros (which the substrate has no byte for) and
 omits the arities its parentheses supply, so the substrate forms could
 not be fairly tested from it -- a substrate-native card is Q101, and
 whether compare and `if` should be operators rather than text macros
-is Q102. For a model as it exists now the s-expression is the
-authoring surface; nothing measured supports authoring in raw tokens.
-`journal/experiment_22.md`.
+is Q102. **Q101 corrected the reliability half the same day:** with
+the s2/tok cards rebuilt from the substrate's own operators, three
+sessions wrote all ten tasks first-try in both substrate forms (s2
+20/20, tok 10/10), honestly -- so the Exp-22 gap was the card, and at
+this size the three forms tie on reliability and separate only on cost,
+Stage-2 dominating the s-expression. The text layer is not required to
+author small closed programs; its remaining case is zero-shot
+familiarity and the untested scaling risks (global lambda numbering,
+silent digit-run spacing), which is Q104. `journal/experiment_22.md`.
 
 ## The goal (owner's ruling, 2026-09-10)
 

@@ -1,0 +1,10 @@
+{"task": "c01", "attempt": 1, "passed": true, "emitted_chars": 19, "emitted_llm": 20, "program": "Σ\\0\\1+AL0Π\\0*AAΥ1 6", "result": {"passed": true, "stage": "run", "got": 55, "want": 55}, "time": 1789132332.8004932}
+{"task": "c02", "attempt": 1, "passed": true, "emitted_chars": 20, "emitted_llm": 21, "program": "ΒΡ\\0!d%A2 0 0 1Υ0 20", "result": {"passed": true, "stage": "run", "got": 10, "want": 10}, "time": 1789132335.4335325}
+{"task": "c03", "attempt": 1, "passed": true, "emitted_chars": 11, "emitted_llm": 12, "program": "^Τ:5:3:8:1~", "result": {"passed": true, "stage": "run", "got": 1, "want": 1}, "time": 1789132337.8891869}
+{"task": "c04", "attempt": 1, "passed": true, "emitted_chars": 24, "emitted_llm": 23, "program": "Σ\\0\\1!>dALAL0:4:9:2:9:5~", "result": {"passed": true, "stage": "run", "got": 9, "want": 9}, "time": 1789132340.8513122}
+{"task": "c05", "attempt": 1, "passed": true, "emitted_chars": 6, "emitted_llm": 4, "program": "g48 36", "result": {"passed": true, "stage": "run", "got": 12, "want": 12}, "time": 1789132343.3573713}
+{"task": "c06", "attempt": 1, "passed": true, "emitted_chars": 13, "emitted_llm": 14, "program": "Σ\\0\\1+AL0Υ1 7", "result": {"passed": true, "stage": "run", "got": 21, "want": 21}, "time": 1789132345.9492824}
+{"task": "c07", "attempt": 1, "passed": true, "emitted_chars": 15, "emitted_llm": 10, "program": "ΒΓ\"foo\"\"barbaz\"", "result": {"passed": true, "stage": "run", "got": 9, "want": 9}, "time": 1789132348.3479667}
+{"task": "c08", "attempt": 1, "passed": true, "emitted_chars": 24, "emitted_llm": 21, "program": "Σ\\0\\1!>dLAAL999:5:3:8:1~", "result": {"passed": true, "stage": "run", "got": 1, "want": 1}, "time": 1789132350.7662}
+{"task": "c09", "attempt": 1, "passed": true, "emitted_chars": 16, "emitted_llm": 17, "program": "Φ\\0!dA7 0 1Υ0 10", "result": {"passed": true, "stage": "run", "got": 1, "want": 1}, "time": 1789132353.2671678}
+{"task": "c10", "attempt": 1, "passed": true, "emitted_chars": 3, "emitted_llm": 2, "program": "s12", "result": {"passed": true, "stage": "run", "got": 28, "want": 28}, "time": 1789132355.791381}

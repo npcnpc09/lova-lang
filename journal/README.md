@@ -580,10 +580,19 @@ answers; the tok session learned fold/lambda/sort-by arities from the
 "trailing bytes" error. That is rule 1 and rule 2 of the ruling shown:
 a card made on the text does not transfer to the substrate. For a
 current model the s-expression is the authoring surface; nothing
-supports authoring in raw tokens. `journal/experiment_22.md`; Q100
-answered in part; Q101 (a substrate-native card), Q102 (should compare
-and if be operators, not text macros), Q103 (the repair axis of the
-three forms).
+supports authoring in raw tokens. **Q101, same day:** the s2/tok cards
+were rebuilt from the substrate's own operators (compare/branch as
+deviation/threshold/if-surprise, every arity stated, the reference
+scheme corrected) and three fresh sessions went 20/20 (s2) and 10/10
+(tok) first-try, all honest -- the Exp-22 gap was the card, not the
+form. At this size the three forms tie on reliability and separate on
+cost, with Stage-2 dominating the s-expression (same success, a quarter
+fewer tokens). The text layer is not required to author small closed
+programs. `journal/experiment_22.md`; Q100 answered in part, Q101
+answered; Q102 (should compare and if be operators, not text macros),
+Q103 (the repair axis), Q104 (does s2 stay as reliable at
+tictactoe size, where global lambda numbering and silent spacing
+bite).
 
 ### The ruling (2026-09-11) — the design method
 After M27, the owner asked what the remaining experiments would yield

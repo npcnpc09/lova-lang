@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-11
 **Script:** `experiments/experiment_22_three_forms.py`
-**Status:** Done, five sessions on Opus 4.8 (s1 x2, s2 x2, tok x1). **PARTIAL.**
+**Status:** Done. Exp-22 run (five sessions) + Q101 re-run (three sessions), Opus 4.8. **PARTIAL.**
 
 ## Hypothesis
 
@@ -132,6 +132,62 @@ had to be recovered from error messages. Both are the ruling's point
 made concrete: a card designed on the s-expression smuggles in exactly
 what the substrate lacks.
 
+### Generation axis, re-run with a substrate-native card (Q101)
+
+The two substrate cards were rebuilt from the substrate's own
+operators: comparison and branch given their real spelling --
+deviation (signed compare), threshold (positive-test), if-surprise
+(branch) -- with the recipe for lt/gt/eq/sub/neg from them; every
+operator's arity stated; the Stage-2 reference scheme corrected
+(declare a parameter as backslash-N, refer to it by a letter
+A/L/r/...). The s-expression card was left alone. Three fresh Opus
+sessions, same ten tasks, told to solve honestly (no literals):
+
+| form | card | first-try | attempts | emitted LLM tokens/session |
+|---|---|---|---|---|
+| s2 | Exp-22 (projected) | 17/20 | 25 | -- (contaminated) |
+| s2 | Q101 (substrate) | 20/20 | 20 | ~145 |
+| tok | Exp-22 (projected) | 6/10 | 20 | -- |
+| tok | Q101 (substrate) | 10/10 | 10 | 528 |
+
+The whole Exp-22 degradation was the card. With a substrate-native
+card, both s2 sessions and the tok session wrote all ten tasks
+first-try, every one an honest computation -- max and min as a fold of
+if-surprise(threshold(deviation ...)) ..., equality and membership from
+deviation, evenness from mod -- no hard-coded literals. The raw byte
+form, which in Exp 22 needed twenty submissions and a running probe of
+the decode error, was first-try once the card stated the arities and
+the compare/branch recipe; a multi-byte length prefix (100000 =
+1 3 1 134 160) was laid down correctly by hand.
+
+Emitted cost tracked the deterministic cost axis: s2 ~145 tokens a
+session (against the canonical 141), tok 528 (against 520), s1 ~190. So
+at this size, given a fair card, the three forms do NOT separate on
+reliability -- they separate on cost, and Stage-2 dominates the
+s-expression (same first-try success, a quarter fewer tokens) while the
+raw byte form is reliable but 2.7x the s-expression.
+
+What the sessions still flagged, none of it blocking here but all of it
+scaling with program size:
+- Global lambda numbering. A reference is by the parameter's number
+  across the whole program, not per lambda, so in c01 the map lambda
+  was number 2 because the fold already used 0 and 1. Correct, and
+  inferred from one nested example; on a program with many lambdas the
+  writer must track a global counter, and a wrong number is a silent
+  value error, not a parse error.
+- Digit-run spacing. range 0 20 must have the space; without it the two
+  digits parse as one different literal and fail silently. The rule is
+  load-bearing and appears in many places.
+- No text-literal byte in the tok card. The token form lists the text
+  operators but gives no way to write "foo" as bytes, so c07 was done
+  by building the string with int-text. A real gap in the tok card
+  (the tok form does have a text literal; the card just did not teach
+  its byte layout).
+- The Stage-2 & (ref) operator in the table reads as if references need
+  a & prefix; they do not (a bare letter is the reference). And the
+  non-ASCII Greek symbols must be copied exactly, which a non-UTF-8
+  console mangles.
+
 ## Findings
 
 - **F1 (cost).** On dense operator-only code the Stage-2 surface saves
@@ -158,6 +214,14 @@ what the substrate lacks.
   into arithmetic (comparison as integer division), which two of three
   non-text sessions did and one faked. Density is not the whole gap
   between the surfaces; vocabulary is.
+- **F5 (Q101: with a substrate-native card the forms tie on
+  reliability and separate on cost).** Rebuilt cards -- compare/branch
+  in their real spelling, arities stated -- took s2 from 17/20 to 20/20
+  first-try and tok from 6/10 to 10/10 first-try, all honest. At this
+  size the three forms are equally writable; what separates them is the
+  emitted token count (s2 ~145, s1 ~190, tok 528), so Stage-2 dominates
+  the s-expression. The Exp-22 reliability gap (F2) was the card, not
+  the form.
 
 ## Discussion
 
@@ -172,17 +236,26 @@ that holds; it is not a claim about the authoring surface, and this run
 is the first evidence that the authoring surface a current model wants
 is the text.
 
-But the run cannot settle whether the text layer is removable, because
-the s2/tok cards were defective in the exact way the ruling predicts:
-projected from the s-expression, they carried its macros (which the
-substrate lacks) and omitted its arities (which its parentheses supply
-for free). The honest reading is that this experiment tested the card
-as much as the form, and found that a card made on the text does not
-transfer. A fair test of the substrate forms needs a card built from
-the substrate's own operators -- comparison and branch given their real
-byte spelling, every operator's arity stated -- which is Q101. Until
-that runs, "the text layer stays" is supported for a current model and
-"the text layer is removable" is untested.
+The Exp-22 run tested the card as much as the form; Q101 fixed the
+card and the picture changed. With a substrate-native card the two
+substrate forms were written first-try, honestly, as reliably as the
+s-expression -- so at this size reliability does not favour the text,
+and the case for the text layer as the AUTHORING surface is only
+zero-shot familiarity, which a fine-tune or a fair card removes.
+Stage-2 is then strictly better than the s-expression here: same
+first-try success, a quarter fewer tokens. The raw byte form is
+writable too but costs 2.7x, so nothing recommends it as an authoring
+surface even though a model can produce it by hand.
+
+What Q101 did NOT settle is scale. Both s2 sessions named two
+silent-corruption risks -- a reference is by a global lambda number
+(track a counter across the whole program) and adjacent literals need a
+separating space -- that did not bite on ten tiny closed programs but
+grow with size and fail as a wrong value, not a parse error. Whether
+s2 stays as reliable as the s-expression on a tictactoe-sized program
+is Q104. So: for small programs the text layer is not required for
+authoring; for large ones it is untested, and the substrate's
+silent-corruption failure modes are the thing to watch.
 
 The deeper thing the run exposed: the gap between the text and the
 substrate is not only density (Stage-2 is a modest 1.36x on dense
@@ -195,10 +268,14 @@ macro layer that cannot be projected.
 
 ## Next questions raised
 
-- **Q101** -- the substrate-native card: rebuild the s2 and tok cards
-  from the 86 operators (comparison and if in their real byte spelling,
-  every arity stated), and re-run the generation axis, so the s2/tok
-  reliability number is the form's and not the card's.
+- ~~**Q101**~~ -- *answered, 2026-09-11.* A substrate-native card took
+  s2 to 20/20 and tok to 10/10 first-try, all honest: the Exp-22 gap
+  was the card. At this size the forms tie on reliability; Stage-2
+  dominates the s-expression on cost.
+- **Q104** -- does Stage-2 stay as reliable as the s-expression on a
+  program the size of `tictactoe.lova`, where the global lambda
+  numbering and the digit-run spacing (both silent-corruption risks)
+  actually bite? The scaling test the ten closed tasks could not run.
 - **Q102** -- should comparison and if be operators rather than text
   macros? They are the vocabulary an author needs every line, and the
   one thing that did not project to the substrate. Costed against the
@@ -209,13 +286,14 @@ macro layer that cannot be projected.
 ## Status
 
 **PARTIAL.** Cost axis: Stage-2 saves a third of the LLM tokens on
-dense code, the raw-byte form costs 2.71x, the Stage-2 symbols are
-non-ASCII. Generation axis (Opus 4.8): first-try 100% / 85% / 60% for
-s1 / s2 / tok, attempts a task 1.00 / 1.25 / 2.00 -- reliability
-degrades toward the substrate. The cause is the ruling's own point:
-the s2/tok cards were projected from the s-expression, carried its
-comparison/if macros (which the substrate cannot spell) and omitted
-its arities (which parentheses supply). For a current model the
-s-expression is the authoring surface; whether the substrate forms are
-writable from a substrate-native card is Q101; whether compare and
-branch should be operators is Q102.
+dense code, the raw-byte form costs 2.71x. Exp-22 generation axis put
+first-try at 100% / 85% / 60% for s1 / s2 / tok -- but Q101 showed that
+gap was the card: rebuilt from the substrate's own operators (real
+compare/branch, arities, corrected references), the substrate forms
+went 20/20 (s2) and 10/10 (tok) first-try, all honest. So at this size
+the three forms tie on reliability and separate on cost, with Stage-2
+dominating the s-expression. The text layer is not required to AUTHOR
+small closed programs; its remaining case is zero-shot familiarity and
+the untested scaling risks (global lambda numbering, silent spacing) --
+Q104. Whether compare and branch should be operators, not text macros,
+is Q102; the repair axis is Q103.
