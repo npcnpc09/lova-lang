@@ -1,0 +1,60 @@
+;;; tanks.lova  --  tank battle in a terminal, turn by turn
+;;;
+;;;   lova run apps/tanks.lova 7
+;;;   printf 'f\nw\nw\nf\n' | lova run apps/tanks.lova 7
+;;;
+;;; The argument seeds the enemies' wandering.  Each line you type is
+;;; one turn: w / d / s / a move (and turn to face) up / right / down /
+;;; left, f fires, an empty line waits, q quits.  Every enemy moves and
+;;; every bullet flies two cells after your move.  Eight enemies arrive
+;;; along the top row, up to three at a time; destroy them all before
+;;; one of them destroys you or the base `@` beside you.  The value of
+;;; the program is your score.
+;;;
+;;; The rules are `lib/tanks.lova`; this file is the terminal.  The
+;;; same rules run in real time in a window: `python apps/tanks/tank_game.py`.
+
+(use "tanks")
+
+(def show [w]
+  (seq (println (render w))
+       (println (join (list "turn" (text-of (get w turn))
+                            "score" (text-of (get w score))
+                            "enemies left" (text-of (enemies-left w)))
+                      32))
+       (println "")))
+
+;; The next command: w d s a f, an empty line to wait, q or the end of
+;; the input to quit.  Anything else is a wait too.  (`w` is unused: a
+;; def without a parameter is a constant, computed once, and this must
+;; read a line every turn.)
+(def read-cmd [w]
+  (let line (stdin)
+    (if (nil? line)
+      -1
+      (let c (head line)
+        (cond (eq c 119) 1
+              (eq c 100) 2
+              (eq c 115) 3
+              (eq c 97) 4
+              (eq c 102) 5
+              (eq c 113) -1
+              0)))))
+
+(def one-turn [w]
+  (seq (show w)
+       (let c (read-cmd w)
+         (if (lt c 0) (put w quit 1) (step w c)))))
+
+(def over [w] (or (get w status) (map-get w "quit" 0)))
+
+(def finish [w]
+  (seq (if (get w status) (show w) 0)
+       (println (cond (eq (get w status) 1) "you win: the last enemy is gone"
+                      (eq (get w status) 2) "you were hit"
+                      (eq (get w status) 3) "the base fell"
+                      "bye"))
+       (get w score)))
+
+(seq (println "w d s a move, f fires, Enter waits, q quits")
+     (finish (iterate (new-game {seed}) over one-turn)))

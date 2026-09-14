@@ -1,0 +1,317 @@
+;;; tanks.lova  --  the rules of a tank battle, as a library
+;;;
+;;; `(use "tanks")` to get these.  Everything that *decides* in the game
+;;; is here: the grid, the walls, the player's and the enemies' moves,
+;;; the bullets, the spawning, the win and the loss.  Nothing here draws
+;;; a pixel or reads a key.  Two hosts share the file: `apps/tanks.lova`
+;;; plays it turn by turn in a terminal, and `apps/tanks/tank_game.py`
+;;; plays it in real time in a window, calling `step` and `render` from
+;;; Python -- the shell in one language, the rules in LOVA, the division
+;;; of labour the language is for.
+;;;
+;;; The world is one record, and a turn is a function of it:
+;;;
+;;;   (new-game seed)   ; a fresh world
+;;;   (step w cmd)      ; one turn: cmd 0 wait, 1 up, 2 right, 3 down, 4 left, 5 fire
+;;;   (render w)        ; the grid as text, one line a row
+;;;   (get w status)    ; 0 playing, 1 won, 2 the player was hit, 3 the base fell
+;;;
+;;; Nothing is mutated.  A turn builds the next world from the last, so
+;;; a host may keep every world it has seen, replay them, or hand one to
+;;; another program.  The glyphs of `render` are the protocol a host
+;;; draws from:
+;;;
+;;;   .  empty     #  brick (a bullet breaks it)   %  steel (it does not)
+;;;   @  the base  X  the base, fallen
+;;;   ^ > v <      the player, facing up / right / down / left
+;;;   U R D L      an enemy, facing up / right / down / left
+;;;   *  the player's bullet     o  an enemy's bullet
+
+;; --- the grid -------------------------------------------------------
+
+(def W [] 15)
+(def H [] 11)
+
+(def cell-key [x y] (merge (mul y W) x))
+
+(def inside [x y]
+  (and (ge x 0) (and (lt x W) (and (ge y 0) (lt y H)))))
+
+;; Directions: 0 up, 1 right, 2 down, 3 left.
+(def dxs [] (list 0 1 0 -1))
+(def dys [] (list -1 0 1 0))
+(def dx [d] (nth dxs d))
+(def dy [d] (nth dys d))
+
+;; The level.  `#` brick, `%` steel, `@` the base; the player starts
+;; beside the base, the enemies arrive along the top row.
+(def level []
+  (list "..............."
+        ".##..#...#..##."
+        ".##..#...#..##."
+        "......###......"
+        ".##..#####..##."
+        ".##..#...#..##."
+        "......%.%......"
+        ".##..#...#..##."
+        ".##.........##."
+        "......###......"
+        "......#@#......"))
+
+(def base-x [] 7)
+(def base-y [] 10)
+(def start-x [] 4)
+(def start-y [] 10)
+
+(def spawn-points [] (list (rec x 0 y 0) (rec x 7 y 0) (rec x 14 y 0)))
+
+;; The wall map holds the glyph of what stands in a cell: 35 `#`, 37
+;; `%`; a broken brick is written 46 `.`, since a map has no delete.
+(def parse-row [walls y row]
+  (fold (lambda m (lambda x
+          (let c (nth row x)
+            (if (or (eq c 35) (eq c 37))
+              (map-put m (cell-key x y) c)
+              m))))
+        walls (range 0 W)))
+
+(def parse-level []
+  (fold (lambda m (lambda y (parse-row m y (nth level y)))) (nil) (range 0 H)))
+
+;; --- the world ------------------------------------------------------
+
+(def new-game [seed]
+  (rec walls parse-level
+       player (rec x start-x y start-y d 0 alive 1)
+       base (rec x base-x y base-y alive 1)
+       enemies (nil)
+       bullets (nil)
+       left 8            ; enemies still to arrive
+       next-id 1
+       seed (merge seed 1)
+       turn 0
+       score 0
+       status 0))
+
+;; A linear congruential generator, threaded through the world.
+(def next-seed [s] (mod (merge (mul s 1103515245) 12345) 2147483648))
+(def rand [s n] (mod (div s 65536) n))
+
+;; --- what is where --------------------------------------------------
+
+(def wall-at [w x y]
+  (let c (map-get (get w walls) (cell-key x y) 46)
+    (if (eq c 46) 0 c)))
+
+(def enemy-at [w x y]
+  (any (lambda e (and (eq (get e x) x) (eq (get e y) y))) (get w enemies)))
+
+(def player-at [w x y]
+  (let p (get w player)
+    (and (get p alive) (and (eq (get p x) x) (eq (get p y) y)))))
+
+(def base-at [w x y]
+  (let g (get w base)
+    (and (eq (get g x) x) (eq (get g y) y))))
+
+(def free [w x y]
+  (and (inside x y)
+       (not (or (wall-at w x y)
+                (or (enemy-at w x y)
+                    (or (player-at w x y) (base-at w x y)))))))
+
+;; A tank's bullet, if one is in flight: 0 is the player's, else the id.
+(def in-flight [w own]
+  (any (lambda b (eq (get b own) own)) (get w bullets)))
+
+;; --- moving and firing ----------------------------------------------
+
+;; `t` turned to face `d`, and one cell along if that cell is free.
+(def move-tank [w t d]
+  (let nx (merge (get t x) (dx d))
+    (let ny (merge (get t y) (dy d))
+      (if (free w nx ny)
+        (put (put (put t d d) x nx) y ny)
+        (put t d d)))))
+
+;; A bullet starts in its tank's cell and flies from there.
+(def fire [w t own]
+  (let b (rec x (get t x) y (get t y) d (get t d) own own)
+    (put w bullets (cons b (get w bullets)))))
+
+(def player-act [w cmd]
+  (let p (get w player)
+    (cond (not (get p alive)) w
+          (and (ge cmd 1) (le cmd 4)) (put w player (move-tank w p (sub cmd 1)))
+          (eq cmd 5) (if (in-flight w 0) w (fire w p 0))
+          w)))
+
+;; --- the enemies ----------------------------------------------------
+
+;; Nothing but empty cells from (x, y) along `d` to the target cell.
+(def clear-line [w x y d tx ty]
+  (let nx (merge x (dx d))
+    (let ny (merge y (dy d))
+      (cond (not (inside nx ny)) 0
+            (and (eq nx tx) (eq ny ty)) 1
+            (or (wall-at w nx ny) (or (enemy-at w nx ny) (base-at w nx ny))) 0
+            (clear-line w nx ny d tx ty)))))
+
+;; Does `e` see the player or the base along `d`?
+(def aims [w e d]
+  (let p (get w player)
+    (let g (get w base)
+      (or (and (get p alive)
+               (clear-line w (get e x) (get e y) d (get p x) (get p y)))
+          (clear-line w (get e x) (get e y) d (get g x) (get g y))))))
+
+;; The first direction in which `e` sees a target, or -1.
+(def aim-dir [w e]
+  (let ds (filter (lambda d (aims w e d)) (range 0 4))
+    (if (nil? ds) -1 (merge 0 (head ds)))))
+
+(def enemy-by-id [w id]
+  (head (filter (lambda o (eq (get o id) id)) (get w enemies))))
+
+(def replace-enemy [w e2]
+  (put w enemies
+       (map (lambda o (if (eq (get o id) (get e2 id)) e2 o)) (get w enemies))))
+
+;; One enemy's turn: shoot what it sees; now and then shoot at nothing,
+;; which is how the walls around the base come down; else wander,
+;; turning when blocked and now and then for no reason.
+(def enemy-act [w id]
+  (let e (enemy-by-id w id)
+    (let s (next-seed (get w seed))
+      (let w1 (put w seed s)
+        (let r (rand s 100)
+          (let aim (aim-dir w1 e)
+            (cond (and (ge aim 0) (and (not (in-flight w1 id)) (lt r 70)))
+                    (let e2 (put e d aim) (fire (replace-enemy w1 e2) e2 id))
+                  (and (lt r 10) (not (in-flight w1 id)))
+                    (fire w1 e id)
+                  (lt r 25)
+                    (replace-enemy w1 (put e d (rand (div s 8) 4)))
+                  (let e2 (move-tank w1 e (get e d))
+                    (if (and (eq (get e2 x) (get e x)) (eq (get e2 y) (get e y)))
+                      (replace-enemy w1 (put e d (rand (div s 8) 4)))
+                      (replace-enemy w1 e2))))))))))
+
+(def enemies-act [w]
+  (fold (lambda acc (lambda e (enemy-act acc (get e id)))) w (get w enemies)))
+
+;; Every sixth turn, while some are still to come and fewer than three
+;; are on the field, an enemy arrives at a free spawn point.
+(def spawn [w]
+  (if (or (le (get w left) 0)
+          (or (mod (get w turn) 6) (ge (len (get w enemies)) 3)))
+    w
+    (let s (next-seed (get w seed))
+      (let pt (nth spawn-points (rand s 3))
+        (let w1 (put w seed s)
+          (if (free w1 (get pt x) (get pt y))
+            (put (put (put w1 enemies
+                           (cons (rec x (get pt x) y (get pt y) d 2 id (get w1 next-id))
+                                 (get w1 enemies)))
+                      left (sub (get w1 left) 1))
+                 next-id (inc (get w1 next-id)))
+            w1))))))
+
+;; --- the bullets ----------------------------------------------------
+
+(def kill-enemy [w x y]
+  (put (put w enemies
+            (filter (lambda e (not (and (eq (get e x) x) (eq (get e y) y))))
+                    (get w enemies)))
+       score (inc (get w score))))
+
+;; Fly bullet `b` up to `n` cells through `w`; it is put back into the
+;; world's bullets if it is still in the air at the end.
+(def fly-one [w b n]
+  (if (eq n 0)
+    (put w bullets (cons b (get w bullets)))
+    (let nx (merge (get b x) (dx (get b d)))
+      (let ny (merge (get b y) (dy (get b d)))
+        (cond (not (inside nx ny)) w
+              (eq (wall-at w nx ny) 35)
+                (put w walls (map-put (get w walls) (cell-key nx ny) 46))
+              (eq (wall-at w nx ny) 37) w
+              (base-at w nx ny) (put w base (put (get w base) alive 0))
+              (and (get b own) (player-at w nx ny))
+                (put w player (put (get w player) alive 0))
+              (and (not (get b own)) (enemy-at w nx ny)) (kill-enemy w nx ny)
+              (fly-one w (put (put b x nx) y ny) (sub n 1)))))))
+
+;; Bullets fly two cells a turn.
+(def fly-all [w]
+  (fold (lambda acc (lambda b (fly-one acc b 2)))
+        (put w bullets (nil))
+        (get w bullets)))
+
+;; --- the turn -------------------------------------------------------
+
+(def status-of [w]
+  (cond (not (get (get w base) alive)) 3
+        (not (get (get w player) alive)) 2
+        (and (le (get w left) 0) (nil? (get w enemies))) 1
+        0))
+
+(def step [w cmd]
+  (if (get w status)
+    w
+    (let w1 (player-act w cmd)
+      (let w2 (enemies-act w1)
+        (let w3 (fly-all w2)
+          (let w4 (spawn (put w3 turn (inc (get w3 turn))))
+            (put w4 status (status-of w4))))))))
+
+;; --- the picture ----------------------------------------------------
+
+(def draw [m x y c] (map-put m (cell-key x y) c))
+
+(def player-glyphs [] (list 94 62 118 60))     ; ^ > v <
+(def enemy-glyphs [] (list 85 82 68 76))       ; U R D L
+
+;; One map from cell to glyph: walls, then the base, the bullets, the
+;; enemies, the player, each drawn over the last.
+(def glyphs [w]
+  (let g (get w base)
+    (let p (get w player)
+      (let m1 (draw (get w walls) (get g x) (get g y) (if (get g alive) 64 88))
+        (let m2 (fold (lambda m (lambda b (draw m (get b x) (get b y) (if (get b own) 111 42))))
+                      m1 (get w bullets))
+          (let m3 (fold (lambda m (lambda e (draw m (get e x) (get e y) (nth enemy-glyphs (get e d)))))
+                        m2 (get w enemies))
+            (if (get p alive)
+              (draw m3 (get p x) (get p y) (nth player-glyphs (get p d)))
+              m3)))))))
+
+(def render-row [m y]
+  (text-of-chars (map (lambda x (map-get m (cell-key x y) 46)) (range 0 W))))
+
+(def render [w]
+  (let m (glyphs w)
+    (join (map (lambda y (render-row m y)) (range 0 H)) 10)))
+
+;; Enemies not yet destroyed: on the field and still to come.
+(def enemies-left [w] (merge (get w left) (len (get w enemies))))
+
+;; What the rules say about themselves (`lova check apps/tanks.lova 1`).
+(example (cell-key 3 2) 33)
+(example (wall-at (new-game 1) 1 1) 35)                     ; a brick
+(example (wall-at (new-game 1) 6 6) 37)                     ; steel
+(example (free (new-game 1) 4 10) 0)                        ; the player stands there
+(example (get (get (step (new-game 1) 2) player) x) 5)      ; a move right
+(example (get (get (step (new-game 1) 2) player) d) 1)
+(example (get (get (step (new-game 1) 1) player) y) 9)      ; a move up
+(example (get (get (step (new-game 1) 3) player) y) 10)     ; down is the edge: turned, not moved
+(example (len (get (step (new-game 1) 5) bullets)) 1)       ; a shot
+(example (len (get (step (step (new-game 1) 5) 5) bullets)) 1)   ; one in flight at a time
+(example (get (head (get (step (new-game 1) 5) bullets)) y) 8)   ; two cells a turn
+(example (len (get (step (step (step (new-game 1) 5) 0) 0) bullets)) 1)
+(example (wall-at (step (step (new-game 1) 1) 2) 6 9) 35)          ; up, right: the base's wall stands ...
+(example (wall-at (step (step (step (new-game 1) 1) 2) 5) 6 9) 0)   ; ... fired: it does not
+(example (get (step (new-game 1) 0) turn) 1)
+(example (get (step (new-game 1) 0) status) 0)
+(example (enemies-left (new-game 1)) 8)
+(example (text-len (render (new-game 1))) 175)              ; 11 rows of 15 and 10 newlines

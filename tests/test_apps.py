@@ -256,5 +256,55 @@ class PolicyShell(unittest.TestCase):
                 self.assertTrue(r["anomaly"].get("repair_hint"))
 
 
+class Tanks(unittest.TestCase):
+    """`lib/tanks.lova` is the game; `apps/tanks.lova` plays it in a
+    terminal and `apps/tanks/tank_game.py` in a window.  The rules are
+    tested through both doors, the window's without the window."""
+
+    def test_the_terminal_game_takes_turns_and_quits(self):
+        code, out, err = _run(["run", "apps/tanks.lova", "7"], "f\nw\nd\n\nq\n")
+        self.assertEqual(code, 0, err)
+        self.assertIn("turn 0 score 0 enemies left 8", out)
+        self.assertIn("turn 4 score 0", out)
+        self.assertIn("*", out)                          # the shot flew
+        self.assertIn("bye", out)
+
+    def test_the_rules_carry_their_examples(self):
+        code, out, err = _run(["check", "apps/tanks.lova", "1"])
+        self.assertEqual(code, 0, err)
+        self.assertIn("18/18 examples pass", out + err)
+
+    def test_the_window_drives_the_rules_from_python(self):
+        import importlib.util
+        from pathlib import Path
+        path = Path("apps/tanks/tank_game.py")
+        spec = importlib.util.spec_from_file_location("tank_game", path)
+        app = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(app)
+        rules = app.Rules()
+        world = rules.call("new", 3)
+        self.assertEqual(rules.field(world, "status"), 0)
+        self.assertEqual(rules.call("left", world), 8)
+        text = rules.call("render", world)
+        self.assertEqual(text.count("\n"), 10)
+        self.assertIn("^", text)
+        self.assertIn("@", text)
+        # Sixty turns of firing upward and waiting; enemies arrive, the
+        # turn counter runs, every turn stays far under its budget.
+        for turn in range(60):
+            world = rules.call("step", world, app.FIRE if turn % 4 == 0 else app.WAIT)
+            self.assertLess(rules.rt.steps, app.BUDGET // 4)
+            if rules.field(world, "status"):
+                break
+        self.assertGreaterEqual(rules.field(world, "turn"), 6)
+        self.assertLessEqual(rules.call("left", world), 8)
+        self.assertTrue(any(ch in rules.call("render", world) for ch in "URDL")
+                        or rules.field(world, "status"))
+        # A finished game does not change under `step`.
+        if rules.field(world, "status"):
+            self.assertEqual(rules.field(rules.call("step", world, app.FIRE), "turn"),
+                             rules.field(world, "turn"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from core.conservation import BudgetTrap, DeltaTrap
 from core.runtime import Runtime, evaluate
-from core.surface import line_col, parse, parse_with_prelude
+from core.surface import expand_uses, line_col, parse, parse_with_prelude
 
 
 def examples_of(source: str, prelude: bool = True) -> List[Dict[str, Any]]:
@@ -40,6 +40,10 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
           max_call_depth: Optional[int] = None, granted: int = 0) -> List[Dict[str, Any]]:
     """Run every example; one result per example, in source order."""
     from core.cli import build
+    # A `(use "name")` is textual inclusion, and the spans the parser
+    # records are offsets into the included text -- so a library's own
+    # examples run too, once the source is what the parser saw.
+    source = expand_uses(source)
     tree = parse_with_prelude(source) if prelude else parse(source)
     examples = list(getattr(tree, "examples", []))
     body_span = getattr(tree, "body_span", None)

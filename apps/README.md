@@ -289,6 +289,34 @@ python apps/shell/policy_app.py      # then open http://127.0.0.1:8765
 
 ![the policy console, a rule refused a file it never declared](shell/screenshot.png)
 
+### `tanks.lova` / `tanks/tank_game.py`
+
+Tank battle.  The rules are a library, `lib/tanks.lova`: the grid, the
+walls, the player's and the enemies' moves, the bullets, the enemies'
+aim, the spawning, the win and the loss -- about 250 lines, and not a
+pixel or a key among them.  The world is one record and a turn is a
+pure function of it: `(step w cmd)` gives the next world, `(render w)`
+gives it as text, and the rules carry eighteen examples of themselves
+that `lova check` runs.  Two hosts share the file.  `apps/tanks.lova`
+is the terminal: one line a turn, `w d s a` to move, `f` to fire,
+Enter to wait.  `apps/tanks/tank_game.py` is a window, tkinter and
+nothing else: ten times a second it hands the LOVA program the world
+and the key you are holding, gets the next world back and paints it,
+and shows in the corner what the turn cost in steps -- about 10 000,
+under a budget of 200 000, so a rule that ran away would be a
+structured anomaly on the screen rather than a frozen window.  Eight
+enemies, three at a time, wandering until they see you or the base
+down a clear line; arrows or `wasd` move, space fires, `R` is another
+game.
+
+```
+python -m core.cli run apps/tanks.lova 7            # the terminal, turn by turn
+python -m core.cli check apps/tanks.lova 7          # 18/18 examples pass
+python apps/tanks/tank_game.py                      # the window, in real time
+```
+
+![tank battle in a window; the window is Python, every rule is LOVA](tanks/screenshot.png)
+
 ## Arguments
 
 A `{placeholder}` is filled from the command line in the order of

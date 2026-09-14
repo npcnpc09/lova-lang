@@ -171,6 +171,10 @@ python -m core.cli run apps/repair.lova 42 30 200
 # a Python web shell whose only decision is a LOVA rule you can edit and break
 python apps/shell/policy_app.py       # http://127.0.0.1:8765
 
+# tank battle: the window is Python, every rule of the game is LOVA
+python apps/tanks/tank_game.py        # arrows move, space fires
+python -m core.cli run apps/tanks.lova 7   # the same game, turn by turn in the terminal
+
 # an interactive session, with the standard library loaded
 python -m core.cli repl
 
@@ -378,7 +382,10 @@ pricing rule, a policy, a user's or a model's script -- in LOVA, edited
 live, run under a budget with no capability, and unable to hurt the
 application that hosts it. `apps/shell/policy_app.py` is a Python web
 shell whose only decision is a LOVA rule you can edit and break in the
-browser.
+browser; `apps/tanks/tank_game.py` is a tank battle whose every rule --
+movement, bullets, the enemies' aim, the win -- is `lib/tanks.lova`,
+called ten times a second from a Python window that owns nothing but
+the pixels and the keys.
 
 **Generated code that must be auditable.** A program is an integer
 that carries its lineage: which model, when, from which parent, why.

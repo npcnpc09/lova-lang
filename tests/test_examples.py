@@ -66,6 +66,24 @@ class Examples(unittest.TestCase):
     def test_a_program_without_examples_has_none(self):
         self.assertEqual(check("(merge 1 2)"), [])
 
+    def test_a_used_library_brings_its_examples(self):
+        # `(use "name")` is textual inclusion; the spans the parser
+        # records are into the included text, and `check` must splice
+        # into that text, not the one line the program wrote.
+        fd, path = tempfile.mkstemp(suffix=".lova")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write("(def twice [n] (mul 2 n))\n"
+                         "(example (twice 4) 8)\n"
+                         "(example (twice 4) 9)\n")
+        try:
+            results = check(f'(use "{path.replace(chr(92), "/")}")\n'
+                            "(example (twice 1) 2)\n"
+                            "(twice 21)")
+        finally:
+            os.remove(path)
+        self.assertEqual([r["passed"] for r in results], [True, False, True])
+        self.assertEqual((results[1]["expected"], results[1]["got"]), (9, 8))
+
     def test_the_mcp_tool(self):
         r = tool_check({"source": SRC})
         self.assertFalse(r["ok"])
