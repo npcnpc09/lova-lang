@@ -239,8 +239,28 @@ pip install -e ".[experiments]"
 
 ## What the programs show
 
-Twelve programs in `apps/`, each written to use the language for
+Fifteen programs in `apps/`, each written to use the language for
 something and kept as a test. What they demonstrate:
+
+- **It runs a game.** Tank battle, in real time: eight enemies arrive
+  along the top of the grid, wander until they see you or your base
+  down a clear line, and shoot. Every rule -- movement, walls a bullet
+  breaks, the enemies' aim, spawning, the win -- is `lib/tanks.lova`,
+  about 250 lines of pure functions over one world record, carrying
+  eighteen examples of itself that `lova check` runs. The window is
+  tkinter and owns nothing but the pixels and the keys: ten times a
+  second it hands the LOVA program the world and the key you hold, gets
+  the next world back, and paints it. A turn costs about 10 000 steps
+  under a budget of 200 000, shown in the corner, and a rule that ran
+  away would be a structured anomaly on the screen rather than a frozen
+  window. The same rules play turn by turn in a terminal.
+
+  ![tank battle: the window is Python, every rule is LOVA](apps/tanks/screenshot.png)
+
+  ```bash
+  python apps/tanks/tank_game.py             # arrows move, space fires, R restarts
+  python -m core.cli run apps/tanks.lova 7   # the terminal
+  ```
 
 - **Logic runs right the first time.** The word count, the games, the
   log summary, the batch, the sandbox: every program's logic produced
@@ -268,7 +288,7 @@ something and kept as a test. What they demonstrate:
   the kind of effect while the host names the places. A program that
   did not declare an effect cannot reach it, and the compiler says so
   before the run.
-- **Programs are integers.** Every one of the twelve, re-run from its
+- **Programs are integers.** Every one of the programs, re-run from its
   Stage-2 projection, gives the identical output and value, the
   3 000-character game included.
 - **A model writes it from one page.** A fresh Claude session given
