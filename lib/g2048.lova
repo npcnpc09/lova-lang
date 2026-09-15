@@ -1,0 +1,206 @@
+;;; g2048.lova  --  2048, ported from the original
+;;;
+;;; A port of gabrielecirulli/2048 (MIT), whose `js/game_manager.js`
+;;; and `js/grid.js` are the specification followed here: the same
+;;; traversal order, the same farthest-position walk, the same rule
+;;; that a tile merged this move cannot merge again, the same score,
+;;; the same two-in-ten chance of a four, the same test for whether any
+;;; move is left.  Nothing of the original's code is copied; every
+;;; function below was written against its behaviour, and
+;;; `tests/test_2048.py` holds a transliteration of the original in
+;;; Python and checks twenty thousand positions against it, board for
+;;; board and point for point.
+;;;
+;;; `(use "g2048")`:
+;;;
+;;;   (new-game seed)   ; a fresh board with its two starting tiles
+;;;   (move w d)        ; 0 up, 1 right, 2 down, 3 left -- the original's
+;;;                     ; numbering; a move that changes nothing is a
+;;;                     ; move that did not happen
+;;;   (rows w)          ; the board as four rows, for a host to draw
+;;;   (get w score) (get w over) (get w won)
+;;;
+;;; The grid is `cells[x][y]` as the original has it: x is the column
+;;; and y the row, y growing downward, so `up` is (0, -1).  It lives in
+;;; a map keyed x * 4 + y, with an absent cell and a cell holding zero
+;;; meaning the same thing -- a map has no delete, so a tile that moves
+;;; away leaves a zero behind.
+
+(def SIZE [] 4)
+(def GOAL [] 2048)
+
+(def ckey [x y] (merge (mul x SIZE) y))
+
+(def within [x y]
+  (and (and (ge x 0) (lt x SIZE)) (and (ge y 0) (lt y SIZE))))
+
+;; Out of bounds reads as empty.  Without the guard, (0, 4) and (1, 0)
+;; would be the same key and a tile would merge with the wrong
+;; neighbour at the edge of the board.
+(def at [b x y] (if (within x y) (map-get b (ckey x y) 0) 0))
+
+;; The original's direction numbering and vectors.
+(def vx [d] (nth (list 0 1 0 -1) d))
+(def vy [d] (nth (list -1 0 1 0) d))
+
+;; The traversal is built so that the tiles furthest along the vector
+;; are visited first; that is the whole reason a row of four twos
+;; becomes two fours and not one eight.
+(def order [rev] (if rev (list 3 2 1 0) (list 0 1 2 3)))
+
+;; The last free cell along the vector, and the cell after it -- the
+;; original's findFarthestPosition, which walks while it is inside the
+;; board and empty.
+(def farthest [b x y dx dy]
+  (let nx (merge x dx)
+    (let ny (merge y dy)
+      (if (and (within nx ny) (not (at b nx ny)))
+        (farthest b nx ny dx dy)
+        (rec fx x fy y nx nx ny ny)))))
+
+;; --- one cell of one move -------------------------------------------
+;;
+;; `st` carries the board, the cells that have already merged this move
+;; (the original hangs a `mergedFrom` on the tile; a tile here is a
+;; number and has nowhere to hang anything, so the flags are a map),
+;; the score, whether anything moved at all, and whether 2048 appeared.
+
+(def move-cell [st x y d]
+  (let v (at (get st b) x y)
+    (if (not v)
+      st
+      (let p (farthest (get st b) x y (vx d) (vy d))
+        (let n (at (get st b) (get p nx) (get p ny))
+          (if (and (eq n v)
+                   (not (map-get (get st m) (ckey (get p nx) (get p ny)) 0)))
+            ;; the tile in front is the same and has not merged yet
+            (let k (ckey (get p nx) (get p ny))
+              (let v2 (mul v 2)
+                (put (put (put (put (put st
+                                         b (map-put (map-put (get st b) (ckey x y) 0) k v2))
+                                    m (map-put (get st m) k 1))
+                               s (merge (get st s) v2))
+                          won (or (get st won) (eq v2 GOAL)))
+                     moved 1)))
+            ;; otherwise it slides as far as it can, if that is anywhere
+            (if (and (eq (get p fx) x) (eq (get p fy) y))
+              st
+              (put (put st b (map-put (map-put (get st b) (ckey x y) 0)
+                                      (ckey (get p fx) (get p fy)) v))
+                   moved 1))))))))
+
+(def sweep [w d]
+  (let ys (order (eq (vy d) 1))
+    (fold (lambda a (lambda x
+            (fold (lambda a2 (lambda y (move-cell a2 x y d))) a ys)))
+          (rec b (get w board) m (nil) s (get w score) moved 0 won (get w won))
+          (order (eq (vx d) 1)))))
+
+;; --- the cells that are free ----------------------------------------
+;;
+;; In the original's order -- column by column, and within a column top
+;; to bottom -- because a new tile is drawn from this list by index and
+;; the order is therefore part of the game, not an implementation
+;; detail.
+
+(def all-cells []
+  (fold (lambda acc (lambda x
+          (append acc (map (lambda y (ckey x y)) (range 0 SIZE)))))
+        (nil) (range 0 SIZE)))
+
+(def free-cells [b] (filter (lambda k (not (map-get b k 0))) all-cells))
+
+;; --- is there a move left -------------------------------------------
+
+(def matches [b]
+  (any (lambda x
+         (any (lambda y
+                (let v (at b x y)
+                  (and v (any (lambda d (eq (at b (merge x (vx d)) (merge y (vy d))) v))
+                              (range 0 4)))))
+              (range 0 SIZE)))
+       (range 0 SIZE)))
+
+(def moves-left [b] (or (not (nil? (free-cells b))) (matches b)))
+
+;; --- chance ---------------------------------------------------------
+;;
+;; A congruential generator threaded through the world, so a game is a
+;; function of its seed and can be replayed exactly.  Nine times in ten
+;; the new tile is a two, which is the original's 0.9.
+
+(def lcg [s] (mod (merge (mul s 1103515245) 12345) 2147483648))
+(def roll [s n] (mod (div s 65536) n))
+
+(def add-random [w]
+  (let cs (free-cells (get w board))
+    (if (nil? cs)
+      w
+      (let s1 (lcg (get w seed))
+        (let s2 (lcg s1)
+          (put (put w board (map-put (get w board)
+                                     (nth cs (roll s2 (len cs)))
+                                     (if (lt (roll s1 10) 9) 2 4)))
+               seed s2))))))
+
+;; --- the game -------------------------------------------------------
+
+(def new-game [seed]
+  (add-random (add-random (rec board (nil) score 0 won 0 over 0 keep 0
+                               turn 0 seed (merge (abs seed) 1)))))
+
+(def stopped [w] (or (get w over) (and (get w won) (not (get w keep)))))
+
+(def keep-playing [w] (put w keep 1))
+
+(def move [w d]
+  (if (stopped w)
+    w
+    (let st (sweep w d)
+      (if (get st moved)
+        (let w1 (add-random (put (put (put w board (get st b)) score (get st s))
+                                 won (get st won)))
+          (put (put w1 over (not (moves-left (get w1 board))))
+               turn (inc (get w turn))))
+        w))))
+
+;; --- what a host draws ----------------------------------------------
+
+;; A board from sixteen numbers in cell order, and back again: what a
+;; test hands in and reads out when it checks this file against the
+;; original, position by position.
+(def board-of [xs]
+  (fold (lambda m (lambda p (map-put m (head p) (head (tail p))))) (nil) (zip all-cells xs)))
+
+(def cells-of [b] (map (lambda k (map-get b k 0)) all-cells))
+
+(def rows [w]
+  (map (lambda y (map (lambda x (at (get w board) x y)) (range 0 SIZE)))
+       (range 0 SIZE)))
+
+(def biggest [w]
+  (fold (lambda m (lambda k (max m (map-get (get w board) k 0)))) 0 all-cells))
+
+;; --- what this file says about itself -------------------------------
+;;
+;; `lova check` runs these.  An example is a conservation contract, so
+;; what it states has to be a number: a board is stated cell by cell.
+
+(def four-twos []
+  (rec board (board-of (list 2 0 0 0 2 0 0 0 2 0 0 0 2 0 0 0))
+       score 0 won 0 over 0 keep 0 turn 0 seed 1))
+
+(example (vx 1) 1)
+(example (vy 0) -1)
+(example (head (order 1)) 3)
+(example (len (free-cells (nil))) 16)
+(example (get (new-game 7) score) 0)
+;; four twos across the top row, pushed left: two fours, eight points,
+;; and not one eight -- which is the whole of the traversal order
+(example (get (sweep four-twos 3) s) 8)
+(example (at (get (sweep four-twos 3) b) 0 0) 4)
+(example (at (get (sweep four-twos 3) b) 1 0) 4)
+(example (at (get (sweep four-twos 3) b) 2 0) 0)
+(example (get (sweep four-twos 3) moved) 1)
+;; and pushed up, where they are already: nothing happens
+(example (get (sweep four-twos 0) moved) 0)

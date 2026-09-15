@@ -1,0 +1,64 @@
+;;; g2048.lova  --  2048 in a terminal
+;;;
+;;;   lova run apps/g2048.lova 7
+;;;   printf 'a\ns\na\ns\n' | lova run apps/g2048.lova 7
+;;;
+;;; `w a s d` (or `k h j l`) push the tiles up, left, down, right; `q`
+;;; stops; several on a line are played in order, so `aassdd` is six
+;;; moves.  The argument is the seed, and the same seed is the same
+;;; game every time.  The value of the program is your score.
+;;;
+;;; The rules are `lib/g2048.lova`, a port of gabrielecirulli/2048
+;;; (MIT); this file is the terminal, and the window is
+;;; `python apps/g2048/game2048.py`.
+
+(use "g2048")
+
+;; A cell, four characters wide and right-aligned, as the original's
+;; grid is square and this one has to be square in characters.
+(def cell [v] (let t (if v (text-of v) ".")
+                (text-cat (text-of-chars (repeat 32 (sub 5 (len t)))) t)))
+
+(def line [row] (join (map cell row) ""))
+
+(def show [w]
+  (seq (println "")
+       (println (join (map line (rows w)) 10))
+       (println (join (list "" "score" (text-of (get w score))
+                            " moves" (text-of (get w turn))
+                            " best tile" (text-of (biggest w)))
+                      32))))
+
+(def cmd-of [c]
+  (cond (or (eq c 119) (eq c 107)) 0     ; w k  up
+        (or (eq c 100) (eq c 108)) 1     ; d l  right
+        (or (eq c 115) (eq c 106)) 2     ; s j  down
+        (or (eq c 97) (eq c 104)) 3      ; a h  left
+        -1))
+
+(def play [w cs]
+  (fold (lambda ww (lambda c (let d (cmd-of c) (if (lt d 0) ww (move ww d))))) w cs))
+
+(def one-turn [w]
+  (seq (show w)
+       ;; the end of the input, not an empty line: `stdin` keeps the
+       ;; terminator, so the test comes before `chomp` takes it off
+       (let raw (stdin)
+         (if (nil? raw)
+           (put w quit 1)
+           (let cs (take 16 (chomp raw))
+             (if (contains cs 113)
+               (put w quit 1)
+               (play (if (get w won) (keep-playing w) w) cs)))))))
+
+(def over [w] (or (get w over) (map-get w "quit" 0)))
+
+(def finish [w]
+  (seq (if (get w over) (show w) 0)
+       (println (cond (get w over) "no move left -- that is the game"
+                      (get w won) "2048 -- and still going"
+                      "bye"))
+       (get w score)))
+
+(seq (println "2048: w a s d move, q stops, several to a line")
+     (finish (iterate (new-game {seed}) over one-turn)))

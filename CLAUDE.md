@@ -833,7 +833,11 @@ checker (Q52): `if` / `let` / `apply` fit any slot because their result
 type follows their operands, and `ref` fits any slot because its type
 is its binding's — which the generation state machine cannot see. A
 `map`-shaped program is now generatable, where before **no generated
-program could have that shape at all**.
+program could have that shape at all**. A second hole in the same pass showed at the 2048 port
+(2026-09-15): liveness was computed first and bindings whose value has
+effects were kept afterwards, so a constant that calls a function
+outlived the function and the run met an unbound reference. Bindings
+kept for their effects now seed the fixpoint.
 
 **M11** made the language usable: `stdout` / `stdin` on the IO
 family's own reserved slots, logic macros at zero slots, a standard
@@ -863,8 +867,8 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-855 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
-18 first-class apps (the last three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
+867 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+19 first-class apps (the last of them a port: 2048 from gabrielecirulli/2048, checked against a transliteration of the original over 10 000 positions with no disagreement; before it three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 
 **All 14 experiments run** as of 2026-09-09. Exp 03 and Exp 07 had

@@ -808,6 +808,14 @@ def _drop_unused_inner(node: Node) -> Tuple[Node, int]:
         values = dict(rebuilt)
         live: Set[int] = set()
         _references(new_body, live)
+        # A binding kept for its effects is live, and so is everything it
+        # reaches.  Seeding these before the fixpoint rather than testing
+        # them after it is the difference between a program that runs and
+        # one that does not: `(def b [] (a 2))` is a constant, evaluated
+        # where it stands, so it is kept whether or not anything asks for
+        # it -- and before this, `a` was dropped out from under it and the
+        # run met an unbound reference (found by `lib/g2048.lova`).
+        live |= {name_id for name_id, value in rebuilt if _subtree_effects(value)}
         frontier = set(live)
         while frontier:
             name_id = frontier.pop()
@@ -823,7 +831,7 @@ def _drop_unused_inner(node: Node) -> Tuple[Node, int]:
 
         out = new_body
         for name_id, value in reversed(rebuilt):
-            if name_id not in live and not _subtree_effects(value):
+            if name_id not in live:
                 dropped += 1
                 continue
             out = Node(op=LET, args=[Lit(name_id), value, out])

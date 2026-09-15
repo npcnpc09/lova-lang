@@ -392,6 +392,42 @@ python apps/war/war.py
 
 ![an isometric battlefield; the window is Python, the terrain, the light and the battle are LOVA](war/screenshot.png)
 
+### `g2048.lova` / `g2048/game2048.py`
+
+**A port, not a program of ours.**  2048, after
+[gabrielecirulli/2048](https://github.com/gabrielecirulli/2048) (MIT),
+whose `js/game_manager.js` and `js/grid.js` are the specification:
+`lib/g2048.lova` follows the same traversal order, the same
+farthest-position walk, the same rule that a tile made this move cannot
+merge again, the same score, the same nine-in-ten chance of a two, the
+same test for whether a move is left.  None of the original's code is
+copied; the port was written against its behaviour.
+
+The claim a port has to make is that it behaves like the thing it was
+ported from, and prose is not how to make it: `tests/test_2048.py`
+holds a transliteration of `GameManager.prototype.move` in Python and
+runs both over random positions, comparing the board cell by cell, the
+score, whether anything moved and whether 2048 appeared.  **10 000
+positions, no disagreement**; 800 of them stay in the suite.
+
+One difference on purpose.  The original's chance is `Math.random`, so
+a game cannot be replayed; here the generator is threaded through the
+world, so a seed is a game and the same seed is the same game twice.
+
+The port also found a real bug in our own compiler: `drop-unused`
+decided liveness first and then kept bindings whose value has effects,
+so a constant kept that way outlived the function it called and the run
+met an unbound reference.  Bindings kept for their effects now seed the
+fixpoint (`core/compiler.py`).
+
+```
+python apps/g2048/game2048.py 7          # the window, in the original's colours
+python -m core.cli run apps/g2048.lova 7 # the terminal: w a s d, several to a line
+python -m core.cli check apps/g2048.lova 7   # 11/11 examples
+```
+
+![2048; the window is Python, the rules are LOVA](g2048/screenshot.png)
+
 ## Arguments
 
 A `{placeholder}` is filled from the command line in the order of

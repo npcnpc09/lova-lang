@@ -176,6 +176,7 @@ python apps/tanks/tank_game.py        # arrows move, space fires
 python -m core.cli run apps/tanks.lova 7   # the same game, turn by turn in the terminal
 python apps/maze/maze3d.py            # a first-person 3D maze, cast in integers
 python apps/war/war.py                # an isometric battlefield, terrain and all
+python apps/g2048/game2048.py 7       # 2048, ported from gabrielecirulli/2048
 python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded
@@ -242,7 +243,7 @@ pip install -e ".[experiments]"
 
 ## What the programs show
 
-Eighteen programs in `apps/`, each written to use the language for
+Nineteen programs in `apps/`, each written to use the language for
 something and kept as a test. What they demonstrate:
 
 - **It runs a game.** Tank battle, in real time: eight enemies arrive
@@ -304,6 +305,28 @@ something and kept as a test. What they demonstrate:
 
   ```bash
   python apps/war/war.py    # left-click picks, right-click sends, drag pans, A all, R again
+  ```
+
+- **It ports someone else’s game, and proves it.** 2048, after
+  [gabrielecirulli/2048](https://github.com/gabrielecirulli/2048) (MIT):
+  `lib/g2048.lova` was written against the original’s
+  `js/game_manager.js` — the same traversal order, the same
+  farthest-position walk, the same rule that a tile made this move
+  cannot merge again, the same score, the same nine-in-ten chance of a
+  two. The claim that a port behaves like its original is not made in
+  prose: `tests/test_2048.py` holds a transliteration of the original
+  in Python and runs both over random positions, comparing the board
+  cell by cell. **10 000 positions, no disagreement.** One difference
+  on purpose — the original’s chance is `Math.random` and cannot be
+  replayed; here the generator is threaded through the world, so a seed
+  is a game. The port also found a real bug in our own compiler, in
+  what `drop-unused` does with a binding kept for its effects.
+
+  ![2048: the window is Python, the rules are LOVA](apps/g2048/screenshot.png)
+
+  ```bash
+  python apps/g2048/game2048.py 7            # the window, in the original's colours
+  python -m core.cli run apps/g2048.lova 7   # the terminal
   ```
 
 - **Logic runs right the first time.** The word count, the games, the
