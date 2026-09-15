@@ -480,6 +480,56 @@ python apps/tactics/tactics.py   # click one of yours, space ends the turn, R ag
 
 ![a tactics battle on blocks; the window is Python, the rules are LOVA](tactics/screenshot.png)
 
+### `model/model.py`
+
+The third camera in this repository, and the general one.  `ray.lova`
+casts a ray a column through a grid; `tactics.lova` drops blocks on an
+isometric plan; `lib/mesh3d.lova` takes a mesh of triangles with no
+grid under it, turns it about two axes, divides it by its depth, throws
+away the faces whose backs are turned, lights the rest and hands them
+over far face first -- because a host painting polygons has no depth
+buffer, and the order it is given is the whole of the depth sorting.
+
+Two things make it cheap enough to run:
+
+- **A face carries the normal it was born with.**  A rotation does not
+  change a length, so a unit normal stays one however the model turns:
+  a frame needs no square root anywhere.
+- **The sun is carried into the model's frame once a frame**, instead
+  of every normal being carried into the camera's.  A dot product does
+  not care which frame it is taken in, and that turned a 45-step face
+  into a 10-step one.
+
+Culling is done on the screen: the sign of the projected triangle's
+area, which is exact under perspective where a test on the normal is
+only nearly right.  Two thirds of a closed model fail it and cost
+nothing after it.
+
+**What it costs**, over forty frames each: 32 triangles in 16 ms (61
+frames a second), 48 in 25 ms (40), 66 in 31 ms (32), and the
+320-triangle sphere in 139 ms (7).  About 220 LOVA steps a triangle,
+and the step count is what the frame time follows.
+**What it is worth**: `tests/test_mesh3d.py` holds the same renderer in
+floating point and compares them face by face over five models and five
+angles -- 961 faces, and **the fixed-point picture is within 1.34
+pixels of the floating-point one**, with the same faces surviving the
+cull and the same light on each.  The exception is named rather than
+hidden: a triangle seen edge-on is a sliver a pixel wide, and rounding
+its corners can turn it over.
+
+```
+python apps/model/model.py            # 1-5 pick a model, drag to turn, W wireframe
+python apps/model/make_models.py      # rewrite lib/models.lova
+python apps/model/obj_to_lova.py mine.obj lib/mine.lova mine
+```
+
+![a low-poly tree, turning; the window is Python, the 3D is LOVA](model/screenshot.png)
+
+The five shipped meshes are generated out of boxes, cones, prisms and a
+twice-subdivided icosahedron, so none of it is anybody else's art.
+`obj_to_lova.py` reads a Wavefront `.obj` -- what Blender's exporter
+writes -- and produces the same format.
+
 ## Arguments
 
 A `{placeholder}` is filled from the command line in the order of

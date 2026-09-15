@@ -178,6 +178,7 @@ python apps/maze/maze3d.py            # a first-person 3D maze, cast in integers
 python apps/war/war.py                # an isometric battlefield, terrain and all
 python apps/g2048/game2048.py 7       # 2048, ported from gabrielecirulli/2048
 python apps/tactics/tactics.py        # a tactics battle, ported out of GDScript
+python apps/model/model.py            # low-poly meshes, turned and lit in real time
 python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded
@@ -244,7 +245,7 @@ pip install -e ".[experiments]"
 
 ## What the programs show
 
-Twenty programs in `apps/`, each written to use the language for
+Twenty-one programs in `apps/`, each written to use the language for
 something and kept as a test. What they demonstrate:
 
 - **It runs a game.** Tank battle, in real time: eight enemies arrive
@@ -354,6 +355,26 @@ something and kept as a test. What they demonstrate:
 
   ```bash
   python apps/tactics/tactics.py   # click one of yours, space ends your turn
+  ```
+
+- **And a mesh, in real time.** `lib/mesh3d.lova` is the general camera:
+  a model of triangles with no grid under it, turned about two axes,
+  divided by its depth, back faces dropped by the sign of the projected
+  area, each face lit by its own normal, handed over far face first. No
+  square root anywhere — a face keeps the unit normal it was born with,
+  and a rotation does not change a length — and the sun is carried into
+  the model’s frame once a frame rather than every normal into the
+  camera’s. About **220 LOVA steps a triangle**: 32 triangles in 16 ms,
+  48 in 25, 66 in 31, and a 320-triangle sphere in 139. `tests/test_mesh3d.py` holds the same renderer in
+  floating point and compares 961 faces across five models and five
+  angles: **the fixed-point picture lands within 1.34 pixels of it**,
+  with the same faces surviving the cull.
+
+  ![a low-poly tree turning: the window is Python, the 3D is LOVA](apps/model/screenshot.png)
+
+  ```bash
+  python apps/model/model.py                        # 1-5 pick a model, drag to turn
+  python apps/model/obj_to_lova.py mine.obj lib/mine.lova mine   # what Blender exports
   ```
 
 - **Logic runs right the first time.** The word count, the games, the

@@ -1,0 +1,146 @@
+;;; mesh3d.lova  --  a low-poly renderer: turn, cull, light, sort
+;;;
+;;; `(use "mesh3d")`.  The third camera in this repository.  The first
+;;; is `lib/ray.lova`, which casts a ray a column through a grid; the
+;;; second is `lib/tactics.lova`, which drops blocks on an isometric
+;;; plan.  This one is the general case: a mesh of triangles with no
+;;; grid under it, turned about two axes, divided by its depth, lit by
+;;; a sun, and handed to a host far face first.
+;;;
+;;; LOVA has no floating point.  Every number here is an integer in
+;;; 1024ths -- `lib/fixed.lova` -- so a vertex is three integers, a
+;;; normal is three, and the perspective is one `div`.
+;;;
+;;;   (mesh vs fs)             ; vertices and faces, as a value
+;;;   (shot m yaw pitch dist sw sh)
+;;;                            ; the picture: one record a visible
+;;;                            ; triangle, far ones first, with its
+;;;                            ; three screen points, its material and
+;;;                            ; how much light falls on it
+;;;
+;;; A face carries its own normal, computed once when the model was
+;;; made.  A rotation does not change a length, so a unit normal stays
+;;; a unit normal however the model turns -- which is why nothing here
+;;; needs a square root, and why the light costs three multiplications
+;;; a face rather than thirty.
+;;;
+;;; Culling is done on the screen, not in space: the sign of the
+;;; projected triangle's area says whether its back is turned, and that
+;;; test is exact under perspective where a test on the normal is only
+;;; nearly right.  Two thirds of a closed model fail it, and those cost
+;;; nothing after it.
+
+(use "fixed")
+
+(def FOCAL [] 760)                      ; screen units a model unit at unit depth
+(def NEAR [] 192)                       ; nothing nearer than this is divided by
+
+;; The sun, a unit vector in the camera's frame: over your left
+;; shoulder and a little above.
+(def LX [] -430)
+(def LY [] 620)
+(def LZ [] -655)
+(def AMBIENT [] 260)
+
+;; --- turning --------------------------------------------------------
+;;
+;; Yaw about the vertical axis, then pitch about the horizontal.  The
+;; four sines are passed in: they are the same for every point of a
+;; frame, and computing them per point was the first thing the step
+;; counter complained about.
+
+(def turn [p cy sy cp sp]
+  (let x1 (div (merge (mul (get p x) cy) (mul (get p z) sy)) ONE)
+    (let z1 (div (sub (mul (get p z) cy) (mul (get p x) sy)) ONE)
+      (rec x x1
+           y (div (sub (mul (get p y) cp) (mul z1 sp)) ONE)
+           z (div (merge (mul (get p y) sp) (mul z1 cp)) ONE)))))
+
+;; --- the vertices ---------------------------------------------------
+;;
+;; Every vertex is turned, moved away from the camera and divided by
+;; its depth, once; the faces then index into the result.  A map, not a
+;; list, because a face asks for a vertex by number and a list would
+;; walk to it.
+
+(def placed [m cy sy cp sp dist cx cyy]
+  (fold (lambda acc (lambda pr
+          (let p (turn (head pr) cy sy cp sp)
+            (let d (max NEAR (merge (get p z) dist))
+              (map-put acc (head (tail pr))
+                       (rec z d
+                            su (merge cx (div (mul (get p x) FOCAL) d))
+                            sv (sub cyy (div (mul (get p y) FOCAL) d))))))))
+        (nil)
+        (zip (get m vs) (range 0 (len (get m vs))))))
+
+;; The inverse turn.  The rotation is orthonormal, so undoing it is
+;; applying the pitch back and then the yaw back.
+(def untwist [p cy sy cp sp]
+  (let y1 (div (merge (mul (get p y) cp) (mul (get p z) sp)) ONE)
+    (let z1 (div (sub (mul (get p z) cp) (mul (get p y) sp)) ONE)
+      (rec x (div (sub (mul (get p x) cy) (mul z1 sy)) ONE)
+           y y1
+           z (div (merge (mul (get p x) sy) (mul z1 cy)) ONE)))))
+
+;; The sun, carried back into the model's own frame.  A dot product does
+;; not care which frame it is taken in, so turning the light once a
+;; frame is the same answer as turning every normal, and the face that
+;; cost forty-five steps to light now costs ten.
+(def sun-in-model [cy sy cp sp]
+  (untwist (rec x LX y LY z LZ) cy sy cp sp))
+
+(def nowhere [] (rec z 0 su 0 sv 0))
+(def hidden [] (rec v 0 u0 0 v0 0 u1 0 v1 0 u2 0 v2 0 k 0 l 0 d 0))
+
+;; --- a face ---------------------------------------------------------
+
+(def face-of [pv sun f]
+  (let p (map-get pv (get f a) nowhere)
+    (let q (map-get pv (get f b) nowhere)
+      (let r (map-get pv (get f c) nowhere)
+       (let pu (get p su) (let pv2 (get p sv)
+        (let qu (get q su) (let qv (get q sv)
+         (let ru (get r su) (let rv (get r sv)
+        ;; twice the signed area of the triangle on the screen.  Which
+        ;; sign means "facing you" is a question about the winding of the
+        ;; model and the direction of the screen's y together, so it was
+        ;; settled by counting rather than by reasoning: of a convex
+        ;; model's 320 faces, 117 come out positive, and a convex body
+        ;; shows rather less than half of itself.
+          (let area (sub (mul (sub qu pu) (sub rv pv2)) (mul (sub ru pu) (sub qv pv2)))
+            (if (le area 0)
+              hidden
+              (rec v 1
+                   u0 pu v0 pv2 u1 qu v1 qv u2 ru v2 rv
+                   k (get f k)
+                   l (merge AMBIENT
+                            (max 0 (div (merge (mul (get f nx) (get sun x))
+                                               (merge (mul (get f ny) (get sun y))
+                                                      (mul (get f nz) (get sun z))))
+                                        ONE)))
+                   d (merge (get p z) (merge (get q z) (get r z))))))))))))))))
+
+;; --- the picture ----------------------------------------------------
+;;
+;; Far faces first, because a host painting polygons has no depth
+;; buffer: the order is the depth sorting.  Sorting by the three
+;; corners added rather than by any one of them is what keeps a long
+;; triangle from jumping in front of a short one beside it.
+
+(def mesh [vs fs] (rec vs vs fs fs))
+
+(def shot [m yaw pitch dist sw sh]
+  (let cy (cos yaw)
+    (let sy (sin yaw)
+      (let cp (cos pitch)
+        (let sp (sin pitch)
+          (let pv (placed m cy sy cp sp dist (div sw 2) (div sh 2))
+            (let sun (sun-in-model cy sy cp sp)
+              (sort-by (lambda i (lambda j (gt (get i d) (get j d))))
+                       (filter (lambda f (get f v))
+                               (map (lambda f (face-of pv sun f))
+                                    (get m fs)))))))))))
+
+(def face-count [m] (len (get m fs)))
+(def vertex-count [m] (len (get m vs)))
