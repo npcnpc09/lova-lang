@@ -340,6 +340,20 @@ arity for nine milestones and never an implementation:
 The DNA OS lineage for the *architecture* is unaffected; these slots
 changed hands, and the core is still exactly 64 operators.
 
+**Three messages that pointed at the wrong place** (2026-09-15, from
+writing 3 000 lines of `lib/` in one session -- journal Exp 25). A
+missing paren on a nested curried lambda was reported as `lambda:
+expects 2 args, got 4` at the *next* definition, three hundred
+characters away; it cost four round trips before a twenty-line balance
+checker was written by hand to work around it. A parse error now
+carries the first top-level form whose parens never close, names it by
+its first line and puts the span there. An `(example ...)` that states
+a list is refused at parse time, where it used to fail later as `cons
+produces List, slot expects Int` with nothing about examples in it.
+And `nil?` on a record now says that a record is a map, and that a
+field is what carries `absent` beside one. `tests/test_diagnostics.py`
+holds one test per mistake.
+
 **A def cannot take an operator's name** (2026-09-15). `(def dist [a
 b] 99)` parsed, and `(dist 1 2)` then went to `surprise`, which `dist`
 is the short spelling of: a definition nothing could call and a wrong
@@ -877,7 +891,7 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-910 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+920 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 22 first-class apps (the last the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

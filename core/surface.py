@@ -151,6 +151,78 @@ _BINDER_HEADS = frozenset({"let", "lambda", "defn"})
 _NAME_HEADS = _BINDER_HEADS | {"ref"}
 
 
+def _unclosed_form(tokens: List[str]) -> Optional[Dict[str, Any]]:
+    """The first top-level form whose parentheses never close.
+
+    The fault an author actually makes is a missing closing paren on a
+    nested form; the fault the parser reports is whatever the *next*
+    definition does when it is swallowed as an argument -- typically
+    `lambda: expects 2 args, got 4`, three hundred characters away from
+    anything worth editing.  It happened four times in one afternoon of
+    writing `lib/`, and every time the message pointed at the wrong
+    place (journal Exp 25, F7).
+
+    This finds the right place: walk the tokens keeping the depth, and
+    the opener that takes the depth to one and never comes back is the
+    form to look at.  A stray closing paren is reported the same way,
+    from the other side.
+    """
+    depth = 0
+    opener = None
+    for tok in tokens:
+        if tok == "(":
+            if depth == 0:
+                opener = tok
+            depth += 1
+        elif tok == ")":
+            depth -= 1
+            if depth < 0:
+                return {"kind": "extra-paren", "token": tok, "missing": 0}
+            if depth == 0:
+                opener = None
+    if depth > 0 and opener is not None:
+        return {"kind": "unclosed", "token": opener, "missing": depth}
+    return None
+
+
+def _with_unclosed(exc: "ParseError", tokens: List[str], source: str) -> "ParseError":
+    """`exc`, told where the parentheses actually went wrong.
+
+    The original message is kept -- it is true, it is just not where the
+    edit goes -- and the span is moved to the opener, because the span
+    is what the CLI prints as `at:` and what `lova_patch` would patch.
+    """
+    found = _unclosed_form(tokens)
+    if found is None:
+        return exc
+    tok = found["token"]
+    start = getattr(tok, "start", None)
+    if start is None:
+        return exc
+    line, col = line_col(source, start)
+    # The span covers the opener's line rather than the bracket alone, so
+    # that what the CLI prints as `at:` -- and what a patch would be
+    # applied to -- is the form to look at.
+    newline = source.find(chr(10), start)
+    end = newline if newline > start else min(len(source), start + 60)
+    excerpt = source[start:end]
+    if found["kind"] == "unclosed":
+        note = (f"the form beginning at line {line} -- {excerpt.strip()[:48]!r} -- "
+                f"opens {found['missing']} paren(s) that never close, and the fault "
+                f"is almost certainly there rather than here")
+    else:
+        note = (f"a closing paren at line {line} has nothing open to close; "
+                f"a form above it closed too early")
+    rebuilt = ParseError(f"{exc}; {note}", (start, end))
+    rebuilt.anomaly["detail"]["unclosed"] = {"line": line, "col": col,
+                                             "excerpt": excerpt.strip()[:48],
+                                             "missing": found["missing"],
+                                             "kind": found["kind"]}
+    rebuilt.anomaly["detail"]["message"] = rebuilt.args[0]
+    rebuilt.anomaly["repair"] = note
+    return rebuilt
+
+
 def _binding(label: str, where: str, syms: "SymbolTable") -> int:
     """Intern a name a program *binds*, refusing one the surface owns.
 
@@ -266,7 +338,10 @@ def parse(src: str) -> Node:
         raise ValueError("empty source")
     explicit = _explicit_name_ids(tokens)
     syms = SymbolTable(base=max(explicit) + 1 if explicit else 0)
-    definitions, body = _parse_program(tokens, syms)
+    try:
+        definitions, body = _parse_program(tokens, syms)
+    except ParseError as exc:
+        raise _with_unclosed(exc, tokens, src) from None
     return _wrap(definitions, body, syms)
 
 
@@ -292,6 +367,20 @@ def _parse_program(tokens: List[str], syms: SymbolTable
             args, cursor = _parse_args(tokens, cursor + 2, syms)
             if len(args) != 2:
                 raise ValueError(f"example: expects (example expr expected), got {len(args)} parts")
+            # An example is run as `(conserve expected expr)`, and a
+            # conservation contract is about a number.  Stating a list or a
+            # text used to compile and then fail as `cons produces List,
+            # slot expects Int` with nothing in the message about examples
+            # (journal Exp 25): two of the first three examples written for
+            # `lib/ray.lova` and `lib/g2048.lova` were that mistake.
+            if args[1].op in (CONS, NIL, LIT_TEXT, MAP_PUT):
+                raise ValueError(
+                    "example: an example is a conservation contract, so what it "
+                    "states has to be a number, and this one states "
+                    + ("a text" if args[1].op == LIT_TEXT else
+                       "a map or a record" if args[1].op == MAP_PUT else "a list")
+                    + ". State it a piece at a time -- `(example (nth xs 0) 3)` -- "
+                      "or compare with `text-cmp`, which gives a number")
             first, last = tokens[start], tokens[cursor - 1]
             span = (getattr(first, "start", None), getattr(last, "end", None))
             syms.examples.append({"expr": args[0], "expected": args[1],
@@ -956,7 +1045,10 @@ def parse_with_prelude(src: str) -> Node:
     definitions, snapshot = _prelude_parsed(prelude, prelude_tokens, base)
     syms = SymbolTable(base=base)
     syms._ids = dict(snapshot)
-    own, body = _parse_program(body_tokens, syms)
+    try:
+        own, body = _parse_program(body_tokens, syms)
+    except ParseError as exc:
+        raise _with_unclosed(exc, body_tokens, src) from None
     copied = [(name_id, _copy_tree(node)) for name_id, node in definitions]
     return _wrap(copied + own, body, syms)
 

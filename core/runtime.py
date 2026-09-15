@@ -754,7 +754,11 @@ def _as_list(v: Any, ctx: str) -> Any:
         f"`{ctx}` wants a list or a text and got {_kind_of(v)} {format_repr(v)}"
         + ("; if this came from an input, the argument arrived as an integer -- "
            "quote it on the command line to pass a text"
-           if isinstance(v, int) and not isinstance(v, bool) else ""),
+           if isinstance(v, int) and not isinstance(v, bool) else "")
+        + ("; a record and a map are the same kind of value and it is not a "
+           "list, so `(nil)` cannot stand for `absent` beside one -- give the "
+           "record a field that says so, `(rec v 0 ...)`, and test `(get r v)`"
+           if isinstance(v, MapValue) and ctx in ("nil?", "head", "tail") else ""),
     )
 
 

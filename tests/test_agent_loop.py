@@ -77,10 +77,18 @@ class Exp19Feedback(unittest.TestCase):
     """Exp 19, run 1: what three sessions read and could not use."""
 
     def test_a_parse_error_says_where(self):
+        """Exp 19 asked for a line to go to.  Since 2026-09-15 it is the
+        line the *edit* goes on: where a form's parentheses stop adding
+        up, not where the parser happened to notice.  For
+        `(def won [b] (merge 1 2)` with one paren missing, that moved
+        the answer from line 2 -- the next definition, which is
+        blameless -- to line 1, the form that never closes.
+        """
         from core.mcp_server import tool_execute
         for src, line, col, excerpt in (
             ("(merge 1 2))", 1, 12, ")"),
-            ("(def won [b] (merge 1 2)\n(won 3)", 2, 1, "("),
+            ("(def won [b] (merge 1 2)" + chr(10) + "(won 3)",
+             1, 1, "(def won [b] (merge 1 2)"),
             ("(loop-until 1 2 3 4 5 6 7)", 1, 1, "(loop-until 1 2 3 4 5 6 7)"),
             ("(lt 1)", 1, 1, "(lt 1)"),
         ):

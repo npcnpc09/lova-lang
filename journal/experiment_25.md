@@ -128,9 +128,24 @@ it is most of what an agent does with a machine.
   `spec/token-budget.md` says eight are free. Measure before spending:
   the same four readers, written both ways, counted in defects and in
   steps.
-- **Q110: should the balance of a form be checked before the parser
-  reports arity?** F7 says the fault an AI actually makes is not the
-  fault the message names.
+- **Q110 (closed the same day): should the balance of a form be checked
+  before the parser reports arity?** Yes. A parse error now carries the
+  first top-level form whose parentheses never close, names it by its
+  first line, and moves the span there -- the original message is kept
+  after a semicolon, because it is true, it is only in the wrong place.
+  Two other messages from this session's mistakes were fixed with it:
+  an example that states a list now says so at parse time instead of
+  failing later as `cons produces List, slot expects Int`, and `nil?`
+  on a record now says that a record is a map and suggests a field to
+  carry the flag. `tests/test_diagnostics.py` holds one test per
+  mistake, each written from the mistake that was actually made.
+
+  A fourth was tried and reverted: refusing an operator's name for a
+  `let` binding as well as for a `def`. Eleven tests and sixty-three
+  errors -- the prelude and the apps bind such names as values often
+  enough that the check costs more than the mistake. A `def` is still
+  refused, because a `def` of an operator's name is dead the moment it
+  is written; a `let` of one is only dead if it is *called*.
 - **Q111: what is the cost of the policy at fleet scale under PyPy,**
   and does the 4.4 s figure matter at all when every reading behind it
   cost an SSH round trip with a ten-second timeout?
