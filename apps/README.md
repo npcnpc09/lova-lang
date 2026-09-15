@@ -530,6 +530,60 @@ twice-subdivided icosahedron, so none of it is anybody else's art.
 `obj_to_lova.py` reads a Wavefront `.obj` -- what Blender's exporter
 writes -- and produces the same format.
 
+### `fleet.lova`
+
+**The policy layer of a fleet manager.**  Taken from RemoteX
+(`D:/SSH/RemoteX`), an AI-native SSH fleet manager: a PyQt5 desktop, a
+web terminal and an MCP server of 38 tools that Claude Code drives.
+Its transport is `ssh2` and `paramiko`, its terminal is xterm.js, its
+GUI is Qt -- none of which belongs in LOVA.  What does is what decides,
+and `lib/fleet.lova` is two pieces of that.
+
+**Ported exactly**, and checked against a transliteration of the
+JavaScript in `tests/test_fleet.py`:
+
+- `resolveActiveToolNames` -- which of the 38 tools a session
+  advertises.  Every advertised tool costs context on every turn, so
+  RemoteX ships five by default and prints the saving.  140 combinations
+  of `REMOTEX_TOOLS` and `REMOTEX_TOOL_GROUPS` agree, including the
+  banner's `Math.round((1 - active/total) * 100)`.
+- `healthCheck`'s parse -- `stdout.split(/___(\w+)___/).filter(Boolean)`
+  and the pairing loop.  The regular expression is greedy and `_` is a
+  word character, so a marker is the *longest* run of word characters
+  with `___` after it; `lib/fleet.lova` reproduces that by hand and
+  agrees with Python's own engine (`re.ASCII`, because JavaScript's
+  `\w` is ASCII and Python's is not) over thousands of strings built to
+  break it.
+
+**What was not there: the judgement.**  `healthCheck` returns five
+strings and stops -- what counts as unhealthy lives in the model's head,
+one machine at a time.  That is fine for one machine and no use for two
+hundred.  `verdict` and `fleet-report` are thresholds in one place, a
+per-machine level (ok / warn / alarm / nothing came back) and a fleet
+sorted worst first.  11 100 LOVA steps a machine.
+
+```
+lova run apps/fleet.lova apps/fleet/sweep.txt --allow fs-read
+```
+
+```
+  ?    ngin-edge2      cpu     --  mem     --  disk     --  load     --
+ALARM  smapp3          cpu   99.4  mem   31.3  disk   28.0  load  17.40  up 29 days
+ALARM  vas-cloud1      cpu    7.3  mem   23.9  disk   92.0  load   1.87  up 8 days
+ warn  co3s-sedu5      cpu   35.1  mem   94.8  disk   22.0  load   1.96  up 25 days
+   ok  smapp1          cpu   19.6  mem   31.0  disk   35.0  load   0.43  up 1 days
+
+  12 machines: 2 alarm, 3 warn, 6 ok, 1 silent
+```
+
+It connects to nothing.  The input is a *recorded* sweep, because a
+policy that decides whether two hundred production servers are in
+trouble should be testable without touching two hundred production
+servers; the host that holds the sockets hands the same text to the
+same function.  `lib/fleet.lova` contains no boundary and no effect at
+all -- a test asserts that -- and `apps/fleet.lova` declares `fs-read`,
+which the host grants or the run does not happen.
+
 ## Arguments
 
 A `{placeholder}` is filled from the command line in the order of

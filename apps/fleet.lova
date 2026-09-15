@@ -1,0 +1,86 @@
+;;; fleet.lova  --  a fleet health report, from a recorded sweep
+;;;
+;;;   lova run apps/fleet.lova apps/fleet/sweep.txt --allow fs-read
+;;;
+;;; The policy is `lib/fleet.lova`, taken from RemoteX (`D:/SSH/RemoteX`,
+;;; an SSH fleet manager with 38 MCP tools): its `healthCheck` parse,
+;;; exactly, and the judgement it does not have -- what counts as
+;;; unhealthy, in one place, for the whole fleet at once.
+;;;
+;;; This file connects to nothing.  It reads a file of *recorded*
+;;; output, one block a machine, because a policy that decides whether
+;;; two hundred production servers are in trouble should be testable
+;;; without touching two hundred production servers.  The host that
+;;; holds the SSH sockets hands the same text to the same function.
+;;;
+;;; That is also the shape of the safety argument.  `fs-read` is
+;;; declared here and granted by whoever runs it; nothing in
+;;; `lib/fleet.lova` can reach a socket, a file or a clock, and the
+;;; compiler refuses it before the run rather than trusting it during
+;;; one.
+
+(use "fleet")
+
+;; --- the recording --------------------------------------------------
+;;
+;; `--- name` on a line of its own, then that machine's output, until
+;; the next one.  What `ssh_batch_health_check` collects, written down.
+
+(def MARK [] "--- ")
+
+(def chunk-of [block]
+  (let cut (text-find block "\n")
+    (if (lt cut 0)
+      (list (text-trim block) "")
+      (list (text-trim (text-slice block 0 cut))
+            (text-slice block (inc cut) (len block))))))
+
+(def sweep-of [raw]
+  (map chunk-of (filter (lambda b (not (nil? (text-trim b)))) (text-split raw MARK))))
+
+;; --- saying it ------------------------------------------------------
+
+(def pad [s n]
+  (if (ge (len s) n) s (text-cat s (text-of-chars (repeat 32 (sub n (len s)))))))
+
+(def lpad [s n]
+  (if (ge (len s) n) s (text-cat (text-of-chars (repeat 32 (sub n (len s)))) s)))
+
+;; A reading in tenths, as the number a person reads: 123 is `12.3`.
+(def show-tenths [v]
+  (if (lt v 0) "  --" (join (list (text-of (div v 10)) (text-of (mod v 10))) ".")))
+
+(def show-hundredths [v]
+  (if (lt v 0) "  --" (join (list (text-of (div v 100)) (lpad (text-of (mod v 100)) 2)) ".")))
+
+(def badge [w]
+  (cond (eq w 2) "ALARM" (eq w 1) " warn" (eq w 3) "  ?  " "   ok"))
+
+(def line-of [r]
+  (join (list (badge (get r worst))
+              (pad (get r name) 14)
+              (text-cat "cpu " (lpad (show-tenths (get r cpu)) 6))
+              (text-cat "mem " (lpad (show-tenths (get r mem)) 6))
+              (text-cat "disk " (lpad (show-tenths (get r disk)) 6))
+              (text-cat "load " (lpad (show-hundredths (get r load)) 6))
+              (get r up))
+        "  "))
+
+(def summary [rep]
+  (join (list (text-of (get rep total)) "machines:"
+              (text-of (get rep alarm)) "alarm,"
+              (text-of (get rep warn)) "warn,"
+              (text-of (get rep quiet)) "ok,"
+              (text-of (get rep mute)) "silent")
+        32))
+
+(boundary "fs-read"
+  (def sweep [] (fs-read {file}))
+
+  (let rep (fleet-report (sweep-of sweep))
+    (seq (println "  the fleet, worst first")
+         (println "")
+         (println (join (map line-of (get rep rows)) 10))
+         (println "")
+         (println (text-cat "  " (summary rep)))
+         (merge (mul 100 (get rep alarm)) (get rep warn)))))

@@ -1,0 +1,122 @@
+--- smapp1
+___cpu___
+19.6
+___mem___
+2429/7823MB (31.0%)
+___disk___
+14G/40G (35%)
+___load___
+0.43 0.39 0.34
+___uptime___
+up 1 days, 10 hours
+--- smapp2
+___cpu___
+21.1
+___mem___
+3376/7823MB (43.2%)
+___disk___
+33G/40G (83%)
+___load___
+0.90 0.81 0.72
+___uptime___
+up 40 days, 22 hours
+--- smapp3
+___cpu___
+99.4
+___mem___
+2452/7823MB (31.3%)
+___disk___
+11G/40G (28%)
+___load___
+17.40 15.66 13.92
+___uptime___
+up 29 days, 23 hours
+--- co3s-sedu4
+___cpu___
+18.1
+___mem___
+1589/7823MB (20.3%)
+___disk___
+13G/40G (33%)
+___load___
+0.22 0.20 0.18
+___uptime___
+up 9 days, 16 hours
+--- co3s-sedu5
+___cpu___
+35.1
+___mem___
+7420/7823MB (94.8%)
+___disk___
+8G/40G (22%)
+___load___
+1.96 1.76 1.57
+___uptime___
+up 25 days, 23 hours
+--- mone-bp1
+___cpu___
+35.7
+___mem___
+2092/7823MB (26.7%)
+___disk___
+12G/40G (31%)
+___load___
+1.72 1.55 1.38
+___uptime___
+up 27 days, 2 hours
+--- mone-bp2
+___cpu___
+88.7
+___mem___
+1759/7823MB (22.5%)
+___disk___
+17G/40G (43%)
+___load___
+9.20 8.28 7.36
+___uptime___
+up 3 days, 6 hours
+--- ngin-edge1
+___cpu___
+28.9
+___mem___
+921/7823MB (11.8%)
+___disk___
+17G/40G (44%)
+___load___
+0.23 0.21 0.18
+___uptime___
+up 25 days, 15 hours
+--- ngin-edge2
+--- vas-cloud1
+___cpu___
+7.3
+___mem___
+1869/7823MB (23.9%)
+___disk___
+36G/40G (92%)
+___load___
+1.87 1.68 1.50
+___uptime___
+up 8 days, 19 hours
+--- vas-cloud2
+___cpu___
+2.1
+___mem___
+4030/7823MB (51.5%)
+___disk___
+22G/40G (55%)
+___load___
+0.57 0.51 0.46
+___uptime___
+up 13 days, 10 hours
+--- a2p-gw1
+___cpu___
+2.3
+___mem___
+1242/7823MB (15.9%)
+___disk___
+10G/40G (26%)
+___load___
+1.40 1.26 1.12
+___uptime___
+up 2 days, 16 hours

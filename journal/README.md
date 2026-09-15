@@ -2195,3 +2195,4 @@ Add a new experiment:
 - **Keep axioms honest.** If an experiment finding is inconsistent
   with an axiom in `spec/axioms.md`, document the conflict and trigger
   the axiom drift protocol. Do not silently weaken the axiom.
+- [Exp 25](experiment_25.md) — the policy layer of RemoteX, an SSH fleet manager, in LOVA: agrees with its JavaScript everywhere it was compared, needs one flag from its host to be safe, and every defect on the way was in reading text (pilot).

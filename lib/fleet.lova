@@ -1,0 +1,400 @@
+;;; fleet.lova  --  the policy layer of an SSH fleet manager
+;;;
+;;; Written against RemoteX (`D:/SSH/RemoteX`), an AI-native SSH fleet
+;;; manager: a PyQt5 desktop, a web terminal, and an MCP server of 38
+;;; tools that Claude Code drives.  Its transport is `ssh2` and
+;;; `paramiko`, its terminal is xterm.js, its GUI is Qt -- none of which
+;;; belongs here.  What belongs here is what *decides*, and this file is
+;;; two pieces of that, one ported exactly and one that did not exist.
+;;;
+;;; PORTED EXACTLY, from `src/mcp-server.js`:
+;;;
+;;;   resolveActiveToolNames   which of the 38 tools a session
+;;;     advertises.  Every tool costs context on every turn, so RemoteX
+;;;     activates one group of five by default and reports the saving.
+;;;     `REMOTEX_TOOLS` is an individual whitelist and wins outright;
+;;;     otherwise `REMOTEX_TOOL_GROUPS` names groups, `all` or `*` means
+;;;     everything, an unknown group is reported and skipped, and the
+;;;     result is the tool list filtered by the set, in its own order.
+;;;
+;;;   healthCheck's parse      `stdout.split(/___(\w+)___/).filter(Boolean)`
+;;;     and then pairs.  The regular expression is greedy with
+;;;     backtracking, so a marker is the *longest* run of word
+;;;     characters that has `___` after it -- which matters, because `_`
+;;;     is a word character.  `sections` below reproduces that, and
+;;;     `tests/test_fleet.py` checks it against Python's own regex
+;;;     engine over thousands of strings built to break it.
+;;;
+;;; WHAT WAS NOT THERE: the judgement.  `healthCheck` returns five
+;;; strings and stops; what counts as unhealthy lives in the model's
+;;; head, one server at a time.  That is fine for one machine and no use
+;;; for two hundred: there is no threshold to change in one place, no
+;;; way to say what a fleet's state is, and the model has to read every
+;;; blob.  `verdict` and `fleet-report` are that layer, and they are
+;;; ours, not a port.
+;;;
+;;; Nothing here connects to anything.  The host holds the sockets; this
+;;; file is handed text and gives back a judgement, which is why it can
+;;; be run on recorded output and tested to the character.
+
+(def NA [] -1)                          ; a reading that was not there
+
+;; --- the 38 tools, in the order the MCP server lists them -----------
+
+(def TOOLS []
+  (list "ssh_exec" "ssh_exec_batch" "ssh_list_servers" "ssh_read_file" "ssh_search_code"
+        "ssh_server_info" "ssh_health_check" "ssh_batch_health_check"
+        "ssh_process_list" "ssh_docker_status" "ssh_network_info"
+        "ssh_ports" "ssh_tail_log"
+        "ssh_list_dir" "ssh_find_files" "ssh_stat_file" "ssh_mkdir"
+        "ssh_write_file" "ssh_replace_in_file" "ssh_edit_block" "ssh_project_structure"
+        "ssh_delete_file" "ssh_move_file" "ssh_copy_file"
+        "ssh_upload_file" "ssh_download_file"
+        "ssh_batch_read_file" "ssh_batch_write_file" "ssh_batch_replace_in_file"
+        "ssh_diff_files" "ssh_batch_upload" "ssh_sync_file"
+        "ssh_list_groups" "ssh_add_server" "ssh_remove_server"
+        "ssh_import_servers" "ssh_clear_all_servers"
+        "ssh_service"))
+
+(def GROUPS []
+  (list
+    (list "core" (list "ssh_exec" "ssh_exec_batch" "ssh_list_servers"
+                       "ssh_read_file" "ssh_search_code"))
+    (list "monitor" (list "ssh_server_info" "ssh_health_check" "ssh_batch_health_check"
+                          "ssh_process_list" "ssh_docker_status" "ssh_network_info"
+                          "ssh_ports" "ssh_tail_log"))
+    (list "fs" (list "ssh_list_dir" "ssh_find_files" "ssh_stat_file" "ssh_mkdir"
+                     "ssh_write_file" "ssh_replace_in_file" "ssh_edit_block"
+                     "ssh_project_structure"))
+    (list "fs-danger" (list "ssh_delete_file" "ssh_move_file" "ssh_copy_file"))
+    (list "xfer" (list "ssh_upload_file" "ssh_download_file"))
+    (list "batch" (list "ssh_batch_read_file" "ssh_batch_write_file"
+                        "ssh_batch_replace_in_file" "ssh_diff_files"
+                        "ssh_batch_upload" "ssh_sync_file"))
+    (list "admin" (list "ssh_list_groups" "ssh_add_server" "ssh_remove_server"
+                        "ssh_import_servers" "ssh_clear_all_servers"))
+    (list "service" (list "ssh_service"))))
+
+(def group-names [] (map (lambda g (head g)) GROUPS))
+
+(def group-tools [name]
+  (fold (lambda a (lambda g (if (eq (head g) name) (head (tail g)) a))) (nil) GROUPS))
+
+(def known-group [name] (contains group-names name))
+
+;; `raw.split(',').map(trim).filter(Boolean)` -- the same three steps.
+(def commas [raw]
+  (filter (lambda s (not (nil? s))) (map (lambda s (text-trim s)) (text-split raw ","))))
+
+;; --- which tools a session advertises -------------------------------
+;;
+;; `indiv` is REMOTEX_TOOLS and `groups` is REMOTEX_TOOL_GROUPS, both as
+;; the host found them -- empty when unset.  The answer is the tool list
+;; filtered by the chosen set, which is the original's
+;; `TOOLS.filter(t => ACTIVE.has(t.name))`: the order is the tool
+;; table's, not the request's, and a name nobody has is simply never
+;; matched.
+
+(def set-of [names]
+  (fold (lambda m (lambda n (map-put m n 1))) (nil) names))
+
+(def wanted [indiv groups]
+  (let one (text-trim indiv)
+    (if (not (nil? one))
+      (rec names (commas one) unknown (nil) all 0)
+      (let raw (text-trim groups)
+        (let ask (if (nil? raw) "core" raw)
+          (if (or (eq ask "all") (eq ask "*"))
+            (rec names TOOLS unknown (nil) all 1)
+            (let asked (commas ask)
+              (rec names (fold (lambda acc (lambda g
+                                 (if (known-group g) (append acc (group-tools g)) acc)))
+                               (nil) asked)
+                   unknown (filter (lambda g (not (known-group g))) asked)
+                   all 0))))))))
+
+;; `Math.round((1 - active / total) * 100)`, which rounds a half away
+;; from zero.  Integers only: floor((200 d + total) / (2 total)) is that
+;; same number, and cannot drift the way a float can.
+(def saving [active total]
+  (if (gt total 0)
+    (div (merge (mul 200 (sub total active)) total) (mul 2 total))
+    0))
+
+(def activation [indiv groups]
+  (let w (wanted indiv groups)
+    (let live (set-of (get w names))
+      (let tools (filter (lambda t (map-get live t 0)) TOOLS)
+        (rec tools tools
+             unknown (get w unknown)
+             active (len tools)
+             total (len TOOLS)
+             saving (saving (len tools) (len TOOLS))
+             none (if (nil? tools) 1 0))))))
+
+;; --- the health parse -----------------------------------------------
+;;
+;; `stdout.split(/___(\w+)___/)`.  A word character is a letter, a digit
+;; or an underscore; the engine is greedy and backtracks, so the name a
+;; marker carries is the *longest* run of word characters with `___`
+;; after it.  With `_` itself a word character that is not a detail:
+;; `___cpu______mem___` is one marker named `cpu______mem`, not two.
+
+(def word-char [c]
+  (or (or (and (ge c 97) (le c 122)) (and (ge c 65) (le c 90)))
+      (or (and (ge c 48) (le c 57)) (eq c 95))))
+
+(def three-bars [s i]
+  (and (le (merge i 3) (len s))
+       (and (eq (nth s i) 95) (and (eq (nth s (merge i 1)) 95) (eq (nth s (merge i 2)) 95)))))
+
+;; The end of the longest run of word characters from `i`.
+(def word-run [s i]
+  (get (iterate (rec at i)
+                (lambda st (or (ge (get st at) (len s)) (not (word-char (nth s (get st at))))))
+                (lambda st (put st at (inc (get st at)))))
+       at))
+
+;; Greedy with backtracking, for this one pattern: from the longest run
+;; back toward the shortest, the first place with `___` after it wins.
+;; A name must not be empty, so the walk stops one past the opening.
+(def marker-end [s i]
+  (let stop (word-run s (merge i 3))
+    (get (iterate (rec at stop)
+                  (lambda st (or (le (get st at) (merge i 3))
+                                 (three-bars s (get st at))))
+                  (lambda st (put st at (sub (get st at) 1))))
+         at)))
+
+(def marker-at [s i]
+  (if (not (three-bars s i))
+    (rec found 0 name "" after i)
+    (let e (marker-end s i)
+      (if (or (le e (merge i 3)) (not (three-bars s e)))
+        (rec found 0 name "" after i)
+        (rec found 1 name (text-slice s (merge i 3) e) after (merge e 3))))))
+
+;; The next `___` at or after `i`, or the end of the text.  Jumping
+;; there rather than walking a character at a time took one machine's
+;; health from 17 800 steps to 11 100 -- the same lesson as everywhere
+;; else: a native search beats a loop written out.
+(def next-bars [s i]
+  (if (ge i (len s))
+    (len s)
+    (let hit (text-find (text-slice s i (len s)) "___")
+      (if (lt hit 0) (len s) (merge i hit)))))
+
+;; The pieces the split gives, with the empty ones dropped: text, name,
+;; text, name, ... exactly as `.filter(Boolean)` leaves them.  The walk
+;; finds the markers; the text after the last one is added afterwards,
+;; because the walk stops at the end of the string and has nowhere to
+;; put it -- which it did not, until a transliteration of the original
+;; noticed that `uptime` was missing from every reading.
+(def sections [s]
+  (let st (iterate (rec at (next-bars s 0) from 0 out (nil))
+                   (lambda w (gt (get w at) (sub (len s) 1)))
+                   (lambda w
+                     (let m (marker-at s (get w at))
+                       (if (get m found)
+                         (let before (text-slice s (get w from) (get w at))
+                           (put (put (put w out
+                                          (append (append (get w out)
+                                                          (if (nil? before) (nil)
+                                                            (list before)))
+                                                  (list (get m name))))
+                                     at (get m after))
+                                from (get m after)))
+                         (put w at (next-bars s (inc (get w at))))))))
+    (let tail (text-slice s (get st from) (len s))
+      (append (get st out) (if (nil? tail) (nil) (list tail))))))
+
+;; Pairs, the original's `for (i = 0; i < sections.length - 1; i += 2)`:
+;; a name, then the text after it, trimmed.  An empty value shifts every
+;; pair after it, and this reproduces that rather than fixing it -- the
+;; fix would be a different program, and the point of a port is to be
+;; the same one.
+(def fields [out]
+  (let secs (append (sections out) (nil))
+    (fold (lambda m (lambda i
+            (if (lt (mul 2 i) (sub (len secs) 1))
+              (map-put m (nth secs (mul 2 i)) (text-trim (nth secs (inc (mul 2 i)))))
+              m)))
+          (nil) (range 0 (inc (div (len secs) 2))))))
+
+;; --- reading a number out of a reading ------------------------------
+;;
+;; Everything is integers, which is not a limitation here: the readings
+;; arrive as text a shell printed, and a threshold on tenths of a per
+;; cent is a threshold on an integer.
+;;
+;; The shell prints them in four different shapes, so there are four
+;; readers.  Getting this wrong is quiet -- `12G/40G (31%)` has a
+;; perfectly good number at the front that means nothing -- so each one
+;; says which shape it is for, and the tests state an example of each.
+
+(def first-digit [s]
+  (get (iterate (rec at 0)
+                (lambda st (or (ge (get st at) (len s)) (digit (nth s (get st at)))))
+                (lambda st (put st at (inc (get st at)))))
+       at))
+
+(def end-of-digits [s i]
+  (get (iterate (rec at i)
+                (lambda st (or (ge (get st at) (len s))
+                               (not (digit (nth s (get st at))))))
+                (lambda st (put st at (inc (get st at)))))
+       at))
+
+(def digits-from [s i]
+  (get (iterate (rec at i n 0)
+                (lambda st (or (ge (get st at) (len s)) (not (digit (nth s (get st at))))))
+                (lambda st (put (put st n (merge (mul (get st n) 10)
+                                                 (sub (nth s (get st at)) 48)))
+                                at (inc (get st at)))))
+       n))
+
+(def first-number [s]
+  (let i (first-digit s) (if (ge i (len s)) NA (digits-from s i))))
+
+;; The first number in `s`, scaled by ten to the `places`: "12.3" at one
+;; place is 123, "0.52" at two is 52, "31" at one is 310.  A missing
+;; decimal digit is a zero and an extra one is dropped, which is what
+;; reading to a fixed number of places means.
+(def decimals [s places]
+  (let i (first-digit s)
+    (if (ge i (len s))
+      NA
+      (let whole (digits-from s i)
+        (let j (end-of-digits s i)
+          (let frac (if (and (lt j (len s)) (eq (nth s j) 46))
+                      (text-slice s (inc j)
+                                  (min (end-of-digits s (inc j)) (merge (inc j) places)))
+                      "")
+            (merge (mul whole (pow 10 places))
+                   (mul (digits-from frac 0) (pow 10 (sub places (len frac)))))))))))
+
+;; `12.3` -- what `top` gives, one place.
+(def tenths [s] (decimals s 1))
+
+;; `0.52 0.48 0.44` -- what `/proc/loadavg` gives, two places, and only
+;; the first of the three is a threshold anybody sets.
+(def hundredths [s] (decimals s 2))
+
+;; `12G/40G (31%)` -- what `df -h` gives.  The number that matters is
+;; the one against the `%`, not the one at the front: `12G` is how much
+;; is used and means nothing without the size.
+(def percent-tenths [s]
+  (let m (text-find s "%")
+    (if (lt m 0)
+      NA
+      (let from (get (iterate (rec at m)
+                              (lambda st (or (le (get st at) 0)
+                                             (let c (nth s (sub (get st at) 1))
+                                               (not (or (digit c) (eq c 46))))))
+                              (lambda st (put st at (sub (get st at) 1))))
+                     at)
+        (if (ge from m) NA (tenths (text-slice s from m)))))))
+
+;; `3129/7823MB (40.0%)` -- what `free -m` gives.  The ratio of the two
+;; integers rather than the percentage the string already carries.
+;;
+;; Rounded, not truncated, and that is a decision worth writing down.
+;; 3129/7823 is 39.997 per cent; the shell prints it with `%.1f` as
+;; `40.0`, and truncating the exact ratio would give 39.9 -- a tenth of
+;; a point of disagreement with the number this tool has always shown
+;; its operators.  The exactness is still there where it matters:
+;; nothing is a float, so nothing drifts.  It is the last digit that is
+;; a choice, and it is made once, here.
+(def ratio-tenths [s]
+  (let bar (text-find s "/")
+    (if (lt bar 0)
+      NA
+      (let used (first-number (text-slice s 0 bar))
+        (let whole (first-number (text-slice s (inc bar) (len s)))
+          (if (or (eq used NA) (or (eq whole NA) (le whole 0)))
+            NA
+            (div (merge (mul 2000 used) whole) (mul 2 whole))))))))
+
+;; --- the judgement --------------------------------------------------
+;;
+;; Thresholds in tenths of a percent, in one place.  This is the part
+;; RemoteX does not have: it returns the five strings and the model
+;; decides, one server at a time.
+;;
+;;   0 ok      1 warn      2 alarm      3 nothing came back
+
+(def CPU-WARN [] 850)
+(def CPU-ALARM [] 950)
+(def MEM-WARN [] 850)
+(def MEM-ALARM [] 950)
+(def DISK-WARN [] 800)
+(def DISK-ALARM [] 900)
+(def LOAD-WARN [] 800)                  ; load average 8, in hundredths
+(def LOAD-ALARM [] 1600)                ; and 16
+
+(def level-of [value warn alarm]
+  (cond (eq value NA) 3
+        (ge value alarm) 2
+        (ge value warn) 1
+        0))
+
+(def verdict [out]
+  (let f (fields out)
+    (let cpu (tenths (map-get f "cpu" ""))
+      (let mem (ratio-tenths (map-get f "mem" ""))
+        (let disk (percent-tenths (map-get f "disk" ""))
+          (let load (hundredths (map-get f "load" ""))
+            (let levels (list (level-of cpu CPU-WARN CPU-ALARM)
+                              (level-of mem MEM-WARN MEM-ALARM)
+                              (level-of disk DISK-WARN DISK-ALARM)
+                              (level-of load LOAD-WARN LOAD-ALARM))
+              (rec cpu cpu mem mem disk disk load load
+                   up (map-get f "uptime" "")
+                   worst (fold (lambda a (lambda l (max a l))) 0 levels)
+                   levels levels))))))))
+
+;; --- the fleet ------------------------------------------------------
+;;
+;; A list of `(name output)` pairs in, one report out: the servers in
+;; trouble first, and the counts, so two hundred machines are a line and
+;; not two hundred blobs to read.
+
+(def report-of [pair]
+  (let v (verdict (head (tail pair)))
+    (put v name (head pair))))
+
+(def worse-first [a b]
+  (if (ne (get a worst) (get b worst))
+    (gt (get a worst) (get b worst))
+    (text-lt (get a name) (get b name))))
+
+(def fleet-report [pairs]
+  (let rs (sort-by worse-first (map report-of pairs))
+    (rec rows rs
+         total (len rs)
+         alarm (len (filter (lambda r (eq (get r worst) 2)) rs))
+         warn (len (filter (lambda r (eq (get r worst) 1)) rs))
+         quiet (len (filter (lambda r (eq (get r worst) 0)) rs))
+         mute (len (filter (lambda r (eq (get r worst) 3)) rs)))))
+
+;; --- what this file says about itself -------------------------------
+
+(example (len TOOLS) 38)
+(example (len GROUPS) 8)
+(example (get (activation "" "") active) 5)              ; the default, core
+(example (get (activation "" "") saving) 87)             ; the 87% the banner claims
+(example (get (activation "" "all") active) 38)
+(example (get (activation "" "all") saving) 0)
+(example (get (activation "" "core,monitor") active) 13)
+(example (get (activation "ssh_exec,ssh_read_file" "all") active) 2)
+(example (len (get (activation "" "core,nosuch") unknown)) 1)
+(example (get (activation "" "nosuch") none) 1)
+(example (saving 5 38) 87)
+(example (tenths "12.3") 123)
+(example (tenths "31%") 310)
+(example (ratio-tenths "3129/7823MB (40.0%)") 400)
+(example (hundredths "0.52 0.48 0.44") 52)
+(example (percent-tenths "12G/40G (31%)") 310)
+(example (tenths "0.52") 5)
+(example (level-of 960 CPU-WARN CPU-ALARM) 2)
+(example (level-of NA CPU-WARN CPU-ALARM) 3)
