@@ -175,6 +175,7 @@ python apps/shell/policy_app.py       # http://127.0.0.1:8765
 python apps/tanks/tank_game.py        # arrows move, space fires
 python -m core.cli run apps/tanks.lova 7   # the same game, turn by turn in the terminal
 python apps/maze/maze3d.py            # a first-person 3D maze, cast in integers
+python apps/war/war.py                # an isometric battlefield, terrain and all
 python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded
@@ -241,7 +242,7 @@ pip install -e ".[experiments]"
 
 ## What the programs show
 
-Seventeen programs in `apps/`, each written to use the language for
+Eighteen programs in `apps/`, each written to use the language for
 something and kept as a test. What they demonstrate:
 
 - **It runs a game.** Tank battle, in real time: eight enemies arrive
@@ -285,6 +286,24 @@ something and kept as a test. What they demonstrate:
   python apps/maze/maze3d.py                  # W/S walk, A/D turn, Q/E sidestep
   python -m core.cli run apps/maze.lova 0     # the same maze, drawn in characters
   python -m core.cli run apps/cube.lova       # a cube turning in three dimensions
+  ```
+
+- **And the camera a strategy game uses.** An isometric battlefield:
+  a height field from value noise, an island falloff, water at sea
+  level, sand, grass, upland, rock and snow chosen by height and slope,
+  woods and boulders where the ground is flat enough, and a sun dotted
+  against every cell's normal over its own length for the light. Then
+  twelve soldiers on top of it, who walk, slide along a coast they
+  cannot cross, fight what comes within reach and die of it. All of it
+  is `lib/war.lova`: 1 296 cells and 2.5 million steps for the ground,
+  handed to the host far cells first because a painter has no depth
+  buffer, and about 6 000 steps a tick for the battle. The window
+  owns the pixels, the clock and the mouse, and nothing else.
+
+  ![an isometric battlefield: the window is Python, the terrain, the light and the battle are LOVA](apps/war/screenshot.png)
+
+  ```bash
+  python apps/war/war.py    # left-click picks, right-click sends, drag pans, A all, R again
   ```
 
 - **Logic runs right the first time.** The word count, the games, the

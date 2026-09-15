@@ -41,14 +41,16 @@
 (def cos [ang] (sin (merge ang 64)))
 
 ;; The integer square root, by Newton from above -- x becomes the mean
-;; of x and n/x, which halves the error every time.  Eight rounds settle
-;; anything up to ONE * ONE, and nothing here asks for more: it is used
-;; to give an orb its round edge, where an overestimate of a unit or
-;; two at the very rim is a fraction of a pixel.
+;; of x and n/x, which halves the error while it is far and squares the
+;; accuracy once it is near.  The first guess is n / ONE where that is
+;; the larger, so a distance across a whole map settles in as few
+;; rounds as the round edge of an orb.
 (def isqrt [n]
   (if (lt n 4)
     (if (gt n 0) 1 0)
-    (fold (lambda x (lambda i (div (merge x (div n x)) 2))) ONE (range 0 8))))
+    (fold (lambda x (lambda i (div (merge x (div n x)) 2)))
+          (max ONE (div n ONE))
+          (range 0 12))))
 
 (example (sin 0) 0)
 (example (sin 64) 1024)

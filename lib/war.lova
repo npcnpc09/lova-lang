@@ -1,0 +1,434 @@
+;;; war.lova  --  an isometric battlefield: terrain, light, trees, units
+;;;
+;;; `(use "war")`.  The other 3D in this repository is `lib/ray.lova`,
+;;; a first-person raycaster.  This one is the camera an RTS uses: a
+;;; height field seen from above at a fixed angle, lit by a sun, with
+;;; things standing on it.  Same arithmetic as everything else here --
+;;; `lib/fixed.lova`, integers throughout, no floating point anywhere.
+;;;
+;;; What is in here decides; nothing in here draws.  The host gets
+;;; three lists and paints them:
+;;;
+;;;   (terrain)         ; the ground, once: one record a cell, far
+;;;                     ; cells first, each with its four screen
+;;;                     ; corners, what it is made of, how the light
+;;;                     ; falls on it, and what stands on it
+;;;   (new-war seed)    ; a fresh battle
+;;;   (tick w)          ; one tick: orders, walking, fighting, dying
+;;;   (sprites w)       ; the units, far ones first, in screen points
+;;;   (pick w u v)      ; the cell under a point on the screen
+;;;
+;;; The ground is computed once because the camera does not turn: an
+;;; isometric projection is a translation under panning, so a host may
+;;; draw the terrain into a scrolling surface and never ask again.
+
+(use "fixed")
+
+;; --- the map --------------------------------------------------------
+
+(def N [] 36)                           ; cells a side
+(def SEA [] 400)                        ; water stands below this height
+(def RELIEF [] 3072)                    ; the height range, in cells (3)
+
+;; --- the projection -------------------------------------------------
+;;
+;; Isometric: x to the south-east, y to the south-west, height straight
+;; up.  A cell is TW wide and TH deep on the screen, and the whole
+;; height range is ZH pixels.  This is the whole camera; it has no
+;; perspective divide, which is what lets a host pan by scrolling.
+
+(def TW [] 32)
+(def TH [] 16)
+(def ZH [] 84)
+(def OX [] (div (mul N TW) 2))
+(def OY [] 40)
+
+(def screen-u [x y] (merge OX (div (mul (sub x y) TW) 2)))
+(def screen-v [x y h] (sub (merge OY (div (mul (merge x y) TH) 2))
+                           (div (mul h ZH) 1024)))
+
+;; --- the height field -----------------------------------------------
+;;
+;; Value noise: a lattice of pseudo-random numbers, read between the
+;; lattice points with a smooth step, three times at three scales.  The
+;; hash is a linear congruential generator seeded by the point, which
+;; is enough randomness for a landscape and is four multiplications.
+
+(def hash2 [x y s]
+  (let a (mod (merge (mul x 49632) (merge (mul y 325176) (mul s 7919))) 2147483647)
+    (mod (div (mod (merge (mul a 1103515245) 12345) 2147483648) 65536) 1024)))
+
+;; t^2 (3 - 2t), the smooth step, so the lattice does not show as creases
+(def smooth [t]
+  (div (mul (mul t t) (sub (mul 3 ONE) (mul 2 t))) (mul ONE ONE)))
+
+(def lerp [a b t] (merge a (div (mul (sub b a) t) ONE)))
+
+(def octave [lat x y period]
+  (let gx (div x period)
+    (let gy (div y period)
+      (let tx (smooth (div (mul (mod x period) ONE) period))
+        (let ty (smooth (div (mul (mod y period) ONE) period))
+          (lerp (lerp (at-lat lat gx gy) (at-lat lat (merge gx 1) gy) tx)
+                (lerp (at-lat lat gx (merge gy 1)) (at-lat lat (merge gx 1) (merge gy 1)) tx)
+                ty))))))
+
+;; The lattice of one scale, sampled once.  An octave reads four of
+;; these a point and there are a hundred of them in the whole map,
+;; where hashing them where they were needed cost twelve hashes a
+;; corner and two thirds of the time it takes to make the map.
+(def lattice [period s]
+  (let n (merge 2 (div N period))
+    (fold (lambda m (lambda gy
+            (fold (lambda m2 (lambda gx (map-put m2 (merge (mul gy 64) gx) (hash2 gx gy s))))
+                  m (range 0 n))))
+          (nil) (range 0 n))))
+
+(def lat-a [] (lattice 16 1))
+(def lat-b [] (lattice 8 2))
+(def lat-c [] (lattice 4 3))
+
+(def at-lat [lat gx gy] (map-get lat (merge (mul gy 64) gx) 0))
+
+;; Three octaves, halving in size and in weight, stretched away from
+;; the middle so the map has lowland and highland rather than one
+;; gentle swell; and an island falloff, so the battlefield is a piece
+;; of land with a coast rather than a square cut out of one.
+(def raw-height [x y]
+  (div (merge (mul 5 (octave lat-a x y 16))
+              (merge (mul 3 (octave lat-b x y 8)) (mul 2 (octave lat-c x y 4))))
+       10))
+
+(def falloff [x y]
+  (let dx (sub (mul 2 x) N)
+    (let dy (sub (mul 2 y) N)
+      (let d (div (mul (max (abs dx) (abs dy)) ONE) N)
+        (max 0 (sub ONE (div (mul (max 0 (sub d 780)) ONE) 244)))))))
+
+(def corner-h [x y]
+  (div (mul (max 120 (min 1023 (merge 660 (mul 2 (sub (raw-height x y) 512)))))
+            (falloff x y))
+       ONE))
+
+(def corners []
+  (fold (lambda m (lambda y
+          (fold (lambda m2 (lambda x (map-put m2 (merge (mul y 64) x) (corner-h x y))))
+                m (range 0 (inc N)))))
+        (nil) (range 0 (inc N))))
+
+(def hgt [x y] (map-get corners (merge (mul y 64) x) 0))
+
+;; The height of a cell is its lowest corner; water fills to SEA.
+(def cell-h [x y]
+  (min (min (hgt x y) (hgt (inc x) y))
+       (min (hgt x (inc y)) (hgt (inc x) (inc y)))))
+
+(def wet [x y] (lt (cell-h x y) SEA))
+
+;; --- the light ------------------------------------------------------
+;;
+;; The ground's normal is (-dzx, -dzy, 1) where dz is the rise across
+;; the cell in cell units; the sun is a direction; the brightness is
+;; the one against the other, over the length of the normal, which is
+;; what `isqrt` is for.  Ambient plus diffuse, so no slope is ever
+;; wholly black.
+
+(def SUN-X [] -430)
+(def SUN-Y [] -560)
+(def SUN-Z [] 707)
+
+(def rise [a b] (div (mul (sub b a) RELIEF) 1024))
+
+(def light-of [ha hb hd]
+  (let dzx (rise ha hb)
+    (let dzy (rise ha hd)
+      (let len (isqrt (merge (mul dzx dzx) (merge (mul dzy dzy) (mul ONE ONE))))
+        (let dot (div (merge (mul (neg dzx) SUN-X)
+                             (merge (mul (neg dzy) SUN-Y) (mul ONE SUN-Z))) ONE)
+          (merge 300 (max 0 (div (mul 780 (div (mul dot ONE) len)) ONE))))))))
+
+;; --- what a cell is made of -----------------------------------------
+;;
+;; Water, then the shore, then grass, and rock where it is either high
+;; or steep -- the slope test is what puts stone on the side of a hill
+;; and grass on the top of it.  `lo` is the cell's lowest corner and
+;; `st` the spread between its lowest and its highest.
+
+(def tint-of [lo st]
+  (cond (lt lo (sub SEA 110)) 0          ; deep water
+        (lt lo SEA) 1                    ; shallow water
+        (lt lo (merge SEA 40)) 2         ; sand
+        (gt st 170) 5                    ; rock, because it is steep
+        (gt lo 900) 6                    ; snow
+        (gt lo 800) 5                    ; rock, because it is high
+        (gt lo 660) 4                    ; the dark grass of the uplands
+        3))                              ; grass
+
+;; A tree on flat grass, a boulder on flat rock, nothing on water, on
+;; sand or on a slope: 1 a tree, 2 a boulder, 0 nothing.  The size is
+;; another draw from the same hash, so a wood is not a plantation.
+(def doodad-of [t st r]
+  (cond (gt st 120) 0
+        (and (or (eq t 3) (eq t 4)) (lt r (if (eq t 4) 420 260))) 1
+        (and (eq t 5) (lt r 130)) 2
+        0))
+
+;; --- the cell, and the ground the host gets -------------------------
+;;
+;; One record a cell: the four corners as screen points (the quad to
+;; fill), what it is made of, how the light falls on it, what stands on
+;; it and how big.  Water is flat at sea level, which is what makes a
+;; coast read as a coast.  The four corner heights are read once and
+;; everything else is computed from them -- reading them per question
+;; instead cost three million steps for the map and now costs under
+;; one.
+
+(def cell-record [x y]
+  (let ha (hgt x y)
+    (let hb (hgt (inc x) y)
+      (let hc (hgt (inc x) (inc y))
+        (let hd (hgt x (inc y))
+          (let lo (min (min ha hb) (min hc hd))
+            (let st (sub (max (max ha hb) (max hc hd)) lo)
+              (let w (lt lo SEA)
+                (let k (tint-of lo st)
+                  (rec u0 (screen-u x y)             v0 (screen-v x y (if w SEA ha))
+                       u1 (screen-u (inc x) y)       v1 (screen-v (inc x) y (if w SEA hb))
+                       u2 (screen-u (inc x) (inc y)) v2 (screen-v (inc x) (inc y) (if w SEA hc))
+                       u3 (screen-u x (inc y))       v3 (screen-v x (inc y) (if w SEA hd))
+                       t k
+                       l (if w 690 (light-of ha hb hd))
+                       d (if w 0 (doodad-of k st (hash2 x y 99)))
+                       s (merge 700 (div (mul (hash2 x y 7) 500) 1024))))))))))))
+
+;; Far cells first.  In this projection one cell is nearer than another
+;; exactly when x + y is greater, so the map is walked by diagonals and
+;; a host may paint them in the order given and be right.
+(def terrain []
+  (fold (lambda acc (lambda d
+          (append acc
+                  (map (lambda x (cell-record x (sub d x)))
+                       (range (max 0 (sub d (sub N 1))) (min N (inc d)))))))
+        (nil) (range 0 (sub (mul 2 N) 1))))
+
+;; --- the lie of the land, for everything that is not the picture ----
+
+(def cell-lo [x y]
+  (min (min (hgt x y) (hgt (inc x) y))
+       (min (hgt x (inc y)) (hgt (inc x) (inc y)))))
+
+(def cell-st [x y]
+  (sub (max (max (hgt x y) (hgt (inc x) y))
+            (max (hgt x (inc y)) (hgt (inc x) (inc y))))
+       (cell-lo x y)))
+
+(def wet [x y] (lt (cell-lo x y) SEA))
+
+(def walkable [x y]
+  (and (and (and (ge x 0) (lt x N)) (and (ge y 0) (lt y N)))
+       (and (not (wet x y)) (le (cell-st x y) 170))))
+
+;; --- where a thing is on the screen ---------------------------------
+;;
+;; A unit stands at a fixed-point place -- 1024ths of a cell -- so it
+;; walks smoothly across a grid that is only 36 cells wide.  The ground
+;; under it is the four corners of its cell read between, so it climbs
+;; a hill instead of stepping up it.
+
+(def ground-h [fx fy]
+  (let cx (div fx ONE)
+    (let cy (div fy ONE)
+      (let ax (mod fx ONE)
+        (let ay (mod fy ONE)
+          (max (if (wet cx cy) SEA 0)
+               (lerp (lerp (hgt cx cy) (hgt (inc cx) cy) ax)
+                     (lerp (hgt cx (inc cy)) (hgt (inc cx) (inc cy)) ax)
+                     ay)))))))
+
+(def place-u [fx fy] (merge OX (div (mul (sub fx fy) TW) (mul 2 ONE))))
+(def place-v [fx fy]
+  (sub (merge OY (div (mul (merge fx fy) TH) (mul 2 ONE)))
+       (div (mul (ground-h fx fy) ZH) 1024)))
+
+;; The cell under a point on the screen.  Inverting the projection with
+;; no height in it lands too far down the screen wherever the ground is
+;; high; reading the height there and inverting again is one correction
+;; and is close enough to click with.
+(def pick-flat [u v]
+  (let a (div (mul 2 (sub u OX)) TW)            ; x - y
+    (let b (div (mul 2 (sub v OY)) TH)          ; x + y
+      (rec x (div (merge b a) 2) y (div (sub b a) 2)))))
+
+(def on-map [x y] (and (and (ge x 0) (lt x N)) (and (ge y 0) (lt y N))))
+
+(def pick [u v]
+  (let p (pick-flat u v)
+    (if (on-map (get p x) (get p y))
+      (pick-flat u (merge v (div (mul (cell-lo (get p x) (get p y)) ZH) 1024)))
+      p)))
+
+;; --- the armies -----------------------------------------------------
+
+(def HP [] 100)
+(def SPEED [] 150)                      ; 1024ths of a cell a tick
+(def REACH [] 1400)                     ; it fights at a cell and a third
+(def DAMAGE [] 4)
+(def COOL [] 6)                         ; ticks between blows
+(def SIGHT [] 40960)                    ; the red side comes looking, from anywhere
+
+;; Every cell a unit may stand in, ordered as the ground runs from the
+;; far corner of the map to the near one.  The two armies are drawn
+;; from a fifth and four fifths along it, which puts them on the same
+;; piece of land, apart, and facing each other.
+(def land []
+  (fold (lambda acc (lambda y
+          (append acc (filter (lambda p (walkable (head p) (last p)))
+                              (map (lambda x (list x y)) (range 0 N))))))
+        (nil) (range 0 N)))
+
+(def by-depth []
+  (sort-by (lambda p (lambda q (lt (merge (head p) (last p)) (merge (head q) (last q)))))
+           land))
+
+(def army-spot [k] (nth by-depth (min (sub (len by-depth) 1) (max 0 k))))
+
+(def unit-at [id team p]
+  (rec id id team team
+       x (merge (mul (head p) ONE) 512)
+       y (merge (mul (last p) ONE) 512)
+       tx (merge (mul (head p) ONE) 512)
+       ty (merge (mul (last p) ONE) 512)
+       hp HP cd 0 sel 0 fire -1))
+
+(def ARMY [] 6)
+
+(def new-war [seed]
+  (let n (len by-depth)
+    (rec units
+         (append
+           (map (lambda k (unit-at k 0 (army-spot (merge (div n 5) (mul k 7)))))
+                (range 0 ARMY))
+           (map (lambda k (unit-at (merge 10 k) 1 (army-spot (sub (div (mul 4 n) 5) (mul k 7)))))
+                (range 0 ARMY)))
+         turn 0
+         msg "")))
+
+;; --- one tick -------------------------------------------------------
+
+(def alive [w] (get w units))
+(def side [w s] (filter (lambda u (eq (get u team) s)) (alive w)))
+
+(def dist2 [a bx by]
+  (let dx (sub (get a x) bx)
+    (let dy (sub (get a y) by)
+      (merge (mul dx dx) (mul dy dy)))))
+
+;; The nearest of `us` to `u`, as a record: `have` says whether there
+;; was one at all, because an empty answer has to be said rather than
+;; shown -- two arbitrary values cannot be compared.
+(def nearest [u us]
+  (fold (lambda b (lambda z
+          (let d (dist2 u (get z x) (get z y))
+            (if (lt d (get b d)) (rec d d v z have 1) b))))
+        (rec d 1000000000 v u have 0)
+        us))
+
+;; Walk toward the order, sliding along whatever cannot be walked on:
+;; the two axes are tried separately, so a soldier rubs along a cliff
+;; or a shore instead of stopping dead against it.
+(def can-stand [fx fy] (walkable (div fx ONE) (div fy ONE)))
+
+(def toward [u]
+  (let dx (sub (get u tx) (get u x))
+    (let dy (sub (get u ty) (get u y))
+      (let d (isqrt (merge (mul dx dx) (mul dy dy)))
+        (if (lt d 180)
+          u
+          (let nx (merge (get u x) (div (mul dx SPEED) d))
+            (let ny (merge (get u y) (div (mul dy SPEED) d))
+              (let u1 (if (can-stand nx (get u y)) (put u x nx) u)
+                (if (can-stand (get u1 x) ny) (put u1 y ny) u1)))))))))
+
+;; A unit acts: within reach it strikes, when its blow is ready;
+;; otherwise it walks -- toward the enemy it can see, if nobody has
+;; given it an order of its own.
+(def act [w u]
+  (let n (nearest u (side w (if (get u team) 0 1)))
+    (let u1 (put u fire -1)
+      (if (and (get n have) (le (get n d) (mul REACH REACH)))
+        (if (gt (get u cd) 0)
+          (put u1 cd (sub (get u cd) 1))
+          (put (put u1 cd COOL) fire (get (get n v) id)))
+        (let u2 (put u1 cd (max 0 (sub (get u cd) 1)))
+          (let u3 (if (and (and (get u team) (get n have))
+                           (le (get n d) (mul SIGHT SIGHT)))
+                    (put (put u2 tx (get (get n v) x)) ty (get (get n v) y))
+                    u2)
+            (toward u3)))))))
+
+(def tick [w]
+  (let acted (map (lambda u (act w u)) (alive w))
+    (let hits (fold (lambda m (lambda u
+                      (if (ge (get u fire) 0)
+                        (map-put m (get u fire) (merge (map-get m (get u fire) 0) DAMAGE))
+                        m)))
+                    (nil) acted)
+      (let hurt (map (lambda u (put u hp (sub (get u hp) (map-get hits (get u id) 0)))) acted)
+        (put (put w units (filter (lambda u (gt (get u hp) 0)) hurt))
+             turn (inc (get w turn)))))))
+
+;; --- orders ---------------------------------------------------------
+
+;; Picking is done on the screen, not on the map: a click lands on the
+;; figure a player can see, and inverting the projection to a cell
+;; instead misses by one wherever the ground is steep.  The box is the
+;; soldier: thirteen pixels either side, thirty above his feet and six
+;; below them.
+(def hit [z u v]
+  (let pu (place-u (get z x) (get z y))
+    (let pv (place-v (get z x) (get z y))
+      (and (le (abs (sub u pu)) 13)
+           (and (le (sub pv v) 30) (ge (sub pv v) -6))))))
+
+(def select [w u v]
+  (put w units
+       (map (lambda z (put z sel (and (not (get z team)) (hit z u v)))) (alive w))))
+
+(def select-all [w]
+  (put w units (map (lambda z (put z sel (not (get z team)))) (alive w))))
+
+;; An order spreads: each unit it reaches is sent a little away from
+;; the point clicked, so six of them do not try to stand in one cell.
+(def order [w u v]
+  (let p (pick u v)
+    (if (on-map (get p x) (get p y))
+      (let bx (merge (mul (get p x) ONE) 512)
+        (let by (merge (mul (get p y) ONE) 512)
+          (put w units
+               (fold (lambda acc (lambda z
+                       (append acc
+                               (list (if (get z sel)
+                                       (put (put z tx (merge bx (mul (mod (len acc) 3) 640)))
+                                            ty (merge by (mul (div (len acc) 3) 640)))
+                                       z)))))
+                     (nil) (alive w)))))
+      w)))
+
+;; --- what the host paints -------------------------------------------
+;;
+;; One record a unit, the far ones first, in screen points: where it
+;; stands, which side it is on, how much of it is left, whether it is
+;; picked out, and whether it is striking something this tick.
+
+(def sprites [w]
+  (map (lambda z (rec u (place-u (get z x) (get z y))
+                      v (place-v (get z x) (get z y))
+                      t (get z team)
+                      hp (get z hp)
+                      s (get z sel)
+                      f (if (ge (get z fire) 0) 1 0)))
+       (sort-by (lambda a (lambda b (lt (merge (get a x) (get a y))
+                                        (merge (get b x) (get b y)))))
+                (alive w))))
+
+(def standing [w s] (len (side w s)))

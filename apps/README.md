@@ -364,6 +364,34 @@ furthest `.`, which is the only depth cue a terminal gives.
 python -m core.cli run apps/cube.lova
 ```
 
+### `war/war.py`
+
+The other camera: an isometric battlefield, the one an RTS looks
+through.  `lib/war.lova` holds all of it -- a height field from value
+noise read off a hashed lattice, an island falloff, water at sea
+level, sand, grass, upland, rock and snow chosen by height and slope,
+a sun dotted against each cell's normal over its own length for the
+light, woods and boulders where the ground is flat enough, and then
+twelve soldiers who walk, slide along a coast they cannot cross,
+fight what comes within reach and die of it.
+
+The ground is asked for once -- 1 296 cells, 2.5 million steps -- and
+never again: the camera does not turn, so panning an isometric
+projection is a translation, and the host draws the cells into a
+scrolling canvas in the order LOVA hands them over, which is far ones
+first because a painter has no depth buffer.  A tick of the battle is
+about 6 000 steps.
+
+Left-click picks one of your soldiers, drag pans the map, right-click
+sends the ones you have picked, `A` takes all of them, `R` starts the
+battle again.  The red side comes looking for you whatever you do.
+
+```
+python apps/war/war.py
+```
+
+![an isometric battlefield; the window is Python, the terrain, the light and the battle are LOVA](war/screenshot.png)
+
 ## Arguments
 
 A `{placeholder}` is filled from the command line in the order of
