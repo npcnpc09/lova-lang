@@ -51,89 +51,110 @@
 ;; cross.  Heights are levels, not lengths: a pawn with jump 1 can step
 ;; between 3 and 4 but not between 3 and 5.
 
-(def N [] 12)
+(def NX [] 10)                          ; the arena is ten across
+(def NZ [] 20)                          ; and twenty deep
 
-(def level []
-  (list "111111222111"
-        "111122222211"
-        "112224443221"
-        "11223..43221"
-        "1223..443211"
-        "122344443221"
-        "122344433221"
-        "11234433..21"
-        "112333322.11"
-        "111223322111"
-        "111122221111"
-        "111111111111"))
-
-(def on-grid [x y] (and (and (ge x 0) (lt x N)) (and (ge y 0) (lt y N))))
-
-;; Read once: a `def` with no parameters is a constant, and a flood asks
-;; for a height fifteen hundred times, where reading the digit out of
-;; the text each time was a third of what a turn cost.
+;; The arena of the original, read out of its `test_arena.tscn`: two
+;; hundred tiles, each a flat quad in that file with its height in the
+;; node's own transform.  Heights are in eighths of a tile here, because
+;; the original's go down to an eighth -- the shallow ramps that make a
+;; staircase something a soldier can walk up.  Zero is the beach in the
+;; south-east, 44 (five and a half) the plateau in the north-west.
 ;;
-;; The key is shifted by one and the row is two wider than the arena, so
-;; the ring of cells just outside it has keys of its own and asks no
-;; bounds question: off the map reads as -1 because nothing was ever
-;; written there.  A bounds test in `hgt` was 24 of its 37 steps.
-(def hkey [x y] (merge (mul (merge y 1) (merge N 2)) (merge x 1)))
+;; Nothing of the original's art is in this: it has no models, and what
+;; its scene calls a mesh is a one-by-one quad.  This is the layout,
+;; which is the part that was designed.
+(def level []
+  (list
+        (list 42 44 44 42 20 18 16 16 16 16)
+        (list 42 44 44 42 20 19 17 16 16 16)
+        (list 42 44 44 42 20 20 19 17 16 16)
+        (list 20 20 20 20 20 20 20 19 17 16)
+        (list 20 20 20 20 20 20 20 20 19 18)
+        (list 20 20 20 20 20 20 20 20 20 20)
+        (list 20 19 18 19 20 20 20 20 20  4)
+        (list 18 17 16  4  4  4  4 18 18  4)
+        (list 16 16  4  4  4  4  4 14 14  4)
+        (list  4  4  4  4  4  4  4 10 10  4)
+        (list  4  4  4  4  4  4  4  6  6  4)
+        (list 28 36 28  4  4  4  4  4  4  4)
+        (list 32 32 32  4  4  4  4  4  4  3)
+        (list 30 30 30  4  4  4  4  4  3  1)
+        (list 26 26 26  4  4  4  3  2  1  0)
+        (list 22 22 22  4  4  4  2  0  0  0)
+        (list  4  4  4  4  4  3  1  0  0  0)
+        (list  4  4  4  4  3  1  0  0  0  0)
+        (list  4  4  4  4  2  0  0  0  0  0)
+        (list  4  4  4  4  2  0  0  0  0  0)))
+
+(def ckey [x y] (merge (mul y NX) x))
+(def key-x [k] (mod k NX))
+(def key-y [k] (div k NX))
+
+;; The height map, read once.  The key is shifted by one and the row is
+;; two wider than the arena, so the ring of cells just outside it has
+;; keys of its own and asks no bounds question: a step off the edge
+;; reads as -1 because nothing was ever written there, and a bounds test
+;; in `hgt` was 24 of its 37 steps.
+;;
+;; The ring is one cell deep, which is all the flood can ask for -- it
+;; only ever looks at a neighbour of a cell that is on the map.  Two
+;; cells out the keys begin to alias, so `hgt` is not a general
+;; question-answerer; `on-map` is, and the two callers that need it use
+;; it.
+(def hkey [x y] (merge (mul (merge y 1) (merge NX 2)) (merge x 1)))
 
 (def heights []
   (fold (lambda m (lambda y
           (let row (nth level y)
-            (fold (lambda m2 (lambda x
-                    (let c (nth row x)
-                      (map-put m2 (hkey x y) (if (eq c 46) -1 (sub c 48))))))
-                  m (range 0 N)))))
-        (nil) (range 0 N)))
+            (fold (lambda m2 (lambda x (map-put m2 (hkey x y) (nth row x))))
+                  m (range 0 NX)))))
+        (nil) (range 0 NZ)))
 
 (def hgt [x y] (map-get heights (hkey x y) -1))
-
 (def solid [x y] (ge (hgt x y) 0))
-
-(def ckey [x y] (merge (mul y N) x))
-(def key-x [k] (mod k N))
-(def key-y [k] (div k N))
 
 ;; --- the camera -----------------------------------------------------
 ;;
 ;; Isometric, as the original's is: x to the south-east, y to the
 ;; south-west, height straight up.  No perspective divide, so a host
-;; that pans is translating and can paint the arena into a canvas and
-;; scroll it.
+;; that pans is translating.  ZH is per eighth of a tile, so a whole
+;; tile of height is 24 pixels against a tile 52 across.
 
-(def TW [] 56)                          ; a block is this wide
-(def TH [] 28)                          ; and this deep
-(def ZH [] 22)                          ; a level of height is this tall
-(def OX [] (merge (div (mul N TW) 2) 40))
-(def OY [] 76)
+(def TW [] 52)
+(def TH [] 26)
+(def ZH [] 3)
+(def OX [] 520)
+(def OY [] 200)
 
 (def cu [x y] (merge OX (div (mul (sub x y) TW) 2)))
 (def cv [x y h] (sub (merge OY (div (mul (merge x y) TH) 2)) (mul h ZH)))
 
 ;; --- the pawns ------------------------------------------------------
 ;;
-;; The original's Stats, with its defaults: movement 3, jump half of
-;; that rounded down, five health, reach one, one point of damage.  Two
-;; kinds beyond the default, because a demo with one kind of soldier
-;; shows nothing: a scout that goes further and jumps higher, and an
-;; archer that strikes from three tiles away.
+;; The original's Stats and its defaults: movement 3, jump half of that
+;; rounded down, five health, reach one, one point of damage.  Jump is
+;; in eighths here, like every other height, so the original's one tile
+;; is eight.  Two kinds beside the default, because a demo with one kind
+;; of soldier shows nothing: a scout that goes further and climbs twice
+;; as high, and an archer that strikes from three tiles away.
 
 (def pawn-of [id team kind x y]
-  (let mv (cond (eq kind 1) 5 (eq kind 2) 3 3)
+  (let mv (if (eq kind 1) 5 3)
     (rec id id team team kind kind x x y y
-         hp (cond (eq kind 1) 4 (eq kind 2) 4 5)
-         max (cond (eq kind 1) 4 (eq kind 2) 4 5)
+         hp (if kind 4 5)
+         max (if kind 4 5)
          mv mv
-         jump (div mv 2)
+         jump (mul (div mv 2) 8)
          rng (if (eq kind 2) 3 1)
          pow (if (eq kind 2) 1 2)
          moved 0 struck 0)))
 
+;; Yours on the low ground in the south-east, theirs on the steps above
+;; it: five tiles apart, up a staircase the original built.
 (def start-pawns []
-  (list (pawn-of 0 0 0 1 9) (pawn-of 1 0 1 2 10) (pawn-of 2 0 2 1 10)
-        (pawn-of 3 1 0 10 2) (pawn-of 4 1 1 9 1) (pawn-of 5 1 2 10 1)))
+  (list (pawn-of 0 0 0 6 13) (pawn-of 1 0 1 7 13) (pawn-of 2 0 2 8 13)
+        (pawn-of 3 1 0 6 8) (pawn-of 4 1 1 7 8) (pawn-of 5 1 2 8 8)))
 
 (def new-battle [seed]
   (rec pawns start-pawns
@@ -402,8 +423,8 @@
           (append acc
                   (filter (lambda k (solid (key-x k) (key-y k)))
                           (map (lambda x (ckey x (sub s x)))
-                               (range (max 0 (sub s (sub N 1))) (min N (inc s))))))))
-        (nil) (range 0 (sub (mul 2 N) 1))))
+                               (range (max 0 (sub s (sub NZ 1))) (min NX (inc s))))))))
+        (nil) (range 0 (sub (merge NX NZ) 1))))
 
 (def who-map [w]
   (fold (lambda m (lambda q (map-put m (ckey (get q x) (get q y)) q))) (nil) (living w)))
@@ -451,3 +472,20 @@
                       (cv (key-x k) (key-y k) (hgt (key-x k) (key-y k))))
             k best)))
         -1 draw-order))
+
+;; --- what this file says about itself -------------------------------
+;;
+;; The arena, read out of the original's scene file, and the stats, read
+;; out of its `StatsResource`.  An example is a conservation contract,
+;; so what it states has to be a number.
+
+(example (len draw-order) 200)
+(example (hgt 0 0) 42)                  ; the plateau in the north-west
+(example (hgt 9 19) 0)                  ; the beach in the south-east
+(example (hgt 7 8) 14)                  ; the step their archer stands on
+(example (hgt -1 0) -1)                 ; the ring just outside
+(example (hgt 10 5) -1)
+(example (get (pawn-of 0 0 0 0 0) mv) 3)
+(example (get (pawn-of 0 0 0 0 0) jump) 8)     ; floor(3/2) tiles, in eighths
+(example (get (pawn-of 0 0 1 0 0) jump) 16)    ; the scout climbs two
+(example (get (pawn-of 0 0 2 0 0) rng) 3)      ; the archer reaches three

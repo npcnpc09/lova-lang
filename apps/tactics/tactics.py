@@ -12,14 +12,24 @@ for the tile beside the nearest enemy and then strikes the weakest
 thing in reach.  Even what a click *means* is decided there, because it
 is a rule.  This shell owns the window, the mouse and the colours.
 
+The arena and the cast are the original's too, because both are data
+rather than code: its scene file holds no model -- every "mesh" in it
+is a one-by-one quad with the height in the node's transform -- so the
+layout was read out of it, and its seven character sprites are in
+`assets/` under its MIT licence, which travels with them.  Delete them
+and the figures below are drawn instead.  The renderer is ours: Godot
+draws with a GPU, this paints isometric blocks from a list, far ones
+first, which is the whole of the depth sorting.
+
 LOVA has no floating point.  The arena is blocks on an integer grid
 drawn in an isometric projection -- the same `lib/fixed.lova` the
-first-person maze casts rays with.
+first-person maze casts rays with -- and heights are in eighths of a
+tile, because the original's ramps are.
 
-Click one of your three (blue) to pick it up: blue tiles are where it
-can go, red tiles what it can hit once it has moved.  Space ends your
-turn and lets them have theirs, a step every quarter second.  R starts
-again.
+Click one of your three -- the knight, the chemist, the archer -- to
+pick it up: blue tiles are where it can go, red tiles what it can hit
+once it has moved.  Space ends your turn and lets the skeletons have
+theirs, a step every quarter second.  R starts again.
 """
 
 from __future__ import annotations
@@ -45,15 +55,26 @@ SOURCE = """\
      left (lambda w (lambda s (len (side-of w s)))))
 """
 
-VIEW_W, VIEW_H = 980, 540
+VIEW_W, VIEW_H = 980, 620
 BUDGET = 20_000_000
 AI_MS = 260
 
-TW, TH, ZH = 56, 28, 22          # the block sizes lib/tactics.lova projects with
+TW, TH, ZH = 52, 26, 3           # the block sizes lib/tactics.lova projects with;
+                                 # ZH is per eighth of a tile, as heights are
 
-# The ground, by height: a low block is grass, a high one is stone.
+# The ground, by whole tiles of height: a low block is grass, a high one
+# is stone.  Heights arrive in eighths, so this is indexed by h // 8.
 TOP = {0: (96, 132, 70), 1: (104, 142, 76), 2: (120, 148, 84),
        3: (150, 146, 112), 4: (176, 170, 150), 5: (198, 196, 184)}
+
+# The original's own cast, from its `assets/textures/actor/` (MIT, and
+# the licence travels with them in assets/).  Each file is a 128 x 256
+# sheet of two frames -- `vframes = 2` in its `pawn.tscn` -- the lower
+# one facing the camera, which is the one a fixed camera ever sees.
+SPRITES = {(0, 0): "chr_pawn_knight.png", (0, 1): "chr_pawn_chemist.png",
+           (0, 2): "chr_pawn_archer.png", (1, 0): "chr_pawn_skeleton.png",
+           (1, 1): "chr_pawn_skeleton_cpt.png", (1, 2): "chr_pawn_skeleton_mage.png"}
+ASSETS = Path(__file__).resolve().parent / "assets"
 LEFT_DIM, RIGHT_DIM = 62, 82     # the two side faces, as a percentage of the top
 EDGE = "#2b3226"
 
@@ -119,6 +140,7 @@ class Battle(tk.Frame):
         self.thinking = False
         self.hover = -1
         self.scene = []
+        self.sprites = self.load_sprites()
         master.bind("<KeyPress>", self.on_key)
         self.canvas.bind("<Motion>", self.on_move)
         self.canvas.bind("<Button-1>", self.on_click)
@@ -131,7 +153,7 @@ class Battle(tk.Frame):
     def block(self, b) -> None:
         k, u, v, h, r, a = self.rules.fields(b, "k", "u", "v", "h", "r", "a")
         hov = k == self.hover
-        base = TOP.get(h, TOP[5])
+        base = TOP.get(h // 8, TOP[5])
         if r:
             base = mix(base, MOVE_TINT, 55)
         elif a:
@@ -151,19 +173,57 @@ class Battle(tk.Frame):
                          fill=rgb(base), outline=HOVER if hov else EDGE,
                          width=2 if hov else 1)
 
+    def load_sprites(self) -> dict:
+        """The original's sprites, cropped to the frame that faces the
+        camera and halved to the size of a tile.
+
+        Tk reads PNG and its alpha since 8.6, and `copy -from` crops
+        without any library outside the standard one -- which is the rule
+        this repository keeps.  If the files are not there the figures are
+        drawn instead, so a clean checkout still runs.
+        """
+        out = {}
+        for key, name in SPRITES.items():
+            path = ASSETS / name
+            if not path.exists():
+                return {}
+            sheet = tk.PhotoImage(file=str(path))            # 128 x 256
+            # the lower frame, trimmed to what is actually drawn in it:
+            # every one of the seven has its art between y 8 and y 120 of
+            # its frame, so the crop puts the feet on the bottom edge
+            frame = tk.PhotoImage(width=128, height=112)
+            frame.tk.call(frame, "copy", sheet, "-from", 0, 136, 128, 248, "-to", 0, 0)
+            out[key] = frame.subsample(2)                    # 64 x 56, a tile tall
+        return out
+
     def pawn(self, b) -> None:
         u, v = self.rules.fields(b, "u", "v")
         team, kind, hp, mx = self.rules.fields(b, "pteam", "pkind", "php", "pmax")
         sel, done = self.rules.fields(b, "psel", "pdone")
-        body, dark = TEAM[team]
-        if done:
-            body, dark = dim(body, 55), dim(dark, 55)
-            body = tuple(int(body[i:i + 2], 16) for i in (1, 3, 5))
-            dark = tuple(int(dark[i:i + 2], 16) for i in (1, 3, 5))
         c = self.canvas
         if sel:
             c.create_oval(u - 16, v - 8, u + 16, v + 8, outline="#ffe066", width=3)
-        c.create_oval(u - 11, v - 5, u + 11, v + 5, fill="#1b2318", outline="")
+        c.create_oval(u - 11, v - 5, u + 11, v + 5,
+                      fill="#4a4a4a" if done else "#1b2318", outline="")
+        art = self.sprites.get((team, kind))
+        if art is not None:
+            c.create_image(u, v + 4, image=art, anchor="s")
+            top = v - 52
+        else:
+            top = self.figure(u, v, team, kind, done)
+        w = 26 * hp // max(1, mx)
+        c.create_rectangle(u - 13, top - 8, u + 13, top - 3, fill="#161a12", outline="#0c0e08")
+        c.create_rectangle(u - 13, top - 8, u - 13 + w, top - 3,
+                           fill="#63d463" if team == 0 else "#e0663c", outline="")
+
+    def figure(self, u: int, v: int, team: int, kind: int, done: int) -> int:
+        """The fallback: a figure drawn out of polygons, for a checkout
+        without the original's art in it."""
+        body, dark = TEAM[team]
+        if done:
+            body, dark = [tuple(int(dim(x, 55)[i:i + 2], 16) for i in (1, 3, 5))
+                          for x in (body, dark)]
+        c = self.canvas
         top = v - 34
         c.create_line(u - 4, v - 2, u - 4, v - 12, fill=rgb(dark), width=4)
         c.create_line(u + 4, v - 2, u + 4, v - 12, fill=rgb(dark), width=4)
@@ -172,18 +232,15 @@ class Battle(tk.Frame):
         c.create_oval(u - 6, top - 2, u + 6, top + 10, fill=rgb(SKIN), outline="")
         c.create_arc(u - 7, top - 5, u + 7, top + 9, start=0, extent=180,
                      fill=rgb(dark), outline="")
-        if kind == 2:                      # the archer carries a bow
+        if kind == 2:
             c.create_arc(u + 9, top + 2, u + 19, v - 6, start=100, extent=160,
                          style=tk.ARC, outline="#8a6a3a", width=2)
-        elif kind == 1:                    # the scout, a light spear
+        elif kind == 1:
             c.create_line(u + 10, v - 4, u + 13, top - 4, fill="#7a6240", width=2)
         else:
             c.create_polygon(u + 9, v - 22, u + 17, v - 26, u + 17, v - 14,
                              fill="#c9ced8", outline=rgb(dark))
-        w = 26 * hp // max(1, mx)
-        c.create_rectangle(u - 13, top - 14, u + 13, top - 9, fill="#161a12", outline="#0c0e08")
-        c.create_rectangle(u - 13, top - 14, u - 13 + w, top - 9,
-                           fill="#63d463" if team == 0 else "#e0663c", outline="")
+        return top - 6
 
     def refresh(self) -> None:
         """Ask the rules for the picture again -- after a click, not after

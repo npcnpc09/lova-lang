@@ -41,10 +41,13 @@ API = """\
      left (lambda w (lambda s (len (side-of w s)))))
 """
 
-N = 12
+NX, NZ = 10, 20                 # the original's arena, out of its own scene file
 DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
+FLAT = 13                       # a row of the arena that is level: columns 3 to 7
 # movement, jump, reach, power, health -- `pawn-of`'s three kinds
-KINDS = {0: (3, 1, 1, 2, 5), 1: (5, 2, 1, 2, 4), 2: (3, 1, 3, 1, 4)}
+# Jump is in eighths of a tile, because the arena's heights are: the
+# original's one tile of climb is eight of them.
+KINDS = {0: (3, 8, 1, 2, 5), 1: (5, 16, 1, 2, 4), 2: (3, 8, 3, 1, 4)}
 
 
 class Original:
@@ -106,7 +109,7 @@ class Tactics(unittest.TestCase):
                             "hgt", "solid", "ckey", "order", "scene", "pick", "pairs",
                             "mkpawn", "world", "pawns", "field", "side", "sel", "left")}
         cls.heights = {(x, y): cls.call("hgt", x, y)
-                       for x in range(N) for y in range(N)
+                       for x in range(NX) for y in range(NZ)
                        if cls.call("hgt", x, y) >= 0}
         cls.original = Original(cls.heights)
 
@@ -133,22 +136,29 @@ class Tactics(unittest.TestCase):
         out = {}
         for pair in list_to_python(self.call("pairs", d)):
             key, steps = list_to_python(pair)
-            out[(key % N, key // N)] = steps
+            out[(key % NX, key // NX)] = steps
         return out
 
     # --- the flood against the original -----------------------------------
 
-    def test_the_arena_is_what_it_says(self):
-        self.assertEqual(len(self.heights), 137)          # 144 cells, 7 holes
-        self.assertEqual(max(self.heights.values()), 4)
-        self.assertEqual(min(self.heights.values()), 1)
+    def test_the_arena_is_the_original(self):
+        """Two hundred tiles on ten by twenty, from nothing to five and a
+        half tiles high -- read out of the original's `test_arena.tscn`,
+        where every tile is a flat quad and its height is in the node's
+        own transform."""
+        self.assertEqual(len(self.heights), NX * NZ)
+        self.assertEqual(min(self.heights.values()), 0)
+        self.assertEqual(max(self.heights.values()), 44)       # five and a half
+        # the eighth-of-a-tile ramps its staircases are built out of
+        self.assertIn(1, set(self.heights.values()))
+        self.assertIn(3, set(self.heights.values()))
 
     def test_the_flood_agrees_with_the_original(self):
         """Every cell of the arena, every kind of pawn, an empty field: the
         distance to every other cell, one by one."""
         checked = 0
         for kind, (mv, jump, rng, _pow, _hp) in KINDS.items():
-            for (x, y) in sorted(self.heights)[::11]:
+            for (x, y) in sorted(self.heights)[::17]:
                 p = self.pawn(0, 0, kind, x, y)
                 w = self.world_of([p])
                 who = self.call("who", w)
@@ -169,14 +179,14 @@ class Tactics(unittest.TestCase):
         """An enemy standing in a corridor is a wall to movement and is not
         to a weapon -- the original floods the two separately, and so does
         this."""
-        mine = self.pawn(0, 0, 0, 1, 9)
-        theirs = self.pawn(3, 1, 0, 2, 9)
+        mine = self.pawn(0, 0, 0, 4, FLAT)
+        theirs = self.pawn(3, 1, 0, 5, FLAT)
         w = self.world_of([mine, theirs])
-        walk = self.distances(w, mine, 0, 1)        # jump 1
-        shoot = self.distances(w, mine, 1, 1)       # reach 1
-        self.assertNotIn((2, 9), walk)                    # cannot walk onto him
-        self.assertEqual(shoot[(2, 9)], 1)                # can hit him
-        blocked = self.original.flood((1, 9), 1, {(2, 9)})
+        walk = self.distances(w, mine, 0, 8)        # jump: one tile
+        shoot = self.distances(w, mine, 1, 1)       # reach: one tile
+        self.assertNotIn((5, FLAT), walk)                 # cannot walk onto him
+        self.assertEqual(shoot[(5, FLAT)], 1)             # can hit him
+        blocked = self.original.flood((4, FLAT), 8, {(5, FLAT)})
         self.assertEqual(walk, blocked)
 
     def test_a_wall_too_high_is_not_a_neighbour(self):
@@ -185,28 +195,29 @@ class Tactics(unittest.TestCase):
         edges = [(x, y) for (x, y) in self.heights
                  for dx, dy in DIRS
                  if (x + dx, y + dy) in self.heights
-                 and self.heights[(x + dx, y + dy)] - self.heights[(x, y)] == 2]
+                 and 8 < self.heights[(x + dx, y + dy)] - self.heights[(x, y)] <= 16]
         self.assertTrue(edges)
         x, y = edges[0]
         soldier = self.pawn(0, 0, 0, x, y)                 # jump 1
         scout = self.pawn(1, 0, 1, x, y)                   # jump 2
         up = next((x + dx, y + dy) for dx, dy in DIRS
                   if (x + dx, y + dy) in self.heights
-                  and self.heights[(x + dx, y + dy)] - self.heights[(x, y)] == 2)
+                  and 8 < self.heights[(x + dx, y + dy)] - self.heights[(x, y)] <= 16)
         # the step itself: one for the scout, and for the soldier either no
         # way at all or the long way round
-        self.assertEqual(self.distances(self.world_of([scout]), scout, 0, 2)[up], 1)
-        self.assertGreater(self.distances(self.world_of([soldier]), soldier, 0, 1).get(up, 99), 1)
+        self.assertEqual(self.distances(self.world_of([scout]), scout, 0, 16)[up], 1)
+        self.assertGreater(
+            self.distances(self.world_of([soldier]), soldier, 0, 8).get(up, 99), 1)
 
     def test_a_path_is_a_walk_of_single_steps(self):
-        p = self.pawn(0, 0, 1, 1, 9)
+        p = self.pawn(0, 0, 1, 3, FLAT)
         w = self.world_of([p])
         who = self.call("who", w)
-        d = self.call("flood", who, p, 0, 2)
-        path = list_to_python(self.call("pathto", who, p, d, self.call("ckey", 4, 9)))
-        cells = [(k % N, k // N) for k in path]
-        self.assertEqual(cells[0], (1, 9))
-        self.assertEqual(cells[-1], (4, 9))
+        d = self.call("flood", who, p, 0, 16)
+        path = list_to_python(self.call("pathto", who, p, d, self.call("ckey", 7, FLAT)))
+        cells = [(k % NX, k // NX) for k in path]
+        self.assertEqual(cells[0], (3, FLAT))
+        self.assertEqual(cells[-1], (7, FLAT))
         for a, b in zip(cells, cells[1:]):
             self.assertEqual(abs(a[0] - b[0]) + abs(a[1] - b[1]), 1)
 
@@ -217,14 +228,14 @@ class Tactics(unittest.TestCase):
         facing, no roll."""
         for kind, (_mv, _j, _r, power, _hp) in KINDS.items():
             mine = self.pawn(0, 0, kind, 1, 9)
-            theirs = self.pawn(3, 1, 0, 2, 9)
+            theirs = self.pawn(3, 1, 0, 5, FLAT)
             w = self.call("strike", self.world_of([mine, theirs]), 0, 3)
             hp = [self.call("field", p, "hp") for p in list_to_python(self.call("pawns", w))]
             self.assertEqual(hp[1], KINDS[0][4] - power, kind)
 
     def test_health_stops_at_nothing(self):
-        mine = self.pawn(0, 0, 0, 1, 9)
-        theirs = self.pawn(3, 1, 0, 2, 9)
+        mine = self.pawn(0, 0, 0, 4, FLAT)
+        theirs = self.pawn(3, 1, 0, 5, FLAT)
         w = self.world_of([mine, theirs])
         for _ in range(6):
             w = self.call("strike", w, 0, 3)
@@ -236,31 +247,32 @@ class Tactics(unittest.TestCase):
     # --- what a click means -------------------------------------------------
 
     def test_a_click_picks_up_moves_and_strikes(self):
-        mine = self.pawn(0, 0, 0, 1, 9)
-        theirs = self.pawn(3, 1, 0, 4, 9)
+        mine = self.pawn(0, 0, 0, 4, FLAT)
+        theirs = self.pawn(3, 1, 0, 7, FLAT)
         w = self.world_of([mine, theirs])
         self.assertEqual(self.call("sel", w), -1)
-        w = self.call("click", w, self.call("ckey", 1, 9))         # pick him up
+        w = self.call("click", w, self.call("ckey", 4, FLAT))      # pick him up
         self.assertEqual(self.call("sel", w), 0)
-        w = self.call("click", w, self.call("ckey", 3, 9))         # walk two east
+        w = self.call("click", w, self.call("ckey", 6, FLAT))      # walk two east
         at = [(self.call("field", p, "x"), self.call("field", p, "y"))
               for p in list_to_python(self.call("pawns", w))]
-        self.assertEqual(at[0], (3, 9))
-        w = self.call("click", w, self.call("ckey", 4, 9))         # and strike
+        self.assertEqual(at[0], (6, FLAT))
+        w = self.call("click", w, self.call("ckey", 7, FLAT))      # and strike
         hp = [self.call("field", p, "hp") for p in list_to_python(self.call("pawns", w))]
         self.assertEqual(hp[1], 3)
         # spent: he is put down again
         self.assertEqual(self.call("sel", w), -1)
 
     def test_a_click_on_their_pawn_picks_up_nothing(self):
-        w = self.world_of([self.pawn(0, 0, 0, 1, 9), self.pawn(3, 1, 0, 4, 9)])
-        self.assertEqual(self.call("sel", self.call("click", w, self.call("ckey", 4, 9))), -1)
+        w = self.world_of([self.pawn(0, 0, 0, 4, FLAT), self.pawn(3, 1, 0, 7, FLAT)])
+        self.assertEqual(
+            self.call("sel", self.call("click", w, self.call("ckey", 7, FLAT))), -1)
 
     def test_a_click_out_of_reach_puts_him_down(self):
-        w = self.world_of([self.pawn(0, 0, 0, 1, 9)])
-        w = self.call("click", w, self.call("ckey", 1, 9))
+        w = self.world_of([self.pawn(0, 0, 0, 4, FLAT)])
+        w = self.call("click", w, self.call("ckey", 4, FLAT))
         self.assertEqual(self.call("sel", w), 0)
-        w = self.call("click", w, self.call("ckey", 10, 2))        # the far corner
+        w = self.call("click", w, self.call("ckey", 1, 1))         # the far plateau
         self.assertEqual(self.call("sel", w), -1)
 
     # --- the opponent -------------------------------------------------------
@@ -269,9 +281,9 @@ class Tactics(unittest.TestCase):
         """`chase_nearest_enemy` then `choose_pawn_to_attack`: it walks to a
         tile beside the nearest of ours and hits the weakest thing in
         reach."""
-        hurt = self.pawn(0, 0, 0, 3, 9)
-        whole = self.pawn(1, 0, 0, 1, 9)
-        theirs = self.pawn(3, 1, 1, 7, 9)                 # a scout, movement 5
+        hurt = self.pawn(0, 0, 0, 5, FLAT)
+        whole = self.pawn(1, 0, 0, 3, FLAT)
+        theirs = self.pawn(3, 1, 1, 9, FLAT)              # a scout, movement 5
         w = self.world_of([hurt, whole, theirs])
         w = self.call("strike", w, 3, 0)                  # take a point off the near one
         w = self.call("endturn", w)
@@ -304,8 +316,8 @@ class Tactics(unittest.TestCase):
 
     def test_the_blocks_come_far_first(self):
         blocks = list_to_python(self.call("scene", self.call("new", 0)))
-        self.assertEqual(len(blocks), 137)
-        depth = [(self.f(b, "k") % N) + (self.f(b, "k") // N) for b in blocks]
+        self.assertEqual(len(blocks), NX * NZ)
+        depth = [(self.f(b, "k") % NX) + (self.f(b, "k") // NX) for b in blocks]
         self.assertEqual(depth, sorted(depth))
 
     def test_a_point_lands_on_the_block_under_it(self):
@@ -320,20 +332,31 @@ class Tactics(unittest.TestCase):
             if got == k:
                 exact += 1
                 continue
-            depth = lambda c: (c % N) + (c // N)
-            self.assertGreater(depth(got), depth(k), (k % N, k // N))
+            depth = lambda c: (c % NX) + (c // NX)
+            self.assertGreater(depth(got), depth(k), (k % NX, k // NX))
         # the rest sit under a step: a taller block in front of one covers
         # the middle of its top face, and clicking there picks the one you
         # can actually see
-        self.assertGreater(exact, 90)
+        self.assertGreater(exact, 120)
 
     def test_a_picture_costs_what_a_click_can_afford(self):
         w = self.call("new", 0)
         list_to_python(self.call("scene", w))
-        self.assertLess(self.rt.steps, 80_000)
-        w = self.call("click", w, self.call("ckey", 1, 9))
+        self.assertLess(self.rt.steps, 90_000)
+        w = self.call("click", w, self.call("ckey", 6, FLAT))
         list_to_python(self.call("scene", w))
-        self.assertLess(self.rt.steps, 200_000)
+        self.assertLess(self.rt.steps, 260_000)
+
+
+class Examples(unittest.TestCase):
+    """What `lib/tactics.lova` says about itself, run."""
+
+    def test_the_examples_hold(self):
+        from core.examples import check
+        source = '(use "tactics")' + chr(10) + "(len draw-order)" + chr(10)
+        results = check(source)
+        self.assertGreaterEqual(len(results), 14)
+        self.assertEqual([r["excerpt"] for r in results if not r["passed"]], [])
 
 
 if __name__ == "__main__":

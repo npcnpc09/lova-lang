@@ -341,9 +341,14 @@ something and kept as a test. What they demonstrate:
   a transliteration of the original’s flood and compares the distance
   to **every cell of the arena, for every kind of pawn**. Two places
   where the original contradicts itself are named in the file header
-  rather than quietly copied or quietly fixed. What is ours is the
-  arena and the picture — Godot renders with a GPU; this is isometric
-  blocks drawn by the host from a list LOVA hands it, far ones first.
+  rather than quietly copied or quietly fixed. **The arena and the cast
+  are the original’s too**: its scene file holds no model — every
+  “mesh” in it is a one-by-one quad with the height in the node’s
+  transform — so the layout was read out of it, two hundred tiles on
+  ten by twenty, and its seven character sprites sit in
+  `apps/tactics/assets/` under its MIT licence. What is ours is the
+  renderer: Godot draws with a GPU; this is isometric blocks the host
+  paints from a list LOVA hands it, far ones first.
 
   ![a tactics battle on blocks: the window is Python, the rules are LOVA](apps/tactics/screenshot.png)
 

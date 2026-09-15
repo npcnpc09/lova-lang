@@ -449,9 +449,19 @@ rewritten as `lib/tactics.lova` against its GDScript:
 - `Stats`: movement 3, `jump = floor(movement / 2)`, 5 health, reach 1,
   power 1
 
-What a click *means* is decided in LOVA too, because it is a rule.  The
-arena and the picture are ours -- the original's arena is a 170 KB
-Godot scene and its renderer is a GPU.
+What a click *means* is decided in LOVA too, because it is a rule.
+
+**The arena and the cast are the original's as well.**  Its
+`test_arena.tscn` holds no model -- every "mesh" in that file is a
+one-by-one quad, the top face of a tile, with the height in the node's
+own transform -- so what there was to take was the layout, and it was
+taken: two hundred tiles on ten by twenty, heights in eighths of a tile
+because its ramps go down to an eighth.  The seven character sprites
+are in `apps/tactics/assets/` under the original's MIT licence, which
+travels with them; each is a 128 x 256 sheet of two frames and the
+lower one faces the camera.  Delete them and the app draws figures of
+its own instead.  The renderer is ours: Godot draws with a GPU, this is
+isometric blocks a host paints from a list, far ones first.
 
 Two places where the original contradicts itself are called out in the
 header of `lib/tactics.lova` rather than quietly copied or quietly
