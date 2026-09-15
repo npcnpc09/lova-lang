@@ -1,0 +1,153 @@
+;;; maze.lova  --  a first-person 3D maze in a terminal, a line a turn
+;;;
+;;;   lova run apps/maze.lova 0
+;;;   printf 'wwww\nd\nww\n' | lova run apps/maze.lova 0
+;;;
+;;; Each line you type is a run of moves, played in order, and then the
+;;; view is drawn: `w` forward, `s` back, `a` turn left, `d` turn
+;;; right, `z` and `x` step sideways, an empty line waits, `q` quits.
+;;; So `wwwd` walks three steps and turns.  The argument is which way
+;;; you face at the start.
+;;;
+;;; Six orbs are scattered in the maze; carry all six to the door in
+;;; the south-east and it opens.  The value of the program is the
+;;; number of moves it took you.
+;;;
+;;; The maze, the walking and the casting are `lib/ray.lova`; this file
+;;; is the terminal, and everything in it turns a `frame` -- a list of
+;;; columns and a list of orb columns, which the library computes
+;;; without knowing what a character is -- into text.  The same rules
+;;; run in real time in a window: `python apps/maze/maze3d.py`.
+
+(use "ray")
+
+(def SW [] 60)                          ; columns of view
+(def ROWS [] 22)                        ; rows of view
+(def MID [] 11)                         ; the horizon
+
+;; Near to far.  A wall further away is written with a lighter mark,
+;; and a wall you see edge-on (the `s` of a column) one lighter still,
+;; which is the whole of the lighting model.
+(def ramp [] "@#%=+:-.")
+
+(def shade [d side]
+  (nth ramp (min 7 (merge (div d ONE) (if side 1 0)))))
+
+;; The floor: a row near the bottom of the screen is floor close to
+;; your feet, a row near the horizon is floor far away.
+(def floor-char [y]
+  (nth ramp (min 7 (merge 3 (div MID (max 1 (sub y MID)))))))
+
+
+;; The ceiling is dark: a blank above the horizon is what makes a wall
+;; unmistakable in characters.
+
+;; --- one row of the picture -----------------------------------------
+
+(def NO-ORB [] (rec t 0 u 0 d 0))
+
+(def cell-char [cols orbs x y]
+  (let o (map-get orbs x NO-ORB)
+    (if (and (ge y (get o t)) (lt y (get o u)))
+      (if (lt (get o d) 2048) 79 111)   ; O near, o far
+      (let c (nth cols x)
+        (let h (get c h)
+          (let top (div (sub ROWS h) 2)
+            (cond (and (ge y top) (lt y (merge top h))) (shade (get c d) (get c s))
+                  (lt y MID) 32
+                  (floor-char y))))))))
+
+(def row-text [cols orbs y]
+  (text-of-chars (map (lambda x (cell-char cols orbs x y)) (range 0 SW))))
+
+;; --- the map in the corner ------------------------------------------
+;;
+;; Nine rows of the maze around you, drawn beside the first nine rows
+;; of the view: `A` is you (pointing the way you face), `o` an orb,
+;; `D` the door, `#` a wall.
+
+(def facing [w] (nth "ESWN" (mod (div (merge (mul 2 (get w ang)) 64) 128) 4)))
+
+(def map-char [w cx cy]
+  (cond (and (eq cx (div (get w px) ONE)) (eq cy (div (get w py) ONE))) (facing w)
+        (any (lambda o (and (eq (get o x) cx) (eq (get o y) cy))) (orbs-live w)) 111
+        (eq (wall-at cx cy) DOOR) 68
+        (wall-at cx cy) 35
+        46))
+
+(def map-row [w y]
+  (let cy (merge (sub (div (get w py) ONE) 4) y)
+    (text-of-chars (map (lambda i (map-char w (merge (sub (div (get w px) ONE) 4) i) cy))
+                        (range 0 9)))))
+
+;; --- the screen -----------------------------------------------------
+
+(def orb-map [f]
+  (fold (lambda m (lambda s (map-put m (get s c) s))) (nil) (get f spr)))
+
+(def screen [w]
+  (let f (frame w SW ROWS)
+    (let cols (get f cols)
+      (let orbs (orb-map f)
+        (join (map (lambda y
+                     (let line (row-text cols orbs y)
+                       (if (lt y 9)
+                         (join (list line (map-row w y)) "  ")
+                         line)))
+                   (range 0 ROWS))
+              10)))))
+
+(def show [w]
+  (seq (println (screen w))
+       (println (join (list "orbs left" (text-of (orbs-left w))
+                            " ticks" (text-of (get w turn))
+                            " facing" (text-of-chars (list (facing w)))
+                            (get w msg))
+                      "  "))
+       (println "")))
+
+;; --- the loop -------------------------------------------------------
+
+(def cmd-of [c]
+  (cond (eq c 119) 1                    ; w  forward
+        (eq c 115) 2                    ; s  back
+        (eq c 97) 3                     ; a  turn left
+        (eq c 100) 4                    ; d  turn right
+        (eq c 122) 5                    ; z  step left
+        (eq c 120) 6                    ; x  step right
+        0))
+
+
+;; A typed letter is worth several ticks of the world: a turn is 45
+;; degrees and a step is half a cell, where the window (which ticks ten
+;; times a second) wants them small.  The tick count is the world's,
+;; not the keyboard's.
+(def ticks [n] (cond (or (eq n 3) (eq n 4)) 4    ; a turn: 45 degrees
+                     (eq n 0) 0                  ; a wait, or a letter that means nothing
+                     2))                         ; a step: half a cell
+
+(def run-cmd [w c]
+  (let n (cmd-of c)
+    (fold (lambda ww (lambda i (step ww n))) w (range 0 (ticks n)))))
+
+(def one-turn [w]
+  (seq (show w)
+    (let line (stdin)
+      (if (nil? line)
+        (put w quit 1)
+        (let cs (take 16 (chomp line))
+          (if (contains cs 113)
+            (put w quit 1)
+            (fold (lambda ww (lambda c (run-cmd ww c))) (put w msg "") cs)))))))
+
+(def over [w] (or (get w status) (map-get w "quit" 0)))
+
+(def finish [w]
+  (seq (if (get w status) (show w) 0)
+       (println (if (get w status)
+                  "you are out -- the door closes behind you"
+                  "bye"))
+       (get w turn)))
+
+(seq (println "w forward, s back, a/d turn, z/x sidestep, q quits; several at once, e.g. wwd")
+     (finish (iterate (new-game {facing}) over one-turn)))

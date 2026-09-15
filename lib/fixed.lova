@@ -1,0 +1,58 @@
+;;; fixed.lova  --  arithmetic for a language with no floating point
+;;;
+;;; `(use "fixed")`.  A length is in 1024ths, an angle in 256ths of a
+;;; turn, and everything below is integers: a sine is a table lookup
+;;; with three reflections, a square root is Newton's method, and a
+;;; product of two fixed-point numbers is divided by ONE to bring it
+;;; back.  It is what `lib/ray.lova` casts rays with and what
+;;; `apps/cube.lova` turns a cube with; between them they are a
+;;; demonstration that a language without floats can still do
+;;; geometry, which was not obvious before either was written.
+;;;
+;;; The one rule to keep: after multiplying two fixed-point numbers,
+;;; divide by ONE.  After dividing one by another, multiply by ONE
+;;; first.  LOVA's integers are unbounded, so the intermediate never
+;;; overflows and the order does not matter.
+
+;; --- the unit and the circle ----------------------------------------
+;;
+;; ONE is 1.0.  A position is in 1024ths of a cell; an angle is in
+;; 256ths of a turn, so 64 units is a right angle.  `sin-q` is the
+;; first quarter of a sine, 1024 * sin(k * pi / 128), and the other
+;; three quarters are the same numbers reflected.
+
+(def ONE [] 1024)
+(def TURN [] 256)
+
+(def sin-q []
+  (list 0 25 50 75 100 125 150 175 200 224 249 273 297
+        321 345 369 392 415 438 460 483 505 526 548 569 590
+        610 630 650 669 688 706 724 742 759 775 792 807 822
+        837 851 865 878 891 903 915 926 936 946 955 964 972
+        980 987 993 999 1004 1009 1013 1016 1019 1021 1023 1024 1024))
+
+(def sin [ang]
+  (let k (mod ang TURN)
+    (cond (le k 64) (nth sin-q k)
+          (le k 128) (nth sin-q (sub 128 k))
+          (le k 192) (neg (nth sin-q (sub k 128)))
+          (neg (nth sin-q (sub TURN k))))))
+
+(def cos [ang] (sin (merge ang 64)))
+
+;; The integer square root, by Newton from above -- x becomes the mean
+;; of x and n/x, which halves the error every time.  Eight rounds settle
+;; anything up to ONE * ONE, and nothing here asks for more: it is used
+;; to give an orb its round edge, where an overestimate of a unit or
+;; two at the very rim is a fraction of a pixel.
+(def isqrt [n]
+  (if (lt n 4)
+    (if (gt n 0) 1 0)
+    (fold (lambda x (lambda i (div (merge x (div n x)) 2))) ONE (range 0 8))))
+
+(example (sin 0) 0)
+(example (sin 64) 1024)
+(example (sin 128) 0)
+(example (sin 192) -1024)
+(example (cos 0) 1024)
+

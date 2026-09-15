@@ -1,0 +1,320 @@
+;;; ray.lova  --  a first-person 3D maze, cast in fixed-point integers
+;;;
+;;; `(use "ray")` to get these.  Everything that *decides* -- the maze,
+;;; where you are, where a ray stops, how tall the wall is on the
+;;; screen, which orb you picked up, whether the door opens -- is here.
+;;; Nothing here draws a pixel or reads a key.  Two hosts share the
+;;; file: `apps/maze.lova` walks it a line at a time in a terminal and
+;;; draws the view in characters, and `apps/maze/maze3d.py` runs it in
+;;; real time in a window, calling `step` and `frame` from Python.
+;;;
+;;; LOVA has no floats.  Every number below is an integer; lengths are
+;;; in 1024ths of a cell and angles in 256ths of a turn, so a sine is a
+;;; table lookup and a perspective divide is `div`.  That is the whole
+;;; of the arithmetic a raycaster ever needed.
+;;;
+;;;   (new-game seed)       ; a fresh world
+;;;   (step w cmd)          ; one tick: 0 wait, 1 forward, 2 back,
+;;;                         ; 3 turn left, 4 turn right, 5 strafe left,
+;;;                         ; 6 strafe right
+;;;   (frame w sw sh)       ; the picture: sw columns, sh units tall
+;;;   (get w status)        ; 0 playing, 1 escaped
+;;;
+;;; Nothing is mutated.  A tick builds the next world from the last, so
+;;; a host may keep every world it has seen, replay them, or hand one
+;;; to another program.  `frame` is a pure function of the world: the
+;;; same world always paints the same picture.
+
+;; --- what the arithmetic is ------------------------------------------
+;;
+;; `lib/fixed.lova`: ONE is 1.0 in 1024ths, an angle is in 256ths of a
+;; turn, `sin` and `cos` read a 65-entry table, `isqrt` is Newton.
+
+(use "fixed")
+
+;; --- the maze -------------------------------------------------------
+;;
+;; 23 by 23.  A digit is a wall and says which wall: the quarters of
+;; the maze are built of different stuff, `5` is the outer shell and
+;; `6` is the door out.  `.` is floor.  The shell is unbroken, so a ray
+;; always stops and nothing inside ever looks outside the grid.
+
+(def MW [] 23)
+(def MH [] 23)
+
+(def level []
+  (list "55555555555555555555555"
+        "5.......1...2.........5"
+        "5111111.1.1.2..222.22.5"
+        "5.......1.1.2.....2...5"
+        "5.1111111.1.22222.2.225"
+        "5.1.....1.1...2...2...5"
+        "5.111.1.1.122.2.2.222.5"
+        "5.....1...1.2...2...2.5"
+        "51.11111111.22222.222.5"
+        "5...............2.....5"
+        "5...1.1.111222..2...225"
+        "5.3.3.3.........4.....5"
+        "5.3.3.3.333.4444444.4.5"
+        "5.3...3...3.4.....4...5"
+        "5.3333333.3.4.444...445"
+        "5.3.......3...4.......5"
+        "533.....3334444.......5"
+        "5.......3...4.........5"
+        "5.3.....3.3.4.4......45"
+        "5.........3.4.4.......5"
+        "5.3.3.33333.4.4......65"
+        "5.3.......3.....4...4.5"
+        "55555555555555555555555"))
+
+(def DOOR [] 54)                        ; the codepoint of `6`
+
+(def cell-key [x y] (merge (mul y MW) x))
+
+;; The wall map, built once: a cell key to the glyph standing in it.
+;; A `def` without parameters is a constant, so the 529 cells are read
+;; once however many rays are cast afterwards.
+(def walls []
+  (fold (lambda m (lambda y
+          (let row (nth level y)
+            (fold (lambda m2 (lambda x
+                    (let c (nth row x)
+                      (if (eq c 46) m2 (map-put m2 (cell-key x y) c)))))
+                  m (range 0 MW)))))
+        (nil) (range 0 MH)))
+
+;; Inside the shell -- what the ray marcher asks, ten times a ray and a
+;; thousand times a frame, so `cell-key` is written out rather than
+;; called.  No bounds test either: the shell is solid, so a ray stops
+;; before it can leave the grid.
+(def wall-in [x y] (map-get walls (merge (mul y MW) x) 0))
+
+;; Anywhere -- what collision asks.  Outside the grid is solid.
+(def wall-at [x y]
+  (if (and (and (ge x 0) (lt x MW)) (and (ge y 0) (lt y MH)))
+    (wall-in x y)
+    53))
+
+;; --- the world ------------------------------------------------------
+;;
+;; Six orbs in the far corners of the maze; carry them all to the door
+;; in the south-east and it opens.  `got` is a map of the orbs picked
+;; up, keyed by cell.
+
+(def orb-cells []
+  (list (rec x 21 y 1) (rec x 13 y 1) (rec x 19 y 5)
+        (rec x 21 y 19) (rec x 17 y 9) (rec x 13 y 19)))
+
+(def centre [c] (merge (mul c ONE) 512))
+
+(def new-game [seed]
+  (rec px (centre 1)
+       py (centre 1)
+       ang (mod (mul seed 8) TURN)
+       got (nil)
+       turn 0
+       msg ""
+       status 0))
+
+(def orb-left [w o] (not (map-get (get w got) (cell-key (get o x) (get o y)) 0)))
+(def orbs-live [w] (filter (lambda o (orb-left w o)) orb-cells))
+(def orbs-left [w] (len (orbs-live w)))
+
+;; --- moving ---------------------------------------------------------
+
+(def SPEED [] 240)                      ; a quarter of a cell a tick
+(def SPIN [] 8)                         ; 11.25 degrees a tick
+(def RAD [] 250)                        ; how close a wall may come
+
+;; The four corners of the body, so a corner never enters a wall.
+(def clear [x y]
+  (and (and (not (wall-at (div (sub x RAD) ONE) (div (sub y RAD) ONE)))
+            (not (wall-at (div (merge x RAD) ONE) (div (sub y RAD) ONE))))
+       (and (not (wall-at (div (sub x RAD) ONE) (div (merge y RAD) ONE)))
+            (not (wall-at (div (merge x RAD) ONE) (div (merge y RAD) ONE))))))
+
+;; Slide: the two axes are tried separately, so a wall taken at an
+;; angle rubs along instead of stopping you dead.
+(def slide [w dx dy]
+  (let nx (merge (get w px) dx)
+    (let w1 (if (clear nx (get w py)) (put w px nx) w)
+      (let ny (merge (get w1 py) dy)
+        (if (clear (get w1 px) ny) (put w1 py ny) w1)))))
+
+;; The door, if you are walking into it.
+(def door-ahead [w dx dy]
+  (let cx (div (merge (get w px) (mul dx 2)) ONE)
+    (let cy (div (merge (get w py) (mul dy 2)) ONE)
+      (eq (wall-at cx cy) DOOR))))
+
+(def walk [w dx dy]
+  (if (door-ahead w dx dy)
+    (if (orbs-left w)
+      (put w msg "the door is sealed -- the orbs first")
+      (put (put w status 1) msg "the door opens"))
+    (slide w dx dy)))
+
+;; An orb is taken by standing in its cell.
+(def take-orbs [w]
+  (let k (cell-key (div (get w px) ONE) (div (get w py) ONE))
+    (if (any (lambda o (eq (cell-key (get o x) (get o y)) k)) (orbs-live w))
+      (put (put w got (map-put (get w got) k 1)) msg "an orb")
+      w)))
+
+(def step [w cmd]
+  (let ang (get w ang)
+    (let dx (div (mul (cos ang) SPEED) ONE)
+      (let dy (div (mul (sin ang) SPEED) ONE)
+        ;; the message is cleared before the tick, never after: what the
+        ;; tick has to say about itself is the only thing left in it
+        (let w0 (put w msg "")
+          (let w1 (cond (eq cmd 1) (walk w0 dx dy)
+                        (eq cmd 2) (walk w0 (neg dx) (neg dy))
+                        (eq cmd 3) (put w0 ang (mod (sub ang SPIN) TURN))
+                        (eq cmd 4) (put w0 ang (mod (merge ang SPIN) TURN))
+                        (eq cmd 5) (walk w0 dy (neg dx))
+                        (eq cmd 6) (walk w0 (neg dy) dx)
+                        w0)
+            (put (take-orbs w1) turn (inc (get w turn)))))))))
+
+;; --- casting --------------------------------------------------------
+;;
+;; One ray a column, marched cell by cell (a DDA): keep how far it is to
+;; the next vertical grid line and to the next horizontal one, always
+;; cross the nearer, stop at the first wall.  The distance kept is the
+;; one measured along the view direction rather than along the ray,
+;; which is what stops a flat wall bulging in the middle.
+
+(def FOV [] 676)                        ; half a screen is 0.66 cells at 1 cell
+(def FAR [] 40)                         ; cells a ray may cross before giving up
+(def BIG [] 100000000)
+
+(def dda [mx my sdx sdy ddx ddy sx sy side n]
+  (if (gt n FAR)
+    (rec d (mul FAR ONE) k 53 s side)
+    (let c (wall-in mx my)
+      (if c
+        (rec d (max 1 (if side (sub sdy ddy) (sub sdx ddx))) k c s side)
+        (if (lt sdx sdy)
+          (dda (merge mx sx) my (merge sdx ddx) sdy ddx ddy sx sy 0 (inc n))
+          (dda mx (merge my sy) sdx (merge sdy ddy) ddx ddy sx sy 1 (inc n)))))))
+
+;; The wall, one record a column: how tall it stands in screen units,
+;; which wall it is, which face of it you see, how far away it is.
+;;
+;; Everything that is the same for every column -- where you stand,
+;; which way you face, which cell you are in and where in the cell --
+;; is computed once, outside the loop, and the ray for a column is a
+;; closure over it.  That is the difference between a frame that cost
+;; 53 000 steps and one that costs 33 000: measured, not guessed, with
+;; the `hot` list of a step trap.
+(def wall-view [w sw sh]
+  (let dx (cos (get w ang))
+    (let dy (sin (get w ang))
+      (let px (get w px)
+        (let py (get w py)
+          (let mx (div px ONE)
+            (let my (div py ONE)
+              (map (lambda col
+                (let cam (sub (div (mul (mul 2 col) ONE) sw) ONE)
+                  ;; the ray: the view direction, plus the screen plane
+                  ;; (the direction turned a right angle) scaled by how
+                  ;; far across the screen this column is
+                  (let rdx (sub dx (div (mul (div (mul dy FOV) ONE) cam) ONE))
+                    (let rdy (merge dy (div (mul (div (mul dx FOV) ONE) cam) ONE))
+                      ;; how far along the ray one whole cell of x is, and of y
+                      (let ddx (if (eq rdx 0) BIG (abs (div (mul ONE ONE) rdx)))
+                        (let ddy (if (eq rdy 0) BIG (abs (div (mul ONE ONE) rdy)))
+                          (let sdx (if (lt rdx 0)
+                                     (div (mul (sub px (mul mx ONE)) ddx) ONE)
+                                     (div (mul (sub (mul (inc mx) ONE) px) ddx) ONE))
+                            (let sdy (if (lt rdy 0)
+                                       (div (mul (sub py (mul my ONE)) ddy) ONE)
+                                       (div (mul (sub (mul (inc my) ONE) py) ddy) ONE))
+                              (let r (dda mx my sdx sdy ddx ddy
+                                          (if (lt rdx 0) -1 1) (if (lt rdy 0) -1 1) 0 0)
+                                (put r h (div (mul sh ONE) (get r d))))))))))))
+                (range 0 sw)))))))))
+
+;; --- the orbs on the screen -----------------------------------------
+;;
+;; An orb is a billboard: turn it into the camera's frame, and its
+;; depth is its projection on the view direction while its offset is
+;; its projection on the screen plane.  The plane is the direction
+;; turned a right angle and scaled by the field of view, which makes
+;; the two projections comparable: an orb at the edge of the screen has
+;; an offset equal to its depth.
+
+(def ORB-SIZE [] 2)                     ; an orb is 1/2 a cell across
+
+(def orb-seen [w o sw sh]
+  (let sx (sub (centre (get o x)) (get w px))
+    (let sy (sub (centre (get o y)) (get w py))
+      (let dx (cos (get w ang))
+        (let dy (sin (get w ang))
+          (let ty (div (merge (mul dx sx) (mul dy sy)) ONE)
+            (if (lt ty 256)
+              (rec v 0 a 0 b 0 t 0 u 0 d 0)   ; behind you, or on top of you
+              (let tx (neg (div (sub (mul dy sx) (mul dx sy)) FOV))
+                (let mid (div (mul sw (merge ONE (div (mul tx ONE) ty))) (mul 2 ONE))
+                  ;; half the width: a screen is 2 * FOV cells across at
+                  ;; one cell out, so an orb 1/ORB-SIZE cells wide covers
+                  ;; sw * ONE * ONE / (ORB-SIZE * 2 * FOV * ty) columns
+                  (let half (div (mul sw (mul ONE ONE))
+                                 (mul (mul 4 ORB-SIZE) (mul FOV ty)))
+                    (let size (div (mul sh ONE) (mul ORB-SIZE ty))
+                      ;; it rests on the floor: the floor at depth ty is
+                      ;; half a screen height below the horizon
+                      (let base (merge (div sh 2) (div (mul sh ONE) (mul 2 ty)))
+                        (rec v 1
+                             a (max 0 (sub mid half))
+                             b (min sw (merge mid half))
+                             c mid
+                             r (max 1 half)
+                             t (sub base size)
+                             u base
+                             d ty)))))))))))))
+
+;; One record a column: the columns an orb covers, minus those where a
+;; wall stands in front of it.  An orb is a ball, not a card: a column
+;; `k` steps from the middle of it is shortened by the circle,
+;; sqrt(1 - (k/r)^2), which is what `isqrt` is here for.
+(def orb-cols [s cols]
+  (let mid (div (merge (get s t) (get s u)) 2)
+    (let size (div (sub (get s u) (get s t)) 2)
+      ;; the rim column, where the ball covers less than half a unit of
+      ;; screen, is dropped rather than drawn as a spike
+      (filter (lambda o (gt (get o u) (get o t)))
+        (map (lambda c
+               (let k (div (mul (sub c (get s c)) ONE) (get s r))
+                 (let f (isqrt (sub (mul ONE ONE) (min (mul ONE ONE) (mul k k))))
+                   ;; rounded, not truncated: a host drawing in characters
+                 ;; has an orb three rows tall, and truncation would
+                 ;; leave every column but the middle one empty
+                 (let hh (div (merge (mul size f) 512) ONE)
+                     (rec c c t (sub mid hh) u (merge mid hh) d (get s d))))))
+             (filter (lambda c (gt (get (nth cols c) d) (get s d)))
+                     (range (get s a) (get s b))))))))
+
+(def orb-view [w cols sw sh]
+  (fold (lambda acc (lambda s (append acc (orb-cols s cols))))
+        (nil)
+        (sort-by (lambda p (lambda q (gt (get p d) (get q d))))
+                 (filter (lambda s (get s v))
+                         (map (lambda o (orb-seen w o sw sh)) (orbs-live w))))))
+
+;; --- the picture ----------------------------------------------------
+;;
+;; `sw` columns wide and `sh` units tall, whatever a host's pixels are.
+;; `cols` is the wall, one record a column; `spr` is the orbs, one
+;; record a column, the far ones first, each already tested against the
+;; wall in front of it.  A host draws `cols`, then `spr`, and is done.
+
+(def frame [w sw sh]
+  (let cols (wall-view w sw sh)
+    (rec cols cols
+         spr (orb-view w cols sw sh)
+         left (orbs-left w)
+         turn (get w turn)
+         msg (get w msg)
+         status (get w status))))

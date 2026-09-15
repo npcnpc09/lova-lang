@@ -317,6 +317,53 @@ python apps/tanks/tank_game.py                      # the window, in real time
 
 ![tank battle in a window; the window is Python, every rule is LOVA](tanks/screenshot.png)
 
+### `maze.lova` / `maze/maze3d.py`
+
+A first-person 3D maze, cast in fixed-point integers.  The rules are
+`lib/ray.lova`: the maze, where you stand, which way you face, where
+each ray stops, how tall that wall stands on the screen, which orb is
+in front of which wall, whether the door opens.  LOVA has no floating
+point, so lengths are in 1024ths of a cell and angles in 256ths of a
+turn; a sine is a lookup in a 65-entry table and the perspective is
+one `div`.  `lib/fixed.lova` holds that arithmetic on its own, because
+`apps/cube.lova` needs it too.
+
+The picture is `(frame w sw sh)`, and it knows nothing about pixels or
+characters: a list of `sw` columns -- each a height in screen units, a
+wall glyph, which face of it you see, and how far away it is -- plus
+the orbs, one record a column, the far ones first, each already tested
+against the wall in front of it and given its round edge by `isqrt`.
+Two hosts draw it.  `apps/maze.lova` is the terminal: a line of moves
+a turn, the view in characters with a plan of the maze beside it.
+`apps/maze/maze3d.py` is a window, tkinter and nothing else, eight
+times a second, with what the frame cost in steps in the corner --
+about 35 000 under a budget of two million.
+
+Six orbs are scattered about; carry all six to the door in the
+south-east and it opens.
+
+```
+python apps/maze/maze3d.py                  # W/S walk, A/D turn, Q/E sidestep, R restarts
+python -m core.cli run apps/maze.lova 0     # the terminal: wwd is three moves and a turn
+python -m core.cli check apps/maze.lova 0   # the examples in the library
+```
+
+![a first-person maze; the window is Python, the 3D is LOVA](maze/screenshot.png)
+
+### `cube.lova`
+
+The other kind of 3D, and the one that had to be said out loud: eight
+corners with three coordinates each, turned about two axes, moved away
+from the camera and divided by their depth.  Nothing in it is special
+to a grid -- it is the ordinary pipeline, in integers, on the same
+`lib/fixed.lova` the raycaster uses.  Enter turns it a step, a digit
+turns it that many, `q` stops; the nearest edge is written `@` and the
+furthest `.`, which is the only depth cue a terminal gives.
+
+```
+python -m core.cli run apps/cube.lova
+```
+
 ## Arguments
 
 A `{placeholder}` is filled from the command line in the order of

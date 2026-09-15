@@ -174,6 +174,8 @@ python apps/shell/policy_app.py       # http://127.0.0.1:8765
 # tank battle: the window is Python, every rule of the game is LOVA
 python apps/tanks/tank_game.py        # arrows move, space fires
 python -m core.cli run apps/tanks.lova 7   # the same game, turn by turn in the terminal
+python apps/maze/maze3d.py            # a first-person 3D maze, cast in integers
+python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded
 python -m core.cli repl
@@ -239,7 +241,7 @@ pip install -e ".[experiments]"
 
 ## What the programs show
 
-Fifteen programs in `apps/`, each written to use the language for
+Seventeen programs in `apps/`, each written to use the language for
 something and kept as a test. What they demonstrate:
 
 - **It runs a game.** Tank battle, in real time: eight enemies arrive
@@ -260,6 +262,29 @@ something and kept as a test. What they demonstrate:
   ```bash
   python apps/tanks/tank_game.py             # arrows move, space fires, R restarts
   python -m core.cli run apps/tanks.lova 7   # the terminal
+  ```
+
+- **It renders 3D.** A first-person maze: eighty rays a frame, cast
+  through a 23-by-23 grid, each marched cell by cell until it meets a
+  wall, and the wall drawn as tall as its distance says. LOVA has no
+  floating point, so every number in it is an integer -- lengths in
+  1024ths of a cell, angles in 256ths of a turn, a sine from a
+  65-entry table, a square root by Newton's method for the round edge
+  of an orb. The picture is one call, `(frame w 80 420)`: a list of
+  columns, each with a height, a wall and a distance, and the orbs
+  already tested against the wall in front of them. It costs about
+  35 000 steps, under a tenth of a second, and the window is tkinter
+  with nothing in it but the painting and the keys. `apps/cube.lova`
+  is the other kind of 3D on the same arithmetic -- eight corners, a
+  rotation about two axes, a perspective divide -- drawn in characters
+  in a terminal.
+
+  ![a first-person maze; the window is Python, the 3D is LOVA](apps/maze/screenshot.png)
+
+  ```bash
+  python apps/maze/maze3d.py                  # W/S walk, A/D turn, Q/E sidestep
+  python -m core.cli run apps/maze.lova 0     # the same maze, drawn in characters
+  python -m core.cli run apps/cube.lova       # a cube turning in three dimensions
   ```
 
 - **Logic runs right the first time.** The word count, the games, the

@@ -1,0 +1,153 @@
+;;; cube.lova  --  a cube turning in three dimensions, drawn in characters
+;;;
+;;;   lova run apps/cube.lova
+;;;   printf '\n\n\n\n' | lova run apps/cube.lova
+;;;
+;;; Press Enter to turn it one step, a digit to turn it that many, `q`
+;;; to stop.  The value of the program is the number of steps you
+;;; turned it.
+;;;
+;;; The maze next door is a raycaster -- a picture built out of a plan.
+;;; This is the other kind of 3D and the one that has to be said out
+;;; loud: eight corners with three coordinates each, turned about two
+;;; axes by a rotation, moved away from the camera, and divided by
+;;; their depth.  Nothing about it is special to a grid.  It is here
+;;; because LOVA has no floating point and the interesting question was
+;;; whether that costs it the geometry; `lib/fixed.lova` is the answer,
+;;; and this file and `lib/ray.lova` are the two uses of it.
+;;;
+;;; The edge nearest you is written `@` and the one furthest `.`, which
+;;; is the only depth cue a terminal gives you.
+
+(use "fixed")
+
+(def W [] 62)                           ; columns
+(def H [] 25)                           ; rows
+(def CX [] 31)
+(def CY [] 12)
+(def FOCX [] 30)                        ; columns across one unit at one unit out
+(def FOCY [] 13)                        ; and rows -- half, because a character
+                                        ; is about twice as tall as it is wide
+(def DEPTH [] 4096)                     ; the camera stands four units back
+(def SPIN [] 5)                         ; a step of the turn, about 7 degrees
+
+;; --- the solid ------------------------------------------------------
+;;
+;; The eight corners of a cube of side two, and the twelve edges as
+;; pairs of corner numbers.  Corner n has x negative when bit 0 is
+;; clear, y when bit 1 is, z when bit 2 is.
+
+(def corners []
+  (map (lambda n (rec x (if (mod n 2) ONE (neg ONE))
+                      y (if (mod (div n 2) 2) ONE (neg ONE))
+                      z (if (mod (div n 4) 2) ONE (neg ONE))))
+       (range 0 8)))
+
+(def edges []
+  (list (list 0 1) (list 1 3) (list 3 2) (list 2 0)
+        (list 4 5) (list 5 7) (list 7 6) (list 6 4)
+        (list 0 4) (list 1 5) (list 2 6) (list 3 7)))
+
+;; --- turning it -----------------------------------------------------
+;;
+;; About the vertical axis by `a`, then about the horizontal by `b`.
+;; Every product of two fixed-point numbers is divided by ONE to bring
+;; it back to the unit; that is the whole of the discipline.
+
+(def spin [v a b]
+  (let ca (cos a)
+    (let sa (sin a)
+      (let x1 (div (merge (mul (get v x) ca) (mul (get v z) sa)) ONE)
+        (let z1 (div (sub (mul (get v z) ca) (mul (get v x) sa)) ONE)
+          (let cb (cos b)
+            (let sb (sin b)
+              (let y1 (div (sub (mul (get v y) cb) (mul z1 sb)) ONE)
+                (let z2 (div (merge (mul (get v y) sb) (mul z1 cb)) ONE)
+                  (rec x x1 y y1 z (merge z2 DEPTH)))))))))))
+
+;; The perspective divide: a point twice as far away is half as far
+;; from the middle of the screen.  `z` is never zero -- the camera
+;; stands four units back and the cube reaches one and three quarters.
+(def project [v]
+  (rec c (merge CX (div (mul (get v x) FOCX) (get v z)))
+       r (sub CY (div (mul (get v y) FOCY) (get v z)))
+       z (get v z)))
+
+;; --- drawing it -----------------------------------------------------
+
+(def ramp [] "@#%=+:-.")
+
+;; Nearest is `@`, furthest `.`: z runs from DEPTH - ONE to DEPTH + ONE.
+(def depth-char [z]
+  (nth ramp (max 0 (min 7 (div (sub z (sub DEPTH ONE)) 256)))))
+
+(def plot [screen p]
+  (if (and (and (ge (get p c) 0) (lt (get p c) W))
+           (and (ge (get p r) 0) (lt (get p r) H)))
+    (map-put screen (merge (mul (get p r) W) (get p c)) (depth-char (get p z)))
+    screen))
+
+;; A segment, sampled at as many points as it is long in characters --
+;; one point a character is enough to leave no gaps.
+(def line [screen p q]
+  (let n (max 1 (max (abs (sub (get q c) (get p c)))
+                     (abs (sub (get q r) (get p r)))))
+    (fold (lambda s (lambda i
+            (plot s (rec c (merge (get p c) (div (mul (sub (get q c) (get p c)) i) n))
+                         r (merge (get p r) (div (mul (sub (get q r) (get p r)) i) n))
+                         z (merge (get p z) (div (mul (sub (get q z) (get p z)) i) n))))))
+          screen (range 0 (inc n)))))
+
+(def draw [a b]
+  (let ps (map (lambda v (project (spin v a b))) corners)
+    (fold (lambda s (lambda e (line s (nth ps (head e)) (nth ps (last e)))))
+          (nil) edges)))
+
+(def row-text [screen r]
+  (text-of-chars (map (lambda c (map-get screen (merge (mul r W) c) 32)) (range 0 W))))
+
+(def picture [a b]
+  (let screen (draw a b)
+    (join (map (lambda r (row-text screen r)) (range 0 H)) 10)))
+
+;; --- the loop -------------------------------------------------------
+;;
+;; The cursor home escape, so each picture is drawn over the last one
+;; rather than under it.  A terminal that does not know the escape
+;; prints the frames one below another, which is a flipbook and no
+;; worse than it sounds.
+
+(def home [] (text-of-chars (list 27 91 72 27 91 74)))
+
+(def show [w]
+  (seq (stdout home)
+       (println (picture (get w a) (get w b)))
+       (println (join (list "turn" (text-of (get w a)) "of" (text-of TURN)
+                            " tilt" (text-of (get w b))
+                            " -- Enter turns it, a digit turns it that far, q stops")
+                      32))))
+
+;; A line: `q` stops, a digit is that many steps, anything else is one.
+(def steps-of [line]
+  (cond (contains line 113) -1
+        (and (not (nil? line)) (digit (head line))) (sub (head line) 48)
+        1))
+
+(def one-turn [w]
+  (seq (show w)
+       ;; the end of the input, not an empty line: `stdin` keeps the
+       ;; terminator, so the test has to come before `chomp` takes it off
+       (let raw (stdin)
+         (if (nil? raw)
+           (put w quit 1)
+           (let n (steps-of (chomp raw))
+             (if (lt n 0)
+               (put w quit 1)
+               (put (put (put w a (mod (merge (get w a) (mul n SPIN)) TURN))
+                         b (mod (merge (get w b) (mul n 2)) TURN))
+                    turn (merge (get w turn) n))))))))
+
+(def over [w] (map-get w "quit" 0))
+
+(seq (stdout (text-of-chars (list 27 91 50 74)))     ; clear the screen
+     (get (iterate (rec a 28 b 20 turn 0) over one-turn) turn))
