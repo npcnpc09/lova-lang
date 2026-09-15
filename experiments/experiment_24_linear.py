@@ -2,7 +2,7 @@
 
     python experiments/experiment_24_linear.py tasks
     python experiments/experiment_24_linear.py card
-    python experiments/experiment_24_linear.py start --session L1 --task c01 [--frontier off]
+    python experiments/experiment_24_linear.py start --session L1 --task c01 [--frontier off|stack]
     python experiments/experiment_24_linear.py emit  --session L1 --tokens "merge 2 3"
     python experiments/experiment_24_linear.py state --session L1
     python experiments/experiment_24_linear.py finish --session L1
@@ -33,14 +33,21 @@ about remembering Greek letters.  A number is a literal, `ref` followed
 by a number is a reference to that binding, `"..."` is a text, and `;`
 closes a variadic.
 
-Two arms, so that the machine's help can be priced:
+Three arms, so that the machine's help can be priced:
 
-  --frontier on   (default) after every token the harness prints the
-                  set of tokens that may come next, and how many slots
-                  are still open.  This is Axiom 3 offered as an
-                  authoring interface.
-  --frontier off  the harness accepts or refuses, and says nothing
-                  else.  The writer must hold the shape alone.
+  --frontier on     (default) after every token the harness prints the
+                    set of tokens that may come next, and how many slots
+                    are still open.  This is Axiom 3 offered as an
+                    authoring interface.
+  --frontier off    the harness accepts or refuses, and says nothing
+                    else.  The writer must hold the shape alone.
+  --frontier stack  the pending stack instead of the alphabet: which
+                    forms are open, which operator owns each, what each
+                    still owes, and whether `;` may close the variadic
+                    in front of you.  This arm is Q108 -- the one thing
+                    all four sessions of the first run asked for, in
+                    those words, when asked what they would have wanted
+                    instead of the token list.
 """
 
 from __future__ import annotations
@@ -55,7 +62,7 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.compiler import CompileError, compile as lova_compile      # noqa: E402
-from core.generator import GenState                                  # noqa: E402
+from core.generator import GenState, render_pending                                  # noqa: E402
 from core.runtime import Runtime, evaluate                           # noqa: E402
 from core.surface import NAME_TO_TOKEN                               # noqa: E402
 from core.tokens import END, LIT_INT, LIT_TEXT, SIGNATURES, decode   # noqa: E402
@@ -137,6 +144,19 @@ def frontier_names(st: GenState) -> List[str]:
     if st.is_complete():
         return []
     return sorted(token_name(t) for t in st.valid_next(generate=False))
+
+
+def help_line(st: GenState, arm: str) -> str:
+    """What the harness says after a token, for the arm in force.
+
+    `stack` is Q108: Exp 24 found the alphabet inert -- every session
+    ignored it, and one was using it only as a checksum on its own arity
+    arithmetic -- and all four described the same replacement, which the
+    state machine already held.
+    """
+    if arm == "stack":
+        return "  " + render_pending(st).replace(chr(10), chr(10) + "  ")
+    return frontier_line(st)
 
 
 def frontier_line(st: GenState) -> str:
@@ -257,14 +277,15 @@ The tasks:
 
 
 def cmd_start(args) -> int:
-    data = {"task": args.task, "stream": [], "frontier": args.frontier == "on",
+    data = {"task": args.task, "stream": [], "frontier": args.frontier != "off",
+            "arm": args.frontier,
             "emits": 0, "refused": 0, "started": time.time()}
     _save(args.session, data)
     st = replay([])
     print(f"[{args.task}] {PROMPTS[args.task]}")
     print(f"  open slots: {len(st.stack)}")
     if data["frontier"]:
-        print(frontier_line(st))
+        print(help_line(st, data.get("arm", "on")))
     return 0
 
 
@@ -311,7 +332,7 @@ def cmd_emit(args) -> int:
             print("  the program is complete; use `finish`")
         else:
             print(f"  open slots: {len(st.stack)}")
-            print(frontier_line(st))
+            print(help_line(st, data.get("arm", "on")))
     return 0 if not refusal else 1
 
 
@@ -325,7 +346,7 @@ def cmd_state(args) -> int:
             print("  complete")
         else:
             print(f"  open slots: {len(st.stack)}")
-            print(frontier_line(st))
+            print(help_line(st, data.get("arm", "on")))
     return 0
 
 
@@ -352,7 +373,8 @@ def cmd_finish(args) -> int:
           f"({n} tokens, {data['emits']} written, {data['refused']} refusals)")
     _log(args.session, {"task": data["task"], "final": True, "passed": ok, "got": str(got),
                         "tokens": n, "written": data["emits"], "refusals": data["refused"],
-                        "frontier": data["frontier"], "time": time.time()})
+                        "frontier": data["frontier"],
+                        "arm": data.get("arm", "on"), "time": time.time()})
     return 0 if ok else 1
 
 
@@ -368,7 +390,8 @@ def cmd_report(args) -> int:
             r = json.loads(line)
             if not r.get("final"):
                 continue
-            arm = "frontier" if r.get("frontier") else "blind"
+            arm = r.get("arm") or ("frontier" if r.get("frontier") else "blind")
+            arm = {"on": "frontier", "off": "blind"}.get(arm, arm)
             print(f"  {sess:8s} {arm:8s} {r['task']:5s} {'yes' if r['passed'] else 'no':5s} "
                   f"{r.get('tokens',0):6d} {r.get('written',0):7d} {r.get('refusals',0):8d}")
     return 0
@@ -417,7 +440,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("card"); p.set_defaults(func=cmd_card)
     p = sub.add_parser("start"); p.add_argument("--session", required=True)
     p.add_argument("--task", required=True, choices=list(TASKS))
-    p.add_argument("--frontier", default="on", choices=["on", "off"]); p.set_defaults(func=cmd_start)
+    p.add_argument("--frontier", default="on", choices=["on", "off", "stack"])
+    p.set_defaults(func=cmd_start)
     p = sub.add_parser("emit"); p.add_argument("--session", required=True)
     p.add_argument("--tokens", required=True); p.set_defaults(func=cmd_emit)
     p = sub.add_parser("state"); p.add_argument("--session", required=True); p.set_defaults(func=cmd_state)

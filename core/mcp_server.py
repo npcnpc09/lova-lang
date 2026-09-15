@@ -38,7 +38,7 @@ from core.cli import (
 )
 from core.compiler import CompileError
 from core.conservation import BudgetTrap, DeltaTrap
-from core.generator import GenState, cheapest_to_finish
+from core.generator import GenState, cheapest_to_finish, pending
 from core.observability import static_analyze, valid_next_with_stats
 from core.runtime import Runtime, evaluate, is_list_value, list_to_python
 from core.surface import pretty
@@ -423,7 +423,8 @@ def tool_valid_next(params: Dict[str, Any]) -> Dict[str, Any]:
     except (ValueError, KeyError) as exc:
         return {"ok": False, "stage": "prefix", "anomaly": {"kind": "error", "message": str(exc)}}
     if state.is_complete():
-        return {"ok": True, "complete": True, "choices": [], "depth": 0}
+        return {"ok": True, "complete": True, "choices": [], "depth": 0,
+                "pending": pending(state)}
     slot = state.stack[-1]
     choices = valid_next_with_stats(state, telemetry=_load_telemetry())
     valid = state.valid_next()
@@ -437,6 +438,10 @@ def tool_valid_next(params: Dict[str, Any]) -> Dict[str, Any]:
         "literal_role": slot.role,
         "choices": [_jsonable(asdict(c)) for c in choices],
         "finish_soonest": [SIGNATURES[t]["name"] if t != END else "end" for t in sorted(soonest)],
+        # Q108.  Four sessions in Exp 24 ignored the alphabet and asked
+        # for this instead: which forms are open, what each still owes,
+        # and whether the variadic may be closed here.
+        "pending": pending(state),
     }
     if slot.role == "ref-name":
         out["names_in_scope"] = state.valid_names()

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field, replace
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from core.tokens import (
     APPLY, END, IF_SURPRISE, LAMBDA, LET, LIT_INT, REF,
@@ -69,6 +69,12 @@ class Slot:
     # a nested one may only narrow (Q70).
     caps: int = 0
     enclosed: bool = False
+    # Q108 -- the stack depth this slot's form was opened at, which is
+    # what tells two forms apart when they are the same operator and
+    # their slots sit next to each other: in `(merge (merge 1 2) 3)` all
+    # three outstanding slots say `parent_op = merge`, and only the
+    # depth says that two of them belong to the inner one.
+    form: int = -1
 
 
 @dataclass
@@ -326,14 +332,16 @@ class GenState:
                     parent_op=token,
                     caps=top.caps,
                     enclosed=top.enclosed,
+                    form=base,
                 )
             )
             for t in reversed(sig.get("head_types", ())):
                 new_stack.append(Slot(expected_type=t, parent_op=token,
-                                      caps=top.caps, enclosed=top.enclosed))
+                                      caps=top.caps, enclosed=top.enclosed,
+                                      form=base))
         else:
             children = [Slot(expected_type=t, parent_op=token,
-                             caps=top.caps, enclosed=top.enclosed)
+                             caps=top.caps, enclosed=top.enclosed, form=base)
                         for t in _child_types(token, top.expected_type)]
             if token == EXTERNAL_BOUNDARY:
                 children[0].role = "caps"
@@ -364,6 +372,128 @@ class GenState:
             if f.pending and len(new_stack) <= f.base + 1:
                 f.pending = False
         return GenState(stack=new_stack, scopes=live, track_scope=self.track_scope)
+
+
+# --- the pending stack (Q108) ------------------------------------------------
+#
+# Experiment 24 put four sessions in front of the generation state
+# machine and offered them, at every position, the set of tokens that
+# would be accepted.  All four ignored it -- "the linearisation was a
+# mechanical transcription step" -- and all four, asked what they would
+# have wanted instead, described the same thing in the same words: not
+# the alphabet, the *stack*.  Which forms are open, which operator owns
+# each, how much each still owes, and whether the variadic in front of
+# you may be closed here.  One session had been using the valid-token
+# list as a checksum on its own arity arithmetic, which is the same
+# request from the other side.
+#
+# The machine already holds it.  Slots are pushed a run at a time, one
+# run per operator, so consecutive slots sharing a ``parent_op`` are one
+# open form and the runs from the bottom up are the forms from the
+# outermost in.  What was missing was a way to ask.
+
+
+@dataclass(frozen=True)
+class OpenForm:
+    """One form that has been opened and not yet filled.
+
+    ``owes`` is how many slots it still has to be given; ``types`` are
+    those slots in the order they will be filled; ``variadic`` says the
+    form takes any number of them and is closed by ``END``.
+    """
+    op: Optional[int]
+    name: str
+    owes: int
+    types: Tuple[str, ...]
+    variadic: bool
+    depth: int
+
+
+def open_forms(state: "GenState") -> List[OpenForm]:
+    """The forms standing open, outermost first, innermost last."""
+    forms: List[OpenForm] = []
+    run: List[Slot] = []
+
+    def flush() -> None:
+        if not run:
+            return
+        op = run[0].parent_op
+        forms.append(OpenForm(
+            op=op,
+            name=SIGNATURES[op]["name"] if op is not None else "program",
+            owes=len(run),
+            # the top of the stack is filled first, so the run reads
+            # backwards into fill order
+            types=tuple(str(s.expected_type) for s in reversed(run)),
+            variadic=any(s.variadic_continuation for s in run),
+            depth=len(forms),
+        ))
+        run.clear()
+
+    for slot in state.stack:
+        if run and (slot.parent_op, slot.form) != (run[0].parent_op, run[0].form):
+            flush()
+        run.append(slot)
+    flush()
+    return forms
+
+
+def pending(state: "GenState") -> Dict[str, Any]:
+    """What the program still owes, rather than what it may say next.
+
+    ``debt`` is the total number of slots outstanding -- the checksum a
+    session in Exp 24 was computing by hand from the valid-token list.
+    ``may_close`` says whether ``END`` is legal here, which is the one
+    question the variadic raises and the only one the alphabet answered
+    obliquely.
+    """
+    if state.is_complete():
+        return {"complete": True, "debt": 0, "open": [], "may_close": False,
+                "next": None, "render": "complete"}
+    top = state.stack[-1]
+    forms = open_forms(state)
+    out: Dict[str, Any] = {
+        "complete": False,
+        "debt": len(state.stack),
+        "open": [{"op": f.name, "owes": f.owes, "types": list(f.types),
+                  "variadic": f.variadic} for f in forms],
+        "may_close": END in state.valid_next(generate=False),
+        "next": {
+            "type": str(top.expected_type),
+            "in": SIGNATURES[top.parent_op]["name"] if top.parent_op is not None else "program",
+            "role": top.role,
+        },
+        "render": "",
+    }
+    if top.role == "ref-name":
+        out["next"]["names_in_scope"] = state.valid_names()
+    out["render"] = render_pending(state, cached=out)
+    return out
+
+
+def render_pending(state: "GenState", cached: Optional[Dict[str, Any]] = None) -> str:
+    """The pending stack as two lines an author can read at a glance.
+
+        open  program:1 > if-surprise:2(Int Int) > seq:variadic
+        next  Int in seq   `;` closes it here   debt 4
+    """
+    if state.is_complete():
+        return "complete: nothing is open"
+    forms = open_forms(state)
+    chain = " > ".join(
+        f"{f.name}:{'variadic' if f.variadic else f.owes}"
+        + (f"({' '.join(f.types)})" if not f.variadic and f.owes else "")
+        for f in forms
+    )
+    top = state.stack[-1]
+    where = SIGNATURES[top.parent_op]["name"] if top.parent_op is not None else "program"
+    may_close = (cached or {}).get("may_close")
+    if may_close is None:
+        may_close = END in state.valid_next(generate=False)
+    tail = "  `;` closes it here" if may_close else ""
+    role = f" [{top.role}]" if top.role else ""
+    return (f"open  {chain}\n"
+            f"next  {top.expected_type} in {where}{role}{tail}   debt {len(state.stack)}")
 
 
 # --- termination control -----------------------------------------------------

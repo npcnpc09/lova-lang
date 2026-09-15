@@ -340,6 +340,19 @@ arity for nine milestones and never an implementation:
 The DNA OS lineage for the *architecture* is unaffected; these slots
 changed hands, and the core is still exactly 64 operators.
 
+**The pending stack, not the alphabet** (Q108, built 2026-09-15). Exp
+24 offered four sessions the set of tokens that would be accepted at
+every position; all four ignored it, and all four asked for the same
+replacement in the same words -- which forms are open, which operator
+owns each, what each still owes, and whether the variadic in front of
+you may be closed. `core/generator.py` now answers that: `open_forms`,
+`pending` and `render_pending`, with each slot carrying the depth its
+form was opened at so that two `merge`s nested in each other are two
+forms and not one owing three. `lova_valid_next` returns it beside the
+choices, and `experiments/experiment_24_linear.py` has a third arm,
+`--frontier stack`, so the re-run Q108 asks for is one flag. The
+re-run itself needs fresh sessions and has not been done.
+
 **Three messages that pointed at the wrong place** (2026-09-15, from
 writing 3 000 lines of `lib/` in one session -- journal Exp 25). A
 missing paren on a nested curried lambda was reported as `lambda:
@@ -891,7 +904,7 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-920 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+939 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 22 first-class apps (the last the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

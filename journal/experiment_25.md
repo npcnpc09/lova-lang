@@ -119,7 +119,10 @@ it is most of what an agent does with a machine.
 
 ## Next questions raised
 
-- **Q109: does the language need a pattern operator?** Not a regex
+*(numbered from Q112: Exp 24 had already raised Q108 to Q111, and the
+first draft of this entry collided with them.)*
+
+- **Q112: does the language need a pattern operator?** Not a regex
   engine — the question is what the smallest thing is that would have
   made F1 to F4 impossible. Candidates: a `split-on` that takes a
   delimiter and returns the pieces with their separators; a `scan` that
@@ -128,7 +131,7 @@ it is most of what an agent does with a machine.
   `spec/token-budget.md` says eight are free. Measure before spending:
   the same four readers, written both ways, counted in defects and in
   steps.
-- **Q110 (closed the same day): should the balance of a form be checked
+- **Q113 (closed the same day): should the balance of a form be checked
   before the parser reports arity?** Yes. A parse error now carries the
   first top-level form whose parentheses never close, names it by its
   first line, and moves the span there -- the original message is kept
@@ -146,7 +149,7 @@ it is most of what an agent does with a machine.
   enough that the check costs more than the mistake. A `def` is still
   refused, because a `def` of an operator's name is dead the moment it
   is written; a `let` of one is only dead if it is *called*.
-- **Q111: what is the cost of the policy at fleet scale under PyPy,**
+- **Q114: what is the cost of the policy at fleet scale under PyPy,**
   and does the 4.4 s figure matter at all when every reading behind it
   cost an SSH round trip with a ten-second timeout?
 

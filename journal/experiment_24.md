@@ -266,6 +266,18 @@ already holds it.
   whether `;` is legal here", and re-run this experiment. It is the
   one thing all four sessions asked for, and the state machine already
   has it.
+
+  **Half done, 2026-09-15.** The rendering exists: `open_forms`,
+  `pending` and `render_pending` in `core/generator.py`, returned by
+  `lova_valid_next` and available to this harness as a third arm,
+  `--frontier stack`. Building it turned up one thing worth recording:
+  the slots of two forms of the *same* operator sit next to each other
+  on the stack and cannot be told apart by `parent_op` alone, so a slot
+  now carries the depth its form was opened at -- without which
+  `(merge (merge ...) ...)` would have been reported as one form owing
+  three. `tests/test_pending.py` (19) holds that case and the variadic
+  ones. What is *not* done is the half that matters: the re-run needs
+  four fresh sessions, as the first run had.
 - **Q111** -- allow one retraction: let a session un-emit the last
   token (or the last subtree) and see whether incremental composition
   appears when a mistake stops being fatal. F7 says the write-once rule
