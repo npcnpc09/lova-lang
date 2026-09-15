@@ -22,7 +22,7 @@ from core.runtime import Runtime, _call, _map_key, evaluate, list_to_python
 API = """\
 (use "war")
 (rec ground terrain new new-war tick tick spr sprites left standing
-     select select all select-all order order pick pick
+     select choose all select-all order order pick pick
      light light-of walk walkable wet wet lo cell-lo
      placeu place-u placev place-v n N
      units (lambda w (get w units)))

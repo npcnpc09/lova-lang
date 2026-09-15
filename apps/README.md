@@ -428,6 +428,48 @@ python -m core.cli check apps/g2048.lova 7   # 11/11 examples
 
 ![2048; the window is Python, the rules are LOVA](g2048/screenshot.png)
 
+### `tactics/tactics.py`
+
+**The second port, and the first from a game engine.**  The rules of
+[ramaureirac/godot-tactical-rpg](https://github.com/ramaureirac/godot-tactical-rpg)
+(MIT, ~960 stars), a Final-Fantasy-Tactics-shaped demo for Godot 4,
+rewritten as `lib/tactics.lova` against its GDScript:
+
+- `process_surrounding_tiles` -- a breadth-first flood from the tile a
+  pawn stands on, one step a tile, across the four neighbours whose
+  height is within its jump
+- `mark_reachable_tiles` -- `0 < distance <= movement` and nobody
+  standing there; `mark_attackable_tiles` -- `0 < distance <= range`
+- damage is `stats.apply_to_curr_health(-attack_power)`: the attacker's
+  power and nothing else, no height bonus, no facing, no roll
+- the opponent is `choose_pawn` then `chase_nearest_enemy` then
+  `choose_pawn_to_attack`: the first of its own that can still act, the
+  tile beside the nearest of yours walked back until it can reach it,
+  and then the weakest thing in range
+- `Stats`: movement 3, `jump = floor(movement / 2)`, 5 health, reach 1,
+  power 1
+
+What a click *means* is decided in LOVA too, because it is a rule.  The
+arena and the picture are ours -- the original's arena is a 170 KB
+Godot scene and its renderer is a GPU.
+
+Two places where the original contradicts itself are called out in the
+header of `lib/tactics.lova` rather than quietly copied or quietly
+fixed: it passes `movement` where its own flood wants a height, and an
+`elif` that reads backwards lets *you* walk through an occupied tile
+while refusing the opponent the same.  `tests/test_tactics.py` holds a
+transliteration of the original's flood and compares the distance to
+every cell of the arena for every kind of pawn.
+
+The battle costs about 40 000 LOVA steps a picture, 130 000 with a pawn
+picked up (the flood), and a few thousand for a click.
+
+```
+python apps/tactics/tactics.py   # click one of yours, space ends the turn, R again
+```
+
+![a tactics battle on blocks; the window is Python, the rules are LOVA](tactics/screenshot.png)
+
 ## Arguments
 
 A `{placeholder}` is filled from the command line in the order of

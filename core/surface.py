@@ -151,6 +151,34 @@ _BINDER_HEADS = frozenset({"let", "lambda", "defn"})
 _NAME_HEADS = _BINDER_HEADS | {"ref"}
 
 
+def _binding(label: str, where: str, syms: "SymbolTable") -> int:
+    """Intern a name a program *binds*, refusing one the surface owns.
+
+    `(def dist [a b] 99)` parsed happily until 2026-09-15, and `(dist 1
+    2)` then went to the operator `dist` is the short spelling of: a
+    definition nothing could call, and a wrong value with no
+    diagnostic -- the one failure the type constraint does not cover
+    (Exp 23 F3, "a swapped or shadowed reference stays well-typed").
+    Found by the tactics port, where `dist` was the obvious name for a
+    distance and the program quietly computed `surprise` instead.
+
+    Only a *definition* is refused, not a parameter: `(def split [text
+    sep] (text-split text sep))` in the prelude reads `text` as a value
+    and never calls it, and taking that away would cost more than the
+    mistake it prevents.  A definition, by contrast, is dead the moment
+    it is written.
+    """
+    from core.tokens import NAME_TO_TOKEN as _OPS, SURFACE_ALIASES as _ALIASES
+
+    if label in _OPS or label in _ALIASES or label in MACROS:
+        raise ValueError(
+            f"{where}: `{label}` is the surface name of an operator, so a "
+            f"program cannot bind it -- a call would go to the operator and "
+            f"never to this binding. Give it another name."
+        )
+    return syms.intern(label)
+
+
 class SymbolTable:
     """Surface identifier -> substrate name id, for one parse."""
 
@@ -333,7 +361,7 @@ def _parse_defn_inner(
     if cursor >= len(tokens) or not _is_identifier(tokens[cursor]):
         raise ValueError("defn: expected a name after `defn`")
     label = tokens[cursor]
-    name_id = syms.intern(label)
+    name_id = _binding(label, "defn", syms)
     cursor += 1
     if cursor >= len(tokens) or tokens[cursor] != "[":
         raise ValueError(f"defn {label!r}: expected a bracketed parameter list")

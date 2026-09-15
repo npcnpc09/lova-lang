@@ -43,7 +43,7 @@ from core.runtime import Runtime, _call, _map_key, evaluate, list_to_python
 SOURCE = """\
 (use "war")
 (rec ground terrain new new-war tick tick spr sprites
-     left standing select select all select-all order order)
+     left standing select choose all select-all order order)
 """
 
 VIEW_W, VIEW_H = 1000, 620

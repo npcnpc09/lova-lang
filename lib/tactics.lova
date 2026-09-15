@@ -1,0 +1,453 @@
+;;; tactics.lova  --  a tactics battle, ported from godot-tactical-rpg
+;;;
+;;; A port of the rules of ramaureirac/godot-tactical-rpg (MIT, 963
+;;; stars), a Final-Fantasy-Tactics-shaped demo for the Godot engine.
+;;; Its GDScript is the specification followed here:
+;;;
+;;;   process_surrounding_tiles   a breadth-first flood from the tile a
+;;;     pawn stands on, one step a tile, across the four neighbours
+;;;     whose height is within reach
+;;;   mark_reachable_tiles        0 < distance <= movement, and nobody
+;;;     standing there -- or the tile you are already on
+;;;   mark_attackable_tiles       0 < distance <= attack range, or the
+;;;     tile you are already on
+;;;   attack                      health = health - attack_power, with
+;;;     no modifier of any kind (`stats.apply_to_curr_health`)
+;;;   get_weakest_attackable_pawn the enemy with the least health left
+;;;   get_nearest_target_adjacent_tile  the tile beside an enemy with
+;;;     the smallest flood distance, walked back along the flood until
+;;;     it is one this pawn can actually reach
+;;;   Stats                       movement 3, jump = floor(movement/2),
+;;;     max_health 5, attack_range 1, attack_power 1
+;;;
+;;; Two places where the original is inconsistent with itself, and what
+;;; this port does about them, said out loud rather than quietly:
+;;;
+;;;   1. `chase_nearest_enemy` passes the pawn's *movement* where
+;;;      `process_surrounding_tiles` wants a height, so an opponent
+;;;      climbs as high as it can walk far, while `get_nearest_target_
+;;;      adjacent_tile` uses `stats.jump` two lines later.  Here the
+;;;      flood always takes `jump`, which is what the stat is for.
+;;;   2. Its flood lets the player walk through an occupied tile but
+;;;      refuses the opponent even that, because of an `elif not
+;;;      (allies_on_map.size() > 0)` that reads the wrong way round.
+;;;      Here both sides walk through their own and neither walks
+;;;      through the enemy, which is the rule the code was reaching
+;;;      for.  `tests/test_tactics.py` checks the flood itself against a
+;;;      transliteration of the original, which is where fidelity is
+;;;      worth having.
+;;;
+;;; The arena is ours -- the original's is a 170 KB Godot scene -- and
+;;; so is the picture.  Nothing in here draws: a host gets a list of
+;;; blocks in the order to paint them and a list of pawns, and owns the
+;;; pixels.
+
+(use "fixed")
+
+;; --- the arena ------------------------------------------------------
+;;
+;; A digit is the height of the block standing in that cell; `.` is a
+;; hole with no block at all, which nothing can stand on and nothing can
+;; cross.  Heights are levels, not lengths: a pawn with jump 1 can step
+;; between 3 and 4 but not between 3 and 5.
+
+(def N [] 12)
+
+(def level []
+  (list "111111222111"
+        "111122222211"
+        "112224443221"
+        "11223..43221"
+        "1223..443211"
+        "122344443221"
+        "122344433221"
+        "11234433..21"
+        "112333322.11"
+        "111223322111"
+        "111122221111"
+        "111111111111"))
+
+(def on-grid [x y] (and (and (ge x 0) (lt x N)) (and (ge y 0) (lt y N))))
+
+;; Read once: a `def` with no parameters is a constant, and a flood asks
+;; for a height fifteen hundred times, where reading the digit out of
+;; the text each time was a third of what a turn cost.
+;;
+;; The key is shifted by one and the row is two wider than the arena, so
+;; the ring of cells just outside it has keys of its own and asks no
+;; bounds question: off the map reads as -1 because nothing was ever
+;; written there.  A bounds test in `hgt` was 24 of its 37 steps.
+(def hkey [x y] (merge (mul (merge y 1) (merge N 2)) (merge x 1)))
+
+(def heights []
+  (fold (lambda m (lambda y
+          (let row (nth level y)
+            (fold (lambda m2 (lambda x
+                    (let c (nth row x)
+                      (map-put m2 (hkey x y) (if (eq c 46) -1 (sub c 48))))))
+                  m (range 0 N)))))
+        (nil) (range 0 N)))
+
+(def hgt [x y] (map-get heights (hkey x y) -1))
+
+(def solid [x y] (ge (hgt x y) 0))
+
+(def ckey [x y] (merge (mul y N) x))
+(def key-x [k] (mod k N))
+(def key-y [k] (div k N))
+
+;; --- the camera -----------------------------------------------------
+;;
+;; Isometric, as the original's is: x to the south-east, y to the
+;; south-west, height straight up.  No perspective divide, so a host
+;; that pans is translating and can paint the arena into a canvas and
+;; scroll it.
+
+(def TW [] 56)                          ; a block is this wide
+(def TH [] 28)                          ; and this deep
+(def ZH [] 22)                          ; a level of height is this tall
+(def OX [] (merge (div (mul N TW) 2) 40))
+(def OY [] 76)
+
+(def cu [x y] (merge OX (div (mul (sub x y) TW) 2)))
+(def cv [x y h] (sub (merge OY (div (mul (merge x y) TH) 2)) (mul h ZH)))
+
+;; --- the pawns ------------------------------------------------------
+;;
+;; The original's Stats, with its defaults: movement 3, jump half of
+;; that rounded down, five health, reach one, one point of damage.  Two
+;; kinds beyond the default, because a demo with one kind of soldier
+;; shows nothing: a scout that goes further and jumps higher, and an
+;; archer that strikes from three tiles away.
+
+(def pawn-of [id team kind x y]
+  (let mv (cond (eq kind 1) 5 (eq kind 2) 3 3)
+    (rec id id team team kind kind x x y y
+         hp (cond (eq kind 1) 4 (eq kind 2) 4 5)
+         max (cond (eq kind 1) 4 (eq kind 2) 4 5)
+         mv mv
+         jump (div mv 2)
+         rng (if (eq kind 2) 3 1)
+         pow (if (eq kind 2) 1 2)
+         moved 0 struck 0)))
+
+(def start-pawns []
+  (list (pawn-of 0 0 0 1 9) (pawn-of 1 0 1 2 10) (pawn-of 2 0 2 1 10)
+        (pawn-of 3 1 0 10 2) (pawn-of 4 1 1 9 1) (pawn-of 5 1 2 10 1)))
+
+(def new-battle [seed]
+  (rec pawns start-pawns
+       side 0                           ; whose turn it is: 0 you, 1 them
+       sel -1                           ; the pawn picked up, by id
+       round 1
+       msg ""
+       over 0))
+
+(def living [w] (filter (lambda p (gt (get p hp) 0)) (get w pawns)))
+(def side-of [w s] (filter (lambda p (eq (get p team) s)) (living w)))
+(def pawn-by [w id]
+  (fold (lambda a (lambda p (if (eq (get p id) id) p a)))
+        (pawn-of -1 -1 0 -1 -1) (get w pawns)))
+(def pawn-at [w x y]
+  (fold (lambda a (lambda p (if (and (eq (get p x) x) (eq (get p y) y)) p a)))
+        (pawn-of -1 -1 0 -1 -1) (living w)))
+
+;; --- the flood ------------------------------------------------------
+;;
+;; `process_surrounding_tiles`: breadth first from the tile the pawn
+;; stands on, one step a tile.  A neighbour counts if there is a block
+;; there, if the step up or down is within the pawn's jump, and if
+;; nobody the pawn cannot walk through is standing on it.  Distances
+;; come back as a map, cell to steps; the tile itself is not in it,
+;; which is the original's `pf_distance > 0`.
+
+(def dxs [] (list 1 -1 0 0))
+(def dys [] (list 0 0 1 -1))
+
+(def nobody [] (pawn-of -1 -1 0 -1 -1))
+(def who-at [who k] (map-get who k nobody))
+(def held [who k] (ge (get (who-at who k) id) 0))
+
+(def steppable [who p through climb fh tx ty]
+  (let ht (hgt tx ty)
+    (and (ge ht 0)
+         (and (le (abs (sub ht fh)) climb)
+              (or through
+                  (let o (who-at who (ckey tx ty))
+                    (or (lt (get o id) 0) (eq (get o team) (get p team)))))))))
+
+;; One ring further out: every cell a step from the frontier that has
+;; not been seen yet.
+(def flood [who p through climb]
+  (let k0 (ckey (get p x) (get p y))
+    (get (iterate (rec seen (map-put (nil) k0 0) frontier (list k0) d 0)
+                  (lambda s (nil? (get s frontier)))
+                  (lambda s
+                    (let d1 (inc (get s d))
+                      (fold
+                        (lambda a
+                          (lambda k
+                            (let kx (key-x k)
+                              (let ky (key-y k)
+                                (let fh (hgt kx ky)
+                                  (fold
+                                    (lambda b
+                                      (lambda i
+                                        (let tx (merge kx (nth dxs i))
+                                          (let ty (merge ky (nth dys i))
+                                            (let nk (ckey tx ty)
+                                              (if (and (steppable who p through climb fh tx ty)
+                                                       (lt (map-get (get b seen) nk -1) 0))
+                                                (put (put b seen (map-put (get b seen) nk d1))
+                                                     frontier (cons nk (get b frontier)))
+                                                b))))))
+                                    a
+                                    (range 0 4)))))))
+                        (put (put s frontier (nil)) d d1)
+                        (get s frontier)))))
+         seen)))
+
+(def steps-to [d k] (map-get d k -1))
+
+;; `mark_reachable_tiles`: far enough to be somewhere else, near enough
+;; to get to, and nobody already standing there.
+(def reachable [who p d k]
+  (let n (steps-to d k)
+    (and (gt n 0) (and (le n (get p mv)) (not (held who k))))))
+
+;; `mark_attackable_tiles`: near enough to reach with the weapon.  Its
+;; flood walks through whoever is standing in the way and climbs as far
+;; as the weapon reaches, which is what the original asks for.
+(def attackable [p d k]
+  (let n (steps-to d k) (and (gt n 0) (le n (get p rng)))))
+
+;; The way back: from a cell, step to a neighbour one closer, until the
+;; pawn's own tile.  The original keeps a `pf_root` on every tile as it
+;; floods; a distance map says the same thing and cannot go stale.
+(def back-one [who p d k]
+  (let n (steps-to d k)
+    (fold (lambda a (lambda i
+            (let tx (merge (key-x k) (nth dxs i))
+              (let ty (merge (key-y k) (nth dys i))
+                (if (and (steppable who p 0 (get p jump) (hgt (key-x k) (key-y k)) tx ty)
+                         (eq (steps-to d (ckey tx ty)) (sub n 1)))
+                  (ckey tx ty)
+                  a)))))
+          -1 (range 0 4))))
+
+(def path-to [who p d k]
+  (get (iterate (rec at k out (list k))
+                         (lambda s (le (steps-to d (get s at)) 0))
+                         (lambda s
+                           (let b (back-one who p d (get s at))
+                             (put (put s at b) out (cons b (get s out))))))
+       out))
+
+;; --- acting ---------------------------------------------------------
+;;
+;; A pawn has two things to spend in a turn, as the original does: it
+;; may move once and strike once, in either order, and when both are
+;; spent it is done.
+
+(def can-act [p] (or (not (get p moved)) (not (get p struck))))
+(def with-pawn [w q]
+  (put w pawns (map (lambda p (if (eq (get p id) (get q id)) q p)) (get w pawns))))
+
+(def move-to [w id k]
+  (let p (pawn-by w id)
+    (with-pawn w (put (put (put p x (key-x k)) y (key-y k)) moved 1))))
+
+;; `stats.apply_to_curr_health(-attack_power)`: the damage is the
+;; attacker's power and nothing else -- no height bonus, no facing, no
+;; roll.  The original is plain about this and so is the port.
+(def strike [w id target]
+  (let a (pawn-by w id)
+    (let t (pawn-by w target)
+      (let hit (put t hp (max 0 (sub (get t hp) (get a pow))))
+        (put (with-pawn (with-pawn w (put a struck 1)) hit)
+             msg (join (list "hit for" (text-of (get a pow))) 32))))))
+
+;; --- whose turn -----------------------------------------------------
+
+(def side-done [w]
+  (not (any (lambda p (can-act p)) (side-of w (get w side)))))
+
+(def fresh [w s]
+  (put w pawns (map (lambda p (if (eq (get p team) s)
+                                (put (put p moved 0) struck 0)
+                                p))
+                    (get w pawns))))
+
+(def winner [w]
+  (cond (nil? (side-of w 1)) 0
+        (nil? (side-of w 0)) 1
+        -1))
+
+(def end-turn [w]
+  (let s (if (get w side) 0 1)
+    (put (put (put (fresh w s) side s) sel -1)
+         round (if s (get w round) (inc (get w round))))))
+
+;; --- what a click means ---------------------------------------------
+;;
+;; The host sends the cell under the cursor and nothing else; what it
+;; means is decided here, because it is a rule.  In order: a pawn of
+;; yours that can still act is picked up; a tile the picked-up pawn can
+;; reach is walked to; an enemy within its reach is struck; anything
+;; else puts it down again.
+
+(def click [w k]
+  (if (or (get w over) (get w side))
+    w
+    (let here (pawn-at w (key-x k) (key-y k))
+      (let sel (get w sel)
+        (cond
+          (and (ge (get here id) 0)
+               (and (eq (get here team) 0) (can-act here)))
+            (put (put w sel (get here id)) msg "")
+          (lt sel 0) w
+          (let p (pawn-by w sel)
+              (cond
+                (and (not (get p moved))
+                     (reachable (who-map w) p (flood (who-map w) p 0 (get p jump)) k))
+                  (let w1 (move-to w sel k)
+                    (if (can-act (pawn-by w1 sel)) w1 (put w1 sel -1)))
+                (and (and (not (get p struck)) (ge (get here id) 0))
+                     (and (ne (get here team) (get p team))
+                          (attackable p (flood (who-map w) p 1 (get p rng)) k)))
+                  (let w1 (strike w sel (get here id))
+                    (if (and (can-act (pawn-by w1 sel)) (gt (get (pawn-by w1 sel) hp) 0))
+                      w1
+                      (put w1 sel -1)))
+                (put w sel -1))))))))
+
+;; --- the opponent ---------------------------------------------------
+;;
+;; `choose_pawn`, `chase_nearest_enemy`, `choose_pawn_to_attack`, in
+;; that order and with the original's choices: the first pawn of its
+;; own that can still act; the tile beside an enemy with the smallest
+;; flood distance, walked back along the flood until it is one this
+;; pawn can reach this turn; and then the weakest enemy within its
+;; weapon's reach.
+
+(def first-actor [w]
+  (fold (lambda a (lambda p (if (and (lt (get a id) 0) (can-act p)) p a)))
+        (pawn-of -1 -1 0 -1 -1) (side-of w (get w side))))
+
+;; Every tile beside a living enemy, with the flood distance of each.
+(def target-tiles [w who p d]
+  (fold (lambda acc (lambda e
+          (fold (lambda a (lambda i
+                  (let tx (merge (get e x) (nth dxs i))
+                    (let ty (merge (get e y) (nth dys i))
+                      (let k (ckey tx ty)
+                        (if (and (solid tx ty)
+                                 (and (gt (steps-to d k) 0) (not (held who k))))
+                          (cons k a)
+                          a))))))
+                acc (range 0 4))))
+        (nil) (side-of w (if (get p team) 0 1))))
+
+(def nearest-of [d ks]
+  (fold (lambda best (lambda k
+          (if (or (lt best 0) (lt (steps-to d k) (steps-to d best))) k best)))
+        -1 ks))
+
+;; Walk the path back until the pawn can actually stand there this turn,
+;; which is the original's `while not nearest_target.reachable`.
+(def walk-back [who p d k]
+  (get (iterate (rec at k n 0)
+                (lambda s (or (lt (get s at) 0)
+                              (or (reachable who p d (get s at)) (gt (get s n) 40))))
+                (lambda s (put (put s at (back-one who p d (get s at))) n (inc (get s n)))))
+       at))
+
+(def weakest-in-reach [w p d]
+  (fold (lambda best (lambda e
+          (if (attackable p d (ckey (get e x) (get e y)))
+            (if (or (lt (get best id) 0) (lt (get e hp) (get best hp))) e best)
+            best)))
+        (pawn-of -1 -1 0 -1 -1)
+        (side-of w (if (get p team) 0 1))))
+
+;; One action of the opponent's: move if it has not, else strike if it
+;; can, else it is done.  A host calls this until the side is done, so
+;; the battle can be watched a step at a time instead of resolving in
+;; one frame.
+(def ai-step [w]
+  (let p (first-actor w)
+    (if (lt (get p id) 0)
+      (end-turn w)
+      (if (not (get p moved))
+        (let who (who-map w)
+          (let d (flood who p 0 (get p jump))
+            (let k (walk-back who p d (nearest-of d (target-tiles w who p d)))
+              (if (lt k 0)
+                (with-pawn w (put p moved 1))
+                (put (move-to w (get p id) k) msg "they advance")))))
+        (let e (weakest-in-reach w p (flood (who-map w) p 1 (get p rng)))
+          (if (lt (get e id) 0)
+            (with-pawn w (put p struck 1))
+            (strike w (get p id) (get e id))))))))
+
+;; --- the picture ----------------------------------------------------
+;;
+;; Far blocks first: in this projection one block is in front of
+;; another exactly when x + y is greater, so a host paints the list in
+;; the order it is given and every block, and every pawn standing on
+;; one, lands in front of what it should.
+
+(def draw-order []
+  (fold (lambda acc (lambda s
+          (append acc
+                  (filter (lambda k (solid (key-x k) (key-y k)))
+                          (map (lambda x (ckey x (sub s x)))
+                               (range (max 0 (sub s (sub N 1))) (min N (inc s))))))))
+        (nil) (range 0 (sub (mul 2 N) 1))))
+
+(def who-map [w]
+  (fold (lambda m (lambda q (map-put m (ckey (get q x) (get q y)) q))) (nil) (living w)))
+
+(def block [w who p d mode k]
+  (let x (key-x k)
+    (let y (key-y k)
+      (let o (map-get who k (pawn-of -1 -1 0 -1 -1))
+        (rec k k u (cu x y) v (cv x y (hgt x y)) h (hgt x y)
+             r (if (eq mode 1) (if (reachable who p d k) 1 0) 0)
+             a (if (eq mode 2) (if (attackable p d k) 1 0) 0)
+             pid (get o id)
+             pteam (get o team)
+             pkind (get o kind)
+             php (get o hp)
+             pmax (get o max)
+             psel (if (eq (get o id) (get w sel)) 1 0)
+             pdone (if (can-act o) 0 1))))))
+
+;; 0 nothing picked up, 1 showing where it may go, 2 showing what it may
+;; hit -- the original's STAGE_SHOW_MOVEMENTS and STAGE_DISPLAY_TARGETS.
+(def scene [w]
+  (let sel (get w sel)
+    (let p (if (ge sel 0) (pawn-by w sel) (pawn-of -1 -1 0 -1 -1))
+      (let mode (cond (lt sel 0) 0 (not (get p moved)) 1 (not (get p struck)) 2 0)
+        (let who (who-map w)
+          (let d (if (eq mode 0)
+                       (nil)
+                       (if (eq mode 2)
+                         (flood who p 1 (get p rng))
+                         (flood who p 0 (get p jump))))
+            (map (lambda k (block w who p d mode k)) draw-order)))))))
+
+;; The cell under a point on the screen.  A block is a diamond on top of
+;; a column, so the cell is found by trying every block from the near
+;; corner backwards and taking the first whose top face contains the
+;; point: a hundred and forty-four half-tests, which at a click is
+;; nothing and is exact, where inverting the projection is not.
+(def in-top [u v cx cy]
+  (lt (merge (mul (abs (sub u cx)) TH) (mul (abs (sub v cy)) TW)) (mul TW TH)))
+
+(def pick [w u v]
+  (fold (lambda best (lambda k
+          (if (in-top u v (cu (key-x k) (key-y k))
+                      (cv (key-x k) (key-y k) (hgt (key-x k) (key-y k))))
+            k best)))
+        -1 draw-order))

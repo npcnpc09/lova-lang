@@ -177,6 +177,7 @@ python -m core.cli run apps/tanks.lova 7   # the same game, turn by turn in the 
 python apps/maze/maze3d.py            # a first-person 3D maze, cast in integers
 python apps/war/war.py                # an isometric battlefield, terrain and all
 python apps/g2048/game2048.py 7       # 2048, ported from gabrielecirulli/2048
+python apps/tactics/tactics.py        # a tactics battle, ported out of GDScript
 python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded
@@ -243,7 +244,7 @@ pip install -e ".[experiments]"
 
 ## What the programs show
 
-Nineteen programs in `apps/`, each written to use the language for
+Twenty programs in `apps/`, each written to use the language for
 something and kept as a test. What they demonstrate:
 
 - **It runs a game.** Tank battle, in real time: eight enemies arrive
@@ -327,6 +328,27 @@ something and kept as a test. What they demonstrate:
   ```bash
   python apps/g2048/game2048.py 7            # the window, in the original's colours
   python -m core.cli run apps/g2048.lova 7   # the terminal
+  ```
+
+- **And a game engine’s rules, ported out of GDScript.**
+  [ramaureirac/godot-tactical-rpg](https://github.com/ramaureirac/godot-tactical-rpg)
+  (MIT, ~960 stars) is a Final-Fantasy-Tactics-shaped demo for Godot 4.
+  Its rules are now `lib/tactics.lova`: the breadth-first flood a pawn’s
+  movement makes across blocks it can climb, the marking of reachable
+  and attackable tiles, damage that is the attacker’s power and nothing
+  else, an opponent that walks to the tile beside the nearest of yours
+  and strikes the weakest thing in reach. `tests/test_tactics.py` holds
+  a transliteration of the original’s flood and compares the distance
+  to **every cell of the arena, for every kind of pawn**. Two places
+  where the original contradicts itself are named in the file header
+  rather than quietly copied or quietly fixed. What is ours is the
+  arena and the picture — Godot renders with a GPU; this is isometric
+  blocks drawn by the host from a list LOVA hands it, far ones first.
+
+  ![a tactics battle on blocks: the window is Python, the rules are LOVA](apps/tactics/screenshot.png)
+
+  ```bash
+  python apps/tactics/tactics.py   # click one of yours, space ends your turn
   ```
 
 - **Logic runs right the first time.** The word count, the games, the

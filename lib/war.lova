@@ -390,7 +390,7 @@
       (and (le (abs (sub u pu)) 13)
            (and (le (sub pv v) 30) (ge (sub pv v) -6))))))
 
-(def select [w u v]
+(def choose [w u v]
   (put w units
        (map (lambda z (put z sel (and (not (get z team)) (hit z u v)))) (alive w))))
 
