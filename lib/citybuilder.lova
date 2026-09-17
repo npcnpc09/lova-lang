@@ -1,0 +1,276 @@
+;;; citybuilder.lova  --  the rules of Kenney's city builder starter kit
+;;;
+;;; `(use "citybuilder")`.  A port of KenneyNL/Starter-Kit-City-Builder
+;;; (MIT, ~1 500 stars): a grid you place structures on and take them
+;;; off, a till that pays for each one, a cursor that follows the mouse
+;;; across the ground and turns in quarters, a catalogue you cycle
+;;; through, and a camera that pans, turns under the mouse and zooms in
+;;; steps.  Written against the kit's `builder.gd` and `view.gd` and
+;;; checked against a transliteration of them in
+;;; `tests/test_citybuilder.py`.  The structures, their prices and the
+;;; sample city are the kit's own, read out of it by
+;;; `apps/citybuilder/import_kit.py` into `lib/citybuilder_assets.lova`.
+;;;
+;;; Units.  A cell is a whole metre and a turn is in quarters, as in the
+;;; kit's GridMap.  What moves smoothly -- the cursor and the camera --
+;;; is in 65 536ths of a metre (`F`) and 16 384ths of a turn (`A`), the
+;;; platformer's units, and a tick is a sixtieth of a second: the kit
+;;; does these in `_process` with `delta`, and its one un-scaled number,
+;;; a quarter of a metre of panning *per frame*, is a quarter of a metre
+;;; a tick here.
+;;;
+;;; What a click means is a rule, so it is here: the mouse's place on
+;;; the screen is carried back through the camera to the ground and
+;;; rounded to a cell, which is the kit's `plane.intersects_ray` on
+;;; `project_ray_origin` and `project_ray_normal`, in integers.
+;;;
+;;;   new-game                       ; an empty grid and 10 000 in the till
+;;;   sample-game                    ; the city the kit ships with
+;;;   (input mx mz rot zoom centre build demolish rotate next prev mu mv)
+;;;                                  ; what happened this tick: the pan axes
+;;;                                  ; as -1 / 0 / 1; the mouse's sideways
+;;;                                  ; travel in pixels while its middle
+;;;                                  ; button is down; zoom as -1 / 0 / 1 per
+;;;                                  ; wheel notch; the five buttons as 1 on
+;;;                                  ; the tick they went down; the mouse
+;;;                                  ; on the screen
+;;;   (tick w in focal sw sh)        ; one sixtieth of a second later
+;;;   (picture w focal sw sh far)    ; the placed objects and the camera
+;;;                                  ; for `lib/scene3d.lova`
+;;;   (city-cells w)                 ; (x z structure quarter) per cell
+
+(use "fixed")
+(use "scene3d")
+(use "citybuilder_assets")
+
+(def F [] 65536)
+(def A [] 16384)
+(def START-CASH [] 10000)
+(def PAN [] (div F 4))                  ; a quarter of a metre a tick
+(def ZOOM-LO [] (mul 15 F))
+(def ZOOM-HI [] (mul 80 F))
+(def ZOOM-STEP [] (mul 5 F))
+(def LIFT [] (div F 4))                 ; the cursor's preview floats a quarter up
+(def CATALOGUE-SIZE [] (len catalogue))
+
+;; --- the world ------------------------------------------------------
+
+(def input [mx mz rot zoom centre build demolish rotate next prev mu mv]
+  (rec mx mx mz mz rot rot zoom zoom centre centre build build demolish demolish
+       rotate rotate next next prev prev mu mu mv mv))
+
+(def still [] (input 0 0 0 0 0 0 0 0 0 0 -1 -1))
+
+;; The View node: 45 degrees round, 35 down, thirty metres back.
+(def new-camera []
+  (rec x 0 y 0 z 0 tx 0 tz 0
+       yaw 2048 tyaw 2048 pitch -1593 tpitch -1593
+       zoom (mul 30 F) tzoom (mul 30 F)))
+
+(def new-cursor [] (rec x 0 z 0 cx 0 cz 0 q 0))
+
+(def cell-key [x z] (merge (mul (merge x 512) 1024) (merge z 512)))
+(def key-x [k] (sub (div k 1024) 512))
+(def key-z [k] (sub (mod k 1024) 512))
+
+(def new-game []
+  (rec cash START-CASH index 0 cursor new-cursor cam new-camera city (nil) t 0))
+
+(def sample-game []
+  (put (put new-game cash sample-cash)
+       city (fold (lambda m (lambda c
+                    (map-put m (cell-key (get c x) (get c z)) (rec s (get c s) q (get c q)))))
+                  (nil) sample-city)))
+
+;; --- the catalogue --------------------------------------------------
+
+(def price-of [index] (get (nth catalogue index) price))
+(def name-of [index] (get (nth catalogue index) name))
+
+;; --- where the mouse points -----------------------------------------
+;;
+;; The camera sits `zoom` along its own z axis from the pivot, turned
+;; by yaw and tilted by pitch, and looks back down that axis.  A pixel
+;; is a direction in the camera's frame; the direction is turned into
+;; the world; where the line from the camera along it meets the ground
+;; is the cell.  Everything in 1024ths, the picture's units, because
+;; that is what `lib/fixed.lova`'s turns take.
+
+(def camera-eye [cam]
+  (let cy (cos (neg (div (get cam yaw) 64)))
+    (let sy (sin (neg (div (get cam yaw) 64)))
+      (let cp (cos (neg (div (get cam pitch) 64)))
+        (let sp (sin (neg (div (get cam pitch) 64)))
+          (untwist (rec x 0 y 0 z (div (get cam zoom) 64)) cy sy cp sp))))))
+
+;; The ground point under pixel (u, v), in 1024ths, with `ok` 0 if the
+;; line never comes down.
+(def ground-at [cam u v focal sw sh]
+  (let cy (cos (neg (div (get cam yaw) 64)))
+    (let sy (sin (neg (div (get cam yaw) 64)))
+      (let cp (cos (neg (div (get cam pitch) 64)))
+        (let sp (sin (neg (div (get cam pitch) 64)))
+          (let dir (untwist (rec x (sub u (div sw 2)) y (sub (div sh 2) v) z (neg focal))
+                            cy sy cp sp)
+            (let eye (untwist (rec x 0 y 0 z (div (get cam zoom) 64)) cy sy cp sp)
+              (let ey (merge (div (get cam y) 64) (get eye y))
+                (if (ge (get dir y) 0)
+                  (rec ok 0 x 0 z 0)
+                  ;; t = -ey / dir.y, kept as a ratio: p = eye + dir * ey / -dir.y
+                  (rec ok 1
+                       x (merge (merge (div (get cam x) 64) (get eye x))
+                                (div (mul (get dir x) ey) (neg (get dir y))))
+                       z (merge (merge (div (get cam z) 64) (get eye z))
+                                (div (mul (get dir z) ey) (neg (get dir y))))))))))))))
+
+;; Rounded to a cell: `round(world_position.x)`, halves away from zero
+;; as Godot rounds.
+(def cell-of [n] (if (ge n 0) (div (merge n 512) 1024) (neg (div (merge (neg n) 512) 1024))))
+
+;; --- the cursor -----------------------------------------------------
+
+(def cursor-tick [cur cam in focal sw sh]
+  (let ground (if (lt (get in mu) 0) (rec ok 0 x 0 z 0) (ground-at cam (get in mu) (get in mv) focal sw sh))
+    (let cur1 (if (not (get ground ok))
+                cur
+                (put (put cur cx (cell-of (get ground x))) cz (cell-of (get ground z))))
+      ;; `lerp(selector.position, gridmap_position, min(delta * 40, 1))`
+      (let cur2 (put (put cur1 x (merge (get cur1 x) (div (mul (sub (mul (get cur1 cx) F) (get cur1 x)) 2) 3)))
+                     z (merge (get cur1 z) (div (mul (sub (mul (get cur1 cz) F) (get cur1 z)) 2) 3)))
+        (if (get in rotate) (put cur2 q (mod (inc (get cur2 q)) 4)) cur2)))))
+
+;; --- building -------------------------------------------------------
+
+(def build [w]
+  (let cur (get w cursor)
+    (let key (cell-key (get cur cx) (get cur cz))
+      (let previous (map-get (get w city) key (rec s -1 q 0))
+        (let w1 (put w city (map-put (get w city) key (rec s (get w index) q (get cur q))))
+          (if (eq (get previous s) (get w index))
+            w1
+            (put w1 cash (sub (get w cash) (price-of (get w index))))))))))
+
+(def demolish [w]
+  (let cur (get w cursor)
+    (let key (cell-key (get cur cx) (get cur cz))
+      (if (lt (get (map-get (get w city) key (rec s -1 q 0)) s) 0)
+        w
+        ;; the map has no remove: the cell is rebuilt without this key
+        (put w city (fold (lambda m (lambda pr
+                            (if (eq (head pr) key) m (map-put m (head pr) (head (tail pr))))))
+                          (nil) (map-pairs (get w city))))))))
+
+(def cycle [w in]
+  (let n (merge (get w index) (sub (get in next) (get in prev)))
+    (put w index (mod (merge n CATALOGUE-SIZE) CATALOGUE-SIZE))))
+
+;; --- the camera -----------------------------------------------------
+
+(def camera-tick [cam in]
+  (let a (div (get cam yaw) 64)
+    ;; the pan, turned by the camera's yaw and cut to unit length
+    (let rx (merge (mul (get in mx) (cos a)) (mul (get in mz) (sin a)))
+      (let rz (sub (mul (get in mz) (cos a)) (mul (get in mx) (sin a)))
+        (let both (and (get in mx) (get in mz))
+          (let px (div (mul (if both (div (mul rx 724) 1024) rx) PAN) 1024)
+            (let pz (div (mul (if both (div (mul rz 724) 1024) rz) PAN) 1024)
+              (let tx (if (get in centre) 0 (merge (get cam tx) px))
+                (let tz (if (get in centre) 0 (merge (get cam tz) pz))
+                  ;; `camera_rotation += Vector3(0, -event.relative.x / 10, 0)`, in degrees
+                  (let tyaw (sub (get cam tyaw) (div (mul (get in rot) A) 3600))
+                    (let tzoom (cond (lt (get in zoom) 0) (max ZOOM-LO (sub (get cam tzoom) ZOOM-STEP))
+                                     (gt (get in zoom) 0) (min ZOOM-HI (merge (get cam tzoom) ZOOM-STEP))
+                                     (get cam tzoom))
+                      (rec x (merge (get cam x) (div (mul (sub tx (get cam x)) 2) 15))
+                           y 0
+                           z (merge (get cam z) (div (mul (sub tz (get cam z)) 2) 15))
+                           tx tx tz tz
+                           yaw (merge (get cam yaw) (div (sub tyaw (get cam yaw)) 10))
+                           tyaw tyaw
+                           pitch (get cam pitch) tpitch (get cam tpitch)
+                           zoom (merge (get cam zoom) (div (mul (sub tzoom (get cam zoom)) 2) 15))
+                           tzoom tzoom))))))))))))
+
+;; --- a tick ---------------------------------------------------------
+
+(def tick [w in focal sw sh]
+  (let w1 (cycle w in)
+    (let w2 (put w1 cursor (cursor-tick (get w1 cursor) (get w1 cam) in focal sw sh))
+      (let w3 (if (get in build) (build w2) w2)
+        (let w4 (if (get in demolish) (demolish w3) w3)
+          (put (put w4 cam (camera-tick (get w4 cam) in)) t (inc (get w t))))))))
+
+;; --- what is where --------------------------------------------------
+
+(def city-cells [w]
+  (map (lambda pr (list (key-x (head pr)) (key-z (head pr))
+                        (get (head (tail pr)) s) (get (head (tail pr)) q)))
+       (map-pairs (get w city))))
+
+(def cell-count [w] (len (map-pairs (get w city))))
+
+;; --- the picture ----------------------------------------------------
+
+(def placed-cell [pr]
+  (let it (head (tail pr))
+    (obj (model-of (get it s))
+         (mul (key-x (head pr)) 1024) 0 (mul (key-z (head pr)) 1024)
+         (mul (get it q) 64) 1024 1024)))
+
+(def scene-camera [w focal sw sh far]
+  (let cam (get w cam)
+    (camera (div (get cam x) 64) 0 (div (get cam z) 64)
+            (div (get cam yaw) 64) (div (get cam pitch) 64)
+            (div (get cam zoom) 64) focal sw sh far)))
+
+(def cursor-object [w]
+  (let cur (get w cursor)
+    (obj (model-of (get w index))
+         (div (get cur x) 64) (div LIFT 64) (div (get cur z) 64)
+         (mul (get cur q) 64) 1024 1024)))
+
+(def picture [w focal sw sh far]
+  (rec objs (cons (cursor-object w) (map placed-cell (map-pairs (get w city))))
+       cam (scene-camera w focal sw sh far)))
+
+(def frame [w focal sw sh far]
+  (let pic (picture w focal sw sh far)
+    (scene-shot (get pic objs) (get pic cam))))
+
+;; The two halves a host can draw separately: the city changes only
+;; when the camera moves or a cell does, and costs seconds of CPython
+;; a frame; the cursor's preview moves with the mouse and costs a
+;; hundredth of that.  Painted city first, cursor over it.
+(def frame-city [w focal sw sh far]
+  (scene-shot (map placed-cell (map-pairs (get w city))) (scene-camera w focal sw sh far)))
+
+(def frame-cursor [w focal sw sh far]
+  (scene-shot (list (cursor-object w)) (scene-camera w focal sw sh far)))
+
+;; What each half depends on, so a host can tell whether a new frame
+;; would differ from the last.
+(def city-key [w]
+  (let cam (get w cam)
+    (list (get cam x) (get cam z) (get cam yaw) (get cam zoom) (cell-count w))))
+
+(def cursor-key [w]
+  (let cur (get w cursor)
+    (list (get cur x) (get cur z) (get cur q) (get w index))))
+
+(def view-key [w] (append (city-key w) (cursor-key w)))
+
+;; --- what the rules say about themselves ------------------------------
+
+(example (get new-game cash) 10000)
+(example (cell-count sample-game) 122)
+(example (get sample-game cash) 5860)
+;; building on the cursor's cell costs the structure's price
+(example (get (tick new-game (input 0 0 0 0 0 1 0 0 0 0 -1 -1) 391 960 600) cash)
+         (sub 10000 (price-of 0)))
+;; building the same structure over itself costs nothing more
+(example (get (tick (tick new-game (input 0 0 0 0 0 1 0 0 0 0 -1 -1) 391 960 600)
+                    (input 0 0 0 0 0 1 0 0 0 0 -1 -1) 391 960 600) cash)
+         (sub 10000 (price-of 0)))
+;; the pixel at the middle of the screen looks at the pivot: cell (0, 0)
+(example (cell-of (get (ground-at new-camera 480 300 391 960 600) x)) 0)
+(example (cell-of (get (ground-at new-camera 480 300 391 960 600) z)) 0)

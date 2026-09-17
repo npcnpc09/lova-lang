@@ -325,7 +325,7 @@ def decimate(verts, faces, target):
     end belongs to a subset of the other's collapses into the larger
     end, which keeps every boundary between two paints where it was;
     any other edge is left alone.  A face that would turn by more than
-    about eighty degrees blocks the collapse.
+    about fifty degrees blocks the collapse.
     """
     verts = [list(v) for v in verts]
     faces = [list(f) for f in faces]
@@ -419,7 +419,7 @@ def decimate(verts, faces, target):
             after = plane(verts, faces[i])
             verts[a], verts[b] = saved[a], saved[b]
             if (before is None or after is None
-                    or sum(before[0][k] * after[0][k] for k in range(3)) < 0.2):
+                    or sum(before[0][k] * after[0][k] for k in range(3)) < 0.6):
                 flips = True
                 break
         if flips:
@@ -445,6 +445,54 @@ def decimate(verts, faces, target):
     renum = {v: i for i, v in enumerate(used)}
     return ([verts[v] for v in used],
             [[renum[f[0]], renum[f[1]], renum[f[2]], f[3]] for f in keep])
+
+
+def cluster(verts, faces, size):
+    """Simplify by snapping every vertex to a grid of `size` and merging
+    what lands together: Rossignac and Borrel's vertex clustering.  It
+    never folds a surface the way an edge collapse can -- a face keeps
+    its colour, and three corners that fall in three cells stay a face
+    -- which is what the kit's buildings needed: their four hundred
+    triangles are bevels a few centimetres wide around windows, and a
+    quarter-metre grid keeps the windows and loses the bevels."""
+    cells = {}
+    where = []
+    for v in verts:
+        key = tuple(round(c / size) for c in v)
+        if key not in cells:
+            cells[key] = [len(cells), [0.0, 0.0, 0.0], 0]
+        entry = cells[key]
+        for k in range(3):
+            entry[1][k] += v[k]
+        entry[2] += 1
+        where.append(entry[0])
+    new_verts = [None] * len(cells)
+    for idx, total, n in cells.values():
+        new_verts[idx] = [c / n for c in total]
+    seen = set()
+    new_faces = []
+    for a, b, c, k in faces:
+        na, nb, nc = where[a], where[b], where[c]
+        if len({na, nb, nc}) < 3:
+            continue
+        key = (min(na, nb, nc), na + nb + nc, k)
+        if (na, nb, nc, k) in seen:
+            continue
+        seen.add((na, nb, nc, k))
+        new_faces.append([na, nb, nc, k])
+    return new_verts, new_faces
+
+
+def simplify_to(verts, faces, target, sizes=(1 / 64, 1 / 48, 1 / 32, 1 / 24, 1 / 16, 1 / 12, 1 / 8, 1 / 6, 1 / 4)):
+    """Cluster on the finest grid that brings the model within `target`
+    faces; the coarsest grid if none does."""
+    best = None
+    for size in sizes:
+        v, f = cluster(verts, faces, size)
+        best = (v, f)
+        if len(f) <= target:
+            break
+    return best
 
 
 # --- writing --------------------------------------------------------------------

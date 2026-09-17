@@ -124,13 +124,23 @@
                     acc (get m fs)))))))))
 
 ;; Where an object stands in the camera's frame, paired with the
-;; object; nil if it is too far from the target to draw.
+;; object; nil if it is too far from the target to draw, or if its
+;; centre falls more than a screen's quarter outside the picture -- a
+;; city of a hundred cells seen from close up is mostly off the edges,
+;; and an object costs nothing that is dropped here.
 (def stand [o cam cy sy cp sp]
   (let dx (sub (get o x) (get cam tx))
     (let dz (sub (get o z) (get cam tz))
       (if (gt (merge (abs dx) (abs dz)) (get cam far))
         (nil)
-        (list o (turn (rec x dx y (sub (get o y) (get cam ty)) z dz) cy sy cp sp))))))
+        (let off (turn (rec x dx y (sub (get o y) (get cam ty)) z dz) cy sy cp sp)
+          (let d (max NEAR (sub (get cam zoom) (get off z)))
+            (let u (div (mul (get off x) (get cam focal)) d)
+              (let v (div (mul (get off y) (get cam focal)) d)
+                (if (or (gt (abs u) (div (mul (get cam sw) 3) 4))
+                        (gt (abs v) (div (mul (get cam sh) 3) 4)))
+                  (nil)
+                  (list o off))))))))))
 
 (def scene-shot [objs cam]
   (let cy (cos (neg (get cam yaw)))

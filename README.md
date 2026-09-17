@@ -180,6 +180,7 @@ python apps/g2048/game2048.py 7       # 2048, ported from gabrielecirulli/2048
 python apps/tactics/tactics.py        # a tactics battle, ported out of GDScript
 python apps/model/model.py            # low-poly meshes, turned and lit in real time
 python apps/platformer/platformer.py  # Kenney's 3D platformer kit, ported out of GDScript
+python apps/citybuilder/citybuilder.py # Kenney's city builder kit, sample city and all
 python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded
@@ -402,6 +403,31 @@ something and kept as a test. What they demonstrate:
   ```bash
   python apps/platformer/platformer.py                   # WASD, space, arrows, +/-
   python apps/platformer/platformer.py --shot out.png    # one frame, no window
+  ```
+
+- **And a city builder, from Kenney's other starter kit.**
+  `lib/citybuilder.lova` holds the rules of
+  [KenneyNL/Starter-Kit-City-Builder](https://github.com/KenneyNL/Starter-Kit-City-Builder)
+  (MIT, about 1 500 stars): a grid of fifteen kinds of structure, a
+  till charged only when a cell changes hands, a cursor that turns in
+  quarters, a camera that pans, turns under the mouse and zooms in
+  steps — and what a click *means*, the mouse carried back through the
+  camera to the ground in integers. The sample city ships with it: 122
+  cells and the 5 860 left in its till, read out of Godot's binary
+  resource format by `apps/citybuilder/import_kit.py`, which also
+  reads the fifteen models and simplifies them by vertex clustering.
+  `tests/test_citybuilder.py` transliterates `builder.gd` and
+  `view.gd` and runs them beside the port one tick at a time through a
+  session of panning, turning, zooming, building over and demolishing:
+  **the same till, the same cells, the same camera within four
+  thousandths**, and the same cell under the mouse for every pixel not
+  within eight hundredths of a boundary.
+
+  ![Kenney's sample city: the window is Python, the city is LOVA](apps/citybuilder/screenshot.png)
+
+  ```bash
+  python apps/citybuilder/citybuilder.py                 # WASD, wheel, middle-drag, click, Q/E
+  python apps/citybuilder/citybuilder.py --empty         # a clean grid
   ```
 
 - **Logic runs right the first time.** The word count, the games, the

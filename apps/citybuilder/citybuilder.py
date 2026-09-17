@@ -1,0 +1,309 @@
+"""A window in Python, the city in LOVA: Kenney's city builder.
+
+    python apps/citybuilder/citybuilder.py            # the kit's sample city
+    python apps/citybuilder/citybuilder.py --empty    # a clean grid and 10 000
+    python apps/citybuilder/citybuilder.py --shot apps/citybuilder/screenshot.png
+
+A port of KenneyNL/Starter-Kit-City-Builder (MIT, ~1 500 stars): a
+grid to place fifteen kinds of structure on -- roads, pavements, four
+small buildings, a garage, grass and trees -- a till that pays for each,
+a cursor that follows the mouse across the ground, and a camera that
+pans, turns under the middle button and zooms in steps.  Everything
+that decides is `lib/citybuilder.lova`, written against the kit's
+`builder.gd` and `view.gd` and checked against a transliteration of
+them in `tests/test_citybuilder.py` -- including what a click means,
+which is the mouse carried back through the camera to the ground.
+Every number in the picture is `lib/scene3d.lova`; the models, the
+prices and the sample city are the kit's own, read out of it (the
+sample city out of a Godot binary resource) by `import_kit.py`.  This
+shell owns the window, the mouse, the keys, the clock and the save
+file.
+
+The kit's keys: WASD pan, F back to the centre, the middle button held
+turns the camera, the wheel zooms, left click builds, right click
+turns the structure, Delete removes, Q and E cycle the catalogue, F1
+saves, F2 loads, F3 loads the sample city, Escape leaves.  The city is
+only drawn again when the camera or a cell has moved -- a hundred and
+twenty cells are some thousands of triangles, seconds of CPython --
+and the cursor's preview, which follows the mouse, is drawn over the
+kept picture on its own, so the window is quiet while you look and
+busy while you pan.
+`--shot file.png` draws one frame with no window at all.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from core.cli import build
+from core.conservation import BudgetTrap, DeltaTrap
+from core.runtime import Runtime, _call, _map_key, evaluate, list_to_python
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "platformer"))
+from platformer import rasterise, write_png  # noqa: E402
+
+SOURCE = """\
+(use "citybuilder")
+(rec new new-game sample sample-game tick tick input input frame frame
+     city frame-city cursor frame-cursor ckey city-key ukey cursor-key
+     cells city-cells key view-key
+     cash (lambda w (get w cash))
+     index (lambda w (get w index))
+     name (lambda w (name-of (get w index)))
+     price (lambda w (price-of (get w index)))
+     load (lambda w (lambda cells
+             (put w city (fold (lambda m (lambda c
+                                 (map-put m (cell-key (nth c 0) (nth c 1))
+                                          (rec s (nth c 2) q (nth c 3)))))
+                               (nil) cells)))))
+"""
+
+VIEW_W, VIEW_H = 960, 600
+FOCAL = 391                      # the kit's camera: the default 75 degree field of view
+FAR = 60 * 1024
+BUDGET = 200_000_000
+TICK = 1 / 60
+SAVE = Path(__file__).with_name("map.json")
+SKY = "#9fc2e6"
+
+
+def lit(k, l):
+    r, g, b = k >> 16 & 255, k >> 8 & 255, k & 255
+    return "#%02x%02x%02x" % tuple(max(0, min(255, c * l // 1024)) for c in (r, g, b))
+
+
+class Rules:
+    def __init__(self) -> None:
+        tree, _report = build(SOURCE)
+        self.rt = Runtime(max_steps=BUDGET, max_call_depth=10_000)
+        api = evaluate(tree, self.rt)
+        self.fn = {n: api.entries[_map_key(n, "rec")][1]
+                   for n in ("new", "sample", "tick", "input", "frame", "city", "cursor",
+                             "ckey", "ukey", "cells", "key", "cash", "index", "name",
+                             "price", "load")}
+        sys.setrecursionlimit(max(sys.getrecursionlimit(), 20_000))
+
+    def call(self, name, *args):
+        self.rt.steps = 0
+        fn = self.fn[name]
+        for arg in args:
+            fn = _call(fn, arg, self.rt)
+        return fn
+
+    def tick(self, world, ev):
+        """One sixtieth of a second.  `ev` is what happened: held pan
+        keys, mouse travel under the middle button, wheel notches,
+        the buttons that went down, and where the mouse is."""
+        held = self.call("input",
+                         (1 if "d" in ev["keys"] else 0) - (1 if "a" in ev["keys"] else 0),
+                         (1 if "s" in ev["keys"] else 0) - (1 if "w" in ev["keys"] else 0),
+                         ev.get("rot", 0), ev.get("zoom", 0), ev.get("centre", 0),
+                         ev.get("build", 0), ev.get("demolish", 0), ev.get("rotate", 0),
+                         ev.get("next", 0), ev.get("prev", 0),
+                         ev.get("mu", -1), ev.get("mv", -1))
+        return self.call("tick", world, held, FOCAL, VIEW_W, VIEW_H)
+
+    def frame(self, world, which="frame"):
+        return [list_to_python(f) for f in
+                list_to_python(self.call(which, world, FOCAL, VIEW_W, VIEW_H, FAR))]
+
+    def keys_of(self, world):
+        return (list_to_python(self.call("ckey", world)), list_to_python(self.call("ukey", world)))
+
+    def cells(self, world):
+        return [list_to_python(c) for c in list_to_python(self.call("cells", world))]
+
+    def view_key(self, world):
+        return list_to_python(self.call("key", world))
+
+    def text(self, world):
+        return str(self.call("name", world))
+
+
+class City:
+    def __init__(self, master, rules: Rules, world) -> None:
+        import tkinter as tk
+        self.master = master
+        self.rules = rules
+        self.world = world
+        self.canvas = tk.Canvas(master, width=VIEW_W, height=VIEW_H, bg=SKY,
+                                highlightthickness=0)
+        self.canvas.pack()
+        self.bar = tk.Label(master, anchor="w", bg="#0e1116", fg="#c8d2de",
+                            font=("Consolas", 10), padx=8, pady=4)
+        self.bar.pack(fill="x")
+        self.keys: set = set()
+        self.pending: dict = {}
+        self.mouse = (-1, -1)
+        self.middle = None
+        self.anomaly = None
+        self.last_key = (None, None)
+        self.city_faces: list = []
+        self.city_steps = 0
+        self.city_ms = 0.0
+        self.clock = time.perf_counter()
+        self.behind = 0.0
+        self.frame_ms = 0.0
+        self.frame_steps = 0
+        self.faces = 0
+        master.bind("<KeyPress>", self.on_press)
+        master.bind("<KeyRelease>", self.on_release)
+        c = self.canvas
+        c.bind("<Motion>", self.on_motion)
+        c.bind("<ButtonPress-1>", lambda e: self.pending.__setitem__("build", 1))
+        c.bind("<ButtonPress-3>", lambda e: self.pending.__setitem__("rotate", 1))
+        c.bind("<ButtonPress-2>", self.on_middle)
+        c.bind("<B2-Motion>", self.on_middle_drag)
+        c.bind("<ButtonRelease-2>", lambda e: setattr(self, "middle", None))
+        c.bind("<MouseWheel>", self.on_wheel)
+        master.after(10, self.loop)
+
+    # --- input -----------------------------------------------------------
+
+    def on_press(self, event) -> None:
+        key = event.keysym
+        if key == "Escape":
+            self.master.destroy()
+        elif key in ("w", "a", "s", "d", "W", "A", "S", "D"):
+            self.keys.add(key.lower())
+        elif key in ("f", "F"):
+            self.pending["centre"] = 1
+        elif key in ("e", "E"):
+            self.pending["next"] = 1
+        elif key in ("q", "Q"):
+            self.pending["prev"] = 1
+        elif key == "Delete":
+            self.pending["demolish"] = 1
+        elif key == "F1":
+            SAVE.write_text(json.dumps({"cash": self.rules.call("cash", self.world),
+                                        "cells": self.rules.cells(self.world)}))
+        elif key == "F2":
+            if SAVE.exists():
+                saved = json.loads(SAVE.read_text())
+                from core.runtime import Cons, NIL_VALUE
+                cells = NIL_VALUE
+                for c in reversed(saved["cells"]):
+                    row = NIL_VALUE
+                    for v in reversed(c):
+                        row = Cons(v, row)
+                    cells = Cons(row, cells)
+                self.world = self.rules.call("load", self.rules.fn["new"], cells)
+        elif key == "F3":
+            self.world = self.rules.fn["sample"]
+
+    def on_release(self, event) -> None:
+        self.keys.discard(event.keysym.lower())
+
+    def on_motion(self, event) -> None:
+        self.mouse = (event.x, event.y)
+
+    def on_middle(self, event) -> None:
+        self.middle = event.x
+
+    def on_middle_drag(self, event) -> None:
+        if self.middle is not None:
+            self.pending["rot"] = self.pending.get("rot", 0) + (event.x - self.middle)
+            self.middle = event.x
+        self.mouse = (event.x, event.y)
+
+    def on_wheel(self, event) -> None:
+        self.pending["zoom"] = self.pending.get("zoom", 0) + (-1 if event.delta > 0 else 1)
+
+    # --- the loop --------------------------------------------------------
+
+    def loop(self) -> None:
+        now = time.perf_counter()
+        self.behind += now - self.clock
+        self.clock = now
+        if self.anomaly is None:
+            try:
+                ran = 0
+                while self.behind >= TICK and ran < 4:
+                    ev = dict(self.pending, keys=set(self.keys), mu=self.mouse[0], mv=self.mouse[1])
+                    self.pending = {}
+                    self.world = self.rules.tick(self.world, ev)
+                    self.behind -= TICK
+                    ran += 1
+                if self.behind >= TICK:
+                    self.behind = 0.0
+                key = self.rules.keys_of(self.world)
+                if key != self.last_key:
+                    self.paint(key[0] != self.last_key[0])
+                    self.last_key = key
+            except (BudgetTrap, DeltaTrap, ValueError) as exc:
+                self.anomaly = getattr(exc, "anomaly", None) or {"kind": str(exc)}
+                self.bar.config(text=f"the rules faulted: {self.anomaly.get('kind')}")
+        self.master.after(1, self.loop)
+
+    def paint(self, city_moved: bool) -> None:
+        """The city's faces are kept from frame to frame while only the
+        cursor moves; the cursor's are always drawn afresh, over them."""
+        c = self.canvas
+        if city_moved or not self.city_faces:
+            t0 = time.perf_counter()
+            self.city_faces = self.rules.frame(self.world, "city")
+            self.city_steps = self.rules.rt.steps
+            self.city_ms = (time.perf_counter() - t0) * 1000
+        t0 = time.perf_counter()
+        cursor = self.rules.frame(self.world, "cursor")
+        cursor_ms = (time.perf_counter() - t0) * 1000
+        c.delete("all")
+        for u0, v0, u1, v1, u2, v2, k, l in self.city_faces + cursor:
+            fill = lit(k, l)
+            c.create_polygon(u0, v0, u1, v1, u2, v2, fill=fill, outline=fill)
+        cash = self.rules.call("cash", self.world)
+        c.create_text(18, 16, anchor="nw", text=f"${cash}", fill="#ffffff",
+                      font=("Consolas", 22, "bold"))
+        c.create_text(18, VIEW_H - 30, anchor="nw",
+                      text=f"{self.rules.text(self.world)}  ${self.rules.call('price', self.world)}"
+                           "   [Q/E change, right-click turn, click build, Delete remove]",
+                      fill="#ffffff", font=("Consolas", 12))
+        self.bar.config(
+            text=f"city {len(self.city_faces)} faces, {self.city_steps:,} LOVA steps / "
+                 f"{self.city_ms:.0f} ms   cursor {len(cursor)} faces / {cursor_ms:.0f} ms   "
+                 f"[WASD pan, middle-drag turn, wheel zoom, F centre, F1 save, F2 load, F3 sample]")
+
+
+def shot(rules: Rules, path: str) -> None:
+    world = rules.fn["sample"]
+    # the mouse over a cell near the middle, the cursor holding a tree,
+    # and the camera settled
+    ev = {"keys": set(), "mu": 560, "mv": 330}
+    for _ in range(13):
+        world = rules.tick(world, dict(ev, next=1))
+    for _ in range(3):
+        world = rules.tick(world, dict(ev, zoom=-1))
+    for _ in range(120):
+        world = rules.tick(world, ev)
+    t0 = time.perf_counter()
+    faces = rules.frame(world)
+    steps = rules.rt.steps
+    write_png(path, rasterise(faces, VIEW_W, VIEW_H, sky=(0x9f, 0xc2, 0xe6)), VIEW_W, VIEW_H)
+    print(f"{path}: {len(faces)} faces, {steps:,} LOVA steps in "
+          f"{(time.perf_counter() - t0) * 1000:.0f} ms; {len(rules.cells(world))} cells, "
+          f"${rules.call('cash', world)} in the till")
+
+
+def main() -> int:
+    rules = Rules()
+    if len(sys.argv) > 2 and sys.argv[1] == "--shot":
+        shot(rules, sys.argv[2])
+        return 0
+    world = rules.fn["new"] if "--empty" in sys.argv else rules.fn["sample"]
+    import tkinter as tk
+    root = tk.Tk()
+    root.title("city builder -- the window is Python, the city is LOVA")
+    root.configure(bg="#0e1116")
+    root.resizable(False, False)
+    City(root, rules, world)
+    root.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
