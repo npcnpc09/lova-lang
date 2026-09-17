@@ -58,3 +58,32 @@
 (example (sin 192) -1024)
 (example (cos 0) 1024)
 
+
+;; The angle a direction makes, in 256ths of a turn: 0 along +x, 64
+;; along +y.  The first octant is found by bisection against the sine
+;; table -- six halvings, the first of which is the whole octant, so
+;; that a diagonal comes out as exactly 32 -- and the other seven are
+;; reflections of it.  A resolution of one unit is 1.4 degrees, which
+;; is what turning a character to face the way it walks needs.
+(def octant [n d]
+  (fold (lambda lo (lambda step
+          (let mid (merge lo step)
+            (if (ge (mul n (cos mid)) (mul d (sin mid))) mid lo))))
+        0 (list 32 16 8 4 2 1)))
+
+(def atan2 [y x]
+  (if (and (eq x 0) (eq y 0))
+    0
+    (let ax (abs x)
+      (let ay (abs y)
+        (let a (if (le ay ax) (octant ay ax) (sub 64 (octant ax ay)))
+          (cond (and (ge x 0) (ge y 0)) a
+                (and (lt x 0) (ge y 0)) (sub 128 a)
+                (and (lt x 0) (lt y 0)) (merge 128 a)
+                (mod (sub 256 a) 256)))))))
+
+(example (atan2 0 1024) 0)
+(example (atan2 1024 0) 64)
+(example (atan2 0 -1024) 128)
+(example (atan2 -1024 0) 192)
+(example (atan2 1024 1024) 32)

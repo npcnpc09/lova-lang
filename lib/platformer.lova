@@ -1,0 +1,420 @@
+;;; platformer.lova  --  the rules of Kenney's 3D platformer starter kit
+;;;
+;;; `(use "platformer")`.  A port of KenneyNL/Starter-Kit-3D-Platformer
+;;; (MIT, ~1 200 stars): the character that walks, jumps twice, squashes
+;;; when it lands and falls off the world; the coins; the platforms
+;;; that give way; the bricks broken from below; and the camera that
+;;; follows.  Written against the kit's GDScript -- `player.gd`,
+;;; `view.gd`, `coin.gd`, `platform_falling.gd`, `brick.gd` -- and
+;;; checked against a transliteration of them in `tests/test_platformer.py`.
+;;; The level and the models are the kit's own, read out of it by
+;;; `apps/platformer/import_kit.py` into `lib/platformer_assets.lova`.
+;;;
+;;; Units.  LOVA has no floating point, so a length here is in 65 536ths
+;;; of a metre (`F`) -- finer than the picture's 1024ths, because a
+;;; velocity is divided by sixty every tick and 1024ths would lose a
+;;; millimetre a tick to rounding -- and an angle is in 16 384ths of a
+;;; turn (`A`), 64 to each of `lib/fixed.lova`'s 256ths.  A tick is one
+;;; sixtieth of a second, the kit's physics step.
+;;;
+;;; What the original does with a physics engine, this does with boxes.
+;;; Godot gives every platform a concave collision mesh and the player
+;;; a capsule, and `move_and_slide` sorts out the rest; here a solid is
+;;; the box (or, for the round platforms, the cylinder) of its model,
+;;; turned by its yaw, and the player is a vertical segment with a
+;;; radius: walls push the segment out, a top it falls onto catches it,
+;;; a bottom it rises into stops it.  The numbers that came across
+;;; unchanged: speed 250, jump 7, gravity 25 a second, the lerps of a
+;;; tenth and a sixth, the capsule's 0.3 by 1.0, the coin's 0.5, the
+;;; falling platform's 15 a second, the camera's 120 degrees a second
+;;; between -80 and -10, the zoom between 4 and 16 at 10 a second, and
+;;; -10 as the bottom of the world.
+;;;
+;;;   new-game                     ; the world at the start
+;;;   (input mx mz jump cx cy zoom)  ; what is held this tick: the four
+;;;                                  ; axes as -1 / 0 / 1, jump as 1 on the
+;;;                                  ; tick it was pressed
+;;;   (tick w in)                    ; one sixtieth of a second later
+;;;   (picture w focal sw sh far)    ; the placed objects and the camera
+;;;                                  ; for `lib/scene3d.lova`, in its units
+
+(use "fixed")
+(use "scene3d")
+(use "platformer_assets")
+
+(def F [] 65536)                        ; a metre
+(def A [] 16384)                        ; a turn
+(def HALF-A [] 8192)
+
+(def MOVE [] (div (mul 250 F) 60))      ; the walking speed, a second
+(def JUMP [] (mul 7 F))
+(def GRAV [] (div (mul 25 F) 60))       ; gravity's gain, a tick
+(def FALL [] (div (mul 15 F) 60))       ; a falling platform's gain, a tick
+(def FEET [] 3277)                      ; the capsule's bottom above the position: 0.05
+(def HEAD [] 68813)                     ; and its top: 1.05
+(def RADIUS [] 19661)                   ; 0.3
+(def SEGLO [] 22938)                    ; the capsule's straight part: 0.35 ..
+(def SEGHI [] 49152)                    ; .. 0.75
+(def EDGE [] 13107)                     ; how far past a top's edge the feet may stand: 0.2
+(def STEP [] 6554)                      ; a top this little above the feet is a floor, not a wall: 0.1
+(def SNAP [] 1311)                      ; how far above a top the feet may be to land on it: 0.02
+(def COIN-REACH [] 52429)               ; coin 0.5 plus capsule 0.3
+(def BOTTOM [] (neg (mul 10 F)))        ; below this the world starts again
+(def DIAG [] 724)                       ; 1 / sqrt 2, in 1024ths
+
+(def CAM-TURN [] 91)                    ; 120 degrees a second, a tick, in A
+(def PITCH-LO [] -3641)                 ; -80 degrees
+(def PITCH-HI [] -455)                  ; -10
+(def ZOOM-LO [] (mul 4 F))
+(def ZOOM-HI [] (mul 16 F))
+(def ZOOM-STEP [] (div (mul 10 F) 60))
+(def COIN-BOB [] 217)                   ; 5 radians a second, a tick, in A
+(def COIN-SPIN [] 87)                   ; 2 radians a second
+(def CLOUD-BOB [] 43)                   ; 1 radian a second
+
+;; --- the world ------------------------------------------------------
+
+(def input [mx mz jump cx cy zoom]
+  (rec mx mx mz mz jump jump cx cx cy cy zoom zoom))
+
+(def still [] (input 0 0 0 0 0 0))
+
+(def new-player []
+  (rec x (mul (get start x) 64) y (mul (get start y) 64) z (mul (get start z) 64)
+       vx 0 vz 0 wx 0 wz 0 g 0 face 0 fdir 0 j1 1 j2 1 floored 0 prev 0
+       sx F sy F landed 0 jumped 0 struck -1))
+
+;; The camera starts at the origin and turned as the kit's View node
+;; is, 45 degrees round and 25 down, ten metres back.
+(def new-camera []
+  (rec x 0 y 0 z 0 yaw 2048 pitch -1138 tyaw 2048 tpitch -1138
+       zoom (mul 10 F) tzoom (mul 10 F)))
+
+(def kind-id [k]
+  (cond (eq k "coin") 1
+        (eq k "falling") 2
+        (eq k "brick") 3
+        (eq k "platform") 4
+        (eq k "round") 5
+        0))
+
+;; A thing of the level as the rules carry it: in F, with its state,
+;; and its kind as a number, because a text is compared a codepoint at
+;; a time and a tick asks forty-six things what they are.
+(def thing-of [it]
+  (let kid (kind-id (get it kind))
+    (put (put (put (put (put (put (put (put (put (put (put (put (put it
+         x (mul (get it x) 64)) y (mul (get it y) 64)) z (mul (get it z) 64))
+         yaw (mul (get it yaw) 64)) taken 0) falling 0) fv 0) dy 0) puff 0) gone 0) id 0)
+         kid kid) solid (if (ge kid 2) 1 0))))
+
+;; Each thing numbered once, so a brick can say which one was struck.
+(def numbered [things]
+  (map (lambda pr (put (head pr) id (head (tail pr))))
+       (zip things (range 0 (len things)))))
+
+;; The level split in two: what never changes -- platforms, the round
+;; ones, clouds, grass, the flag -- and what a tick may change -- coins,
+;; the platforms that fall, bricks.  A tick asks the second list what
+;; happened to it and both lists what is near.
+(def changes? [it] (let k (get it kid) (and (ge k 1) (le k 3))))
+
+(def new-game []
+  (let things (numbered (map thing-of level))
+    (rec p new-player cam new-camera
+         statics (filter (lambda it (not (changes? it))) things)
+         dynamics (filter changes? things)
+         t 0 coins 0 resets 0)))
+
+;; --- solids ---------------------------------------------------------
+;;
+;; What the rules know of a model: how far it reaches from its centre
+;; and how high its top is.  From the kit's models, in F.
+
+(def half-of [model]
+  (cond (eq model "platform") F
+        (eq model "platform-medium") 98304
+        (eq model "platform-grass-large-round") 163840
+        (eq model "platform-falling") 72090
+        (eq model "brick") 24576
+        0))
+
+(def top-of [model]
+  (cond (eq model "platform-grass-large-round") 32768
+        (eq model "platform-falling") 32768
+        (eq model "brick") 49152
+        36045))
+
+(def solid? [it] (and (get it solid) (not (get it gone))))
+
+;; A point's offset from a solid, in the solid's own frame: the turn
+;; undone.
+(def local-x [it px pz]
+  (let a (div (get it yaw) 64)
+    (div (sub (mul (sub px (get it x)) (cos a)) (mul (sub pz (get it z)) (sin a))) ONE)))
+
+(def local-z [it px pz]
+  (let a (div (get it yaw) 64)
+    (div (merge (mul (sub px (get it x)) (sin a)) (mul (sub pz (get it z)) (cos a))) ONE)))
+
+;; Is (px, pz) within `margin` of the solid's footprint?
+(def over? [it px pz margin]
+  (let reach (merge (half-of (get it model)) margin)
+    (if (eq (get it kid) 5)
+      (let dx (sub px (get it x))
+        (let dz (sub pz (get it z))
+          (le (merge (mul dx dx) (mul dz dz)) (mul reach reach))))
+      (and (le (abs (local-x it px pz)) reach)
+           (le (abs (local-z it px pz)) reach)))))
+
+(def top-y [it] (merge (merge (get it y) (get it dy)) (top-of (get it model))))
+(def bottom-y [it] (merge (get it y) (get it dy)))
+
+;; --- the player -----------------------------------------------------
+
+;; The input, turned by the camera's yaw and cut to unit length: the
+;; kit's `input.rotated(Vector3.UP, view.rotation.y)`, in 1024ths.
+(def wanted-x [in cam]
+  (let a (div (get cam yaw) 64)
+    (let raw (merge (mul (get in mx) (cos a)) (mul (get in mz) (sin a)))
+      (if (and (get in mx) (get in mz)) (div (mul raw DIAG) ONE) raw))))
+
+(def wanted-z [in cam]
+  (let a (div (get cam yaw) 64)
+    (let raw (sub (mul (get in mz) (cos a)) (mul (get in mx) (sin a)))
+      (if (and (get in mx) (get in mz)) (div (mul raw DIAG) ONE) raw))))
+
+;; `handle_controls`: the velocity wanted, and a jump if one is left.
+(def controls [p in cam]
+  (let p1 (put (put (put p wx (div (mul (wanted-x in cam) MOVE) ONE))
+                    wz (div (mul (wanted-z in cam) MOVE) ONE))
+               jumped 0)
+    (if (and (get in jump) (or (get p j1) (get p j2)))
+      (put (put (put (put (put (put p1 g (neg JUMP)) sx (div F 2)) sy (div (mul 3 F) 2))
+                j1 0)
+           j2 (if (get p j1) 1 0))
+           jumped 1)
+      p1)))
+
+;; `handle_gravity`: gravity gains, and is cancelled on the floor.
+(def gravity [p]
+  (let g (merge (get p g) GRAV)
+    (if (and (gt g 0) (get p floored))
+      (put (put p g 0) j1 1)
+      (put p g g))))
+
+;; A wall: a solid whose height spans the player's, that the segment
+;; has pushed into.  Pushed out along the axis it is least into, in the
+;; solid's frame, then turned back.
+(def wall? [it p]
+  (and (gt (top-y it) (merge (merge (get p y) FEET) STEP))
+       (lt (bottom-y it) (merge (get p y) HEAD))))
+
+(def push-round [it p]
+  (let dx (sub (get p x) (get it x))
+    (let dz (sub (get p z) (get it z))
+      (let reach (merge (half-of (get it model)) RADIUS)
+        (let d2 (merge (mul dx dx) (mul dz dz))
+          (if (ge d2 (mul reach reach))
+            p
+            (let d (max 1 (isqrt (div d2 64)))       ; isqrt works in 1024ths
+              (let d64 (mul d 8)                      ; back to F: sqrt(64) is 8
+                (put (put p x (merge (get it x) (div (mul dx reach) d64)))
+                     z (merge (get it z) (div (mul dz reach) d64)))))))))))
+
+(def push-box [it p]
+  (let lx (local-x it (get p x) (get p z))
+    (let lz (local-z it (get p x) (get p z))
+      (let reach (merge (half-of (get it model)) RADIUS)
+        (if (or (ge (abs lx) reach) (ge (abs lz) reach))
+          p
+          (let ox (sub reach (abs lx))
+            (let oz (sub reach (abs lz))
+              ;; the push, still in the solid's frame
+              (let px (if (le ox oz) (if (ge lx 0) ox (neg ox)) 0)
+                (let pz (if (le ox oz) 0 (if (ge lz 0) oz (neg oz)))
+                  (let a (div (get it yaw) 64)
+                    (put (put p x (merge (get p x) (div (merge (mul px (cos a)) (mul pz (sin a))) ONE)))
+                         z (merge (get p z) (div (sub (mul pz (cos a)) (mul px (sin a))) ONE)))))))))))))
+
+(def push-out [it p]
+  (if (wall? it p)
+    (if (eq (get it kid) 5) (push-round it p) (push-box it p))
+    p))
+
+;; The vertical move.  `y0` is where the player was; the player now
+;; carries the new y.  A top the feet were above and are now at or
+;; below, within reach, catches them; a bottom the head was under and
+;; is now past, stops it, and a brick so struck is marked.
+(def land [it p y0]
+  (if (and (ge (get p g) 0)
+           (and (over? it (get p x) (get p z) EDGE)
+                (and (ge (merge y0 FEET) (sub (top-y it) SNAP))
+                     (le (merge (get p y) FEET) (top-y it)))))
+    (put (put p y (sub (top-y it) FEET)) floored 1)
+    p))
+
+(def bump [it p y0]
+  (if (and (lt (get p g) 0)
+           (and (over? it (get p x) (get p z) RADIUS)
+                (and (le (merge y0 HEAD) (bottom-y it))
+                     (gt (merge (get p y) HEAD) (bottom-y it)))))
+    (put (put p y (sub (bottom-y it) HEAD)) struck (get it id))
+    p))
+
+(def move [p solids]
+  (let vx (merge (get p vx) (div (sub (get p wx) (get p vx)) 6))
+    (let vz (merge (get p vz) (div (sub (get p wz) (get p vz)) 6))
+      (let y0 (get p y)
+        (let p1 (put (put (put (put (put (put p vx vx) vz vz)
+                         x (merge (get p x) (div vx 60)))
+                         z (merge (get p z) (div vz 60)))
+                         floored 0)
+                    struck -1)
+          (let p2 (fold (lambda q (lambda it (push-out it q))) p1 solids)
+            (let p3 (put p2 y (sub (get p2 y) (div (get p2 g) 60)))
+              (fold (lambda q (lambda it (bump it (land it q y0) y0)))
+                    p3 solids))))))))
+
+;; The angle the character walks toward, `Vector2(velocity.z,
+;; velocity.x).angle()`, and the model turned a sixth of the way to
+;; it; the squash easing back toward one; the landing squash.
+(def after-move [p]
+  (let moving (or (get p vx) (get p vz))
+    (let fdir (if moving (mul (atan2 (get p vx) (get p vz)) 64) (get p fdir))
+      (let diff (sub (mod (merge (sub fdir (get p face)) HALF-A) A) HALF-A)
+        (let landed (and (get p floored) (and (gt (get p g) (mul 2 F)) (not (get p prev))))
+          (put (put (put (put (put (put p
+               fdir fdir)
+               face (mod (merge (get p face) (div diff 6)) A))
+               sx (if landed (div (mul 5 F) 4) (merge (get p sx) (div (sub F (get p sx)) 6))))
+               sy (if landed (div (mul 3 F) 4) (merge (get p sy) (div (sub F (get p sy)) 6))))
+               landed landed)
+               prev (get p floored)))))))
+
+;; --- the things -----------------------------------------------------
+
+;; Is the coin within reach of the capsule?  The nearest point of the
+;; segment to the coin's centre, then the distance.
+(def coin-hit? [it p t]
+  (let cx (get it x)
+    (let cy (merge (merge (get it y) 32768) (div (mul 13107 (sin (div (mul COIN-BOB t) 64))) ONE))
+      (let cz (get it z)
+        (let sy (max (merge (get p y) SEGLO) (min (merge (get p y) SEGHI) cy))
+          (let dx (sub cx (get p x))
+            (let dy (sub cy sy)
+              (let dz (sub cz (get p z))
+                (le (merge (mul dx dx) (merge (mul dy dy) (mul dz dz)))
+                    (mul COIN-REACH COIN-REACH))))))))))
+
+;; Standing on a falling platform sets it going: the kit's Area3D above
+;; its top, entered by the player's capsule when it lands.
+(def on-it? [it p]
+  (and (get p floored)
+       (and (over? it (get p x) (get p z) EDGE)
+            (eq (merge (get p y) FEET) (top-y it)))))
+
+;; Is the thing within reach of the player at all?  Four metres across
+;; and three up covers the widest platform plus the capsule; a thing
+;; further off costs a tick nothing more than this test.
+(def NEAR-XZ [] (mul 4 F))
+(def NEAR-Y [] (mul 3 F))
+
+(def near? [it p]
+  (and (le (abs (sub (get it x) (get p x))) NEAR-XZ)
+       (and (le (abs (sub (get it z) (get p z))) NEAR-XZ)
+            (le (abs (sub (merge (get it y) (get it dy)) (get p y))) NEAR-Y))))
+
+(def thing-tick [it p t]
+  (let k (get it kid)
+    (cond
+      (eq k 1)
+        (if (and (not (get it taken)) (and (near? it p) (coin-hit? it p t))) (put it taken 1) it)
+      (eq k 2)
+        (let going (or (get it falling) (and (near? it p) (on-it? it p)))
+          (if going
+            (let fv (merge (get it fv) FALL)
+              (let it1 (put (put (put it falling 1) fv fv) dy (sub (get it dy) (div fv 60)))
+                (let it2 (put it1 puff (if (get it falling)
+                                         (sub (get it puff) (div (get it puff) 6))
+                                         16384))
+                  (if (lt (bottom-y it2) BOTTOM) (put it2 gone 1) it2))))
+            it))
+      (eq k 3)
+        (if (eq (get p struck) (get it id)) (put it gone 1) it)
+      it)))
+
+;; --- the camera -----------------------------------------------------
+
+(def clamp [v lo hi] (max lo (min hi v)))
+
+(def camera-tick [cam p in]
+  (let tyaw (merge (get cam tyaw) (mul (get in cx) CAM-TURN))
+    (let tpitch (clamp (merge (get cam tpitch) (mul (get in cy) CAM-TURN)) PITCH-LO PITCH-HI)
+      (let tzoom (clamp (merge (get cam tzoom) (mul (get in zoom) ZOOM-STEP)) ZOOM-LO ZOOM-HI)
+        (rec x (merge (get cam x) (div (sub (get p x) (get cam x)) 15))
+             y (merge (get cam y) (div (sub (get p y) (get cam y)) 15))
+             z (merge (get cam z) (div (sub (get p z) (get cam z)) 15))
+             yaw (merge (get cam yaw) (div (sub tyaw (get cam yaw)) 10))
+             pitch (merge (get cam pitch) (div (sub tpitch (get cam pitch)) 10))
+             tyaw tyaw tpitch tpitch
+             zoom (merge (get cam zoom) (div (mul (sub tzoom (get cam zoom)) 2) 15))
+             tzoom tzoom)))))
+
+;; --- a tick ---------------------------------------------------------
+
+(def tick [w in]
+  (let p0 (gravity (controls (get w p) in (get w cam)))
+    (let solids (append (filter (lambda it (and (get it solid) (near? it p0))) (get w statics))
+                        (filter (lambda it (and (solid? it) (near? it p0))) (get w dynamics)))
+      (let p1 (after-move (move p0 solids))
+        (let dynamics (map (lambda it (thing-tick it p1 (get w t))) (get w dynamics))
+          (let cam (camera-tick (get w cam) p1 in)
+            (let got (len (filter (lambda it (get it taken)) dynamics))
+              (if (lt (get p1 y) BOTTOM)
+                (put (put new-game resets (inc (get w resets))) t (inc (get w t)))
+                (rec p p1 cam cam statics (get w statics) dynamics dynamics
+                     t (inc (get w t)) coins got resets (get w resets))))))))))
+
+;; --- the picture ----------------------------------------------------
+
+(def bobbed-y [it t]
+  (let k (get it kind)
+    (cond (eq (get it kid) 1) (merge (get it y) (div (mul 13107 (sin (div (mul COIN-BOB t) 64))) ONE))
+          (eq k "cloud") (merge (get it y) (div (mul F (sin (div (mul CLOUD-BOB t) 64))) ONE))
+          (merge (get it y) (get it dy)))))
+
+(def shown? [it]
+  (and (not (get it gone)) (not (get it taken))))
+
+(def placed-thing [it t]
+  (obj (model-of (get it model))
+       (div (get it x) 64) (div (bobbed-y it t) 64) (div (get it z) 64)
+       (div (if (eq (get it kid) 1) (merge (get it yaw) (mul COIN-SPIN t)) (get it yaw)) 64)
+       (merge (get it scale) (div (get it puff) 64))
+       (get it scale)))
+
+(def picture [w focal sw sh far]
+  (let p (get w p)
+    (let cam (get w cam)
+      (rec objs (cons (obj character (div (get p x) 64) (div (get p y) 64) (div (get p z) 64)
+                           (div (get p face) 64) (div (get p sx) 64) (div (get p sy) 64))
+                      (map (lambda it (placed-thing it (get w t)))
+                           (append (filter shown? (get w dynamics)) (get w statics))))
+           cam (camera (div (get cam x) 64) (div (get cam y) 64) (div (get cam z) 64)
+                       (div (get cam yaw) 64) (div (get cam pitch) 64)
+                       (div (get cam zoom) 64) focal sw sh far)))))
+
+(def frame [w focal sw sh far]
+  (let pic (picture w focal sw sh far)
+    (scene-shot (get pic objs) (get pic cam))))
+
+;; --- what the rules say about themselves ------------------------------
+
+(example (get new-game coins) 0)
+(example (get (tick new-game still) t) 1)
+;; standing still on the first platform, the player stays put
+(example (get (get (tick (tick new-game still) still) p) floored) 1)
+;; a jump takes the player up
+(example (gt (get (get (tick (tick new-game (input 0 0 1 0 0 0)) still) p) y)
+             (get (get new-game p) y)) 1)

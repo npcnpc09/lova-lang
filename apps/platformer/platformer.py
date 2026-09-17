@@ -1,0 +1,298 @@
+"""A window in Python, the game in LOVA: Kenney's 3D platformer.
+
+    python apps/platformer/platformer.py
+    python apps/platformer/platformer.py --shot apps/platformer/screenshot.png
+
+A port of KenneyNL/Starter-Kit-3D-Platformer (MIT, ~1 200 stars): the
+character, the coins, the platforms that give way, the bricks broken
+from below, the camera that follows.  Everything that decides is
+`lib/platformer.lova`, written against the kit's GDScript and checked
+against a transliteration of it in `tests/test_platformer.py`; every
+number in the picture is `lib/scene3d.lova` -- the models placed,
+turned, tilted, divided by their depth, culled, lit -- and the models
+and the level are the kit's own, read out of it by `import_kit.py`.
+This shell owns the window, the keys and the clock.
+
+LOVA has no floating point.  The rules run in 65 536ths of a metre and
+the picture in 1024ths, and a tick is a sixtieth of a second, the kit's
+physics step.  The clock here runs the rules at sixty ticks a second of
+wall time (falling behind when it must -- a tick is about six thousand
+LOVA steps, a frame a hundred thousand or more, and CPython does about
+seven hundred thousand a second; PyPy does four million) and draws a
+frame whenever it can.  The bar says what it managed.
+
+WASD walk, space jumps (twice), the arrow keys turn and tilt the
+camera, + and - zoom, R starts again, Escape leaves -- the kit's own
+keys.  `--shot file.png` draws one frame with no window at all, through
+a forty-line rasteriser at the bottom of this file, which is how the
+screenshot was made.
+"""
+
+from __future__ import annotations
+
+import sys
+import time
+import zlib
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from core.cli import build
+from core.conservation import BudgetTrap, DeltaTrap
+from core.runtime import Runtime, _call, _map_key, evaluate, list_to_python
+
+SOURCE = """\
+(use "platformer")
+(rec new new-game tick tick input input frame frame
+     coins (lambda w (get w coins))
+     resets (lambda w (get w resets))
+     where (lambda w (list (get (get w p) x) (get (get w p) y) (get (get w p) z))))
+"""
+
+VIEW_W, VIEW_H = 960, 600
+FOCAL = 824                      # the kit's camera: a 40 degree field of view, tall
+FAR = 12 * 1024                  # metres from the camera's target beyond which nothing is drawn
+BUDGET = 50_000_000
+TICK = 1 / 60
+MAX_CATCHUP = 4                  # ticks a frame may run to catch up with the clock
+SKY = "#8fb8e8"
+
+F = 65536
+
+
+def lit(k, l):
+    """A 24-bit colour under light `l`, where 1024 is the sun straight on."""
+    r, g, b = k >> 16 & 255, k >> 8 & 255, k & 255
+    return "#%02x%02x%02x" % tuple(max(0, min(255, c * l // 1024)) for c in (r, g, b))
+
+
+class Rules:
+    """The LOVA program, loaded once; every tick and frame is one call into it."""
+
+    def __init__(self) -> None:
+        tree, _report = build(SOURCE)
+        self.rt = Runtime(max_steps=BUDGET, max_call_depth=10_000)
+        api = evaluate(tree, self.rt)
+        self.fn = {n: api.entries[_map_key(n, "rec")][1]
+                   for n in ("new", "tick", "input", "frame", "coins", "resets", "where")}
+        sys.setrecursionlimit(max(sys.getrecursionlimit(), 20_000))
+
+    def call(self, name, *args):
+        self.rt.steps = 0
+        fn = self.fn[name]
+        for arg in args:
+            fn = _call(fn, arg, self.rt)
+        return fn
+
+    def new_game(self):
+        return self.fn["new"]
+
+    def tick(self, world, keys):
+        """One sixtieth of a second: `keys` is the set of names held, and
+        `jump` is in it only on the tick space went down."""
+        held = self.call("input",
+                         (1 if "d" in keys else 0) - (1 if "a" in keys else 0),
+                         (1 if "s" in keys else 0) - (1 if "w" in keys else 0),
+                         1 if "jump" in keys else 0,
+                         (1 if "Right" in keys else 0) - (1 if "Left" in keys else 0),
+                         (1 if "Down" in keys else 0) - (1 if "Up" in keys else 0),
+                         (1 if "minus" in keys else 0) - (1 if "plus" in keys else 0))
+        return self.call("tick", world, held)
+
+    def frame(self, world):
+        return list_to_python(self.call("frame", world, FOCAL, VIEW_W, VIEW_H, FAR))
+
+
+class Game:
+    """The window: keys in, polygons out."""
+
+    def __init__(self, master, rules: Rules) -> None:
+        import tkinter as tk
+        self.tk = tk
+        self.master = master
+        self.rules = rules
+        self.canvas = tk.Canvas(master, width=VIEW_W, height=VIEW_H, bg=SKY,
+                                highlightthickness=0)
+        self.canvas.pack()
+        self.bar = tk.Label(master, anchor="w", bg="#0e1116", fg="#c8d2de",
+                            font=("Consolas", 10), padx=8, pady=4)
+        self.bar.pack(fill="x")
+        self.world = rules.new_game()
+        self.keys: set = set()
+        self.jump_pending = False
+        self.anomaly = None
+        self.clock = time.perf_counter()
+        self.behind = 0.0
+        self.tick_ms = self.frame_ms = 0.0
+        self.tick_steps = self.frame_steps = 0
+        self.ticks = 0
+        master.bind("<KeyPress>", self.on_press)
+        master.bind("<KeyRelease>", self.on_release)
+        master.after(10, self.loop)
+
+    # --- input -----------------------------------------------------------
+
+    KEYS = {"w": "w", "a": "a", "s": "s", "d": "d", "Up": "Up", "Down": "Down",
+            "Left": "Left", "Right": "Right", "plus": "plus", "equal": "plus",
+            "KP_Add": "plus", "minus": "minus", "KP_Subtract": "minus"}
+
+    def on_press(self, event) -> None:
+        key = event.keysym
+        if key == "Escape":
+            self.master.destroy()
+        elif key == "space":
+            if "space" not in self.keys:
+                self.jump_pending = True
+            self.keys.add("space")
+        elif key in ("r", "R"):
+            self.world = self.rules.new_game()
+            self.anomaly = None
+        elif key in self.KEYS:
+            self.keys.add(self.KEYS[key])
+
+    def on_release(self, event) -> None:
+        key = event.keysym
+        if key == "space":
+            self.keys.discard("space")
+        elif key in self.KEYS:
+            self.keys.discard(self.KEYS[key])
+
+    # --- the loop --------------------------------------------------------
+
+    def loop(self) -> None:
+        now = time.perf_counter()
+        self.behind += now - self.clock
+        self.clock = now
+        ran = 0
+        if self.anomaly is None:
+            try:
+                while self.behind >= TICK and ran < MAX_CATCHUP:
+                    keys = set(self.keys)
+                    if self.jump_pending:
+                        keys.add("jump")
+                        self.jump_pending = False
+                    t0 = time.perf_counter()
+                    self.world = self.rules.tick(self.world, keys)
+                    self.tick_ms = (time.perf_counter() - t0) * 1000
+                    self.tick_steps = self.rules.rt.steps
+                    self.behind -= TICK
+                    ran += 1
+                    self.ticks += 1
+                if self.behind >= TICK:          # too slow to keep up: drop the debt
+                    self.behind = 0.0
+                self.paint()
+            except (BudgetTrap, DeltaTrap, ValueError) as exc:
+                self.anomaly = getattr(exc, "anomaly", None) or {"kind": str(exc)}
+                self.bar.config(text=f"the rules faulted: {self.anomaly.get('kind')}")
+        self.master.after(1, self.loop)
+
+    def paint(self) -> None:
+        c = self.canvas
+        t0 = time.perf_counter()
+        faces = self.rules.frame(self.world)
+        self.frame_steps = self.rules.rt.steps
+        self.frame_ms = (time.perf_counter() - t0) * 1000
+        c.delete("all")
+        for f in faces:
+            u0, v0, u1, v1, u2, v2, k, l = list_to_python(f)
+            fill = lit(k, l)
+            c.create_polygon(u0, v0, u1, v1, u2, v2, fill=fill, outline=fill)
+        coins = self.rules.call("coins", self.world)
+        resets = self.rules.call("resets", self.world)
+        c.create_text(18, 16, anchor="nw", text=f"coins {coins}", fill="#ffffff",
+                      font=("Consolas", 22, "bold"))
+        if resets:
+            c.create_text(18, 52, anchor="nw", text=f"fell {resets}x", fill="#ffe08a",
+                          font=("Consolas", 12))
+        self.bar.config(
+            text=f"tick {self.tick_steps:,} steps / {self.tick_ms:.1f} ms   "
+                 f"frame {len(faces)} faces, {self.frame_steps:,} steps / {self.frame_ms:.0f} ms "
+                 f"({1000 / max(self.frame_ms + self.tick_ms, 1):.1f} fps)   "
+                 f"[WASD walk, space jump, arrows camera, +/- zoom, R restart]")
+
+
+# --- a frame with no window --------------------------------------------------
+
+def rasterise(faces, w, h, sky=(0x8f, 0xb8, 0xe8)):
+    """The faces painted into an RGB buffer, in the order given."""
+    px = bytearray(w * h * 3)
+    for y in range(h):
+        for x in range(w):
+            px[(y * w + x) * 3:(y * w + x) * 3 + 3] = bytes(sky)
+    for f in faces:
+        u0, v0, u1, v1, u2, v2, k, l = f
+        r, g, b = (max(0, min(255, (k >> s & 255) * l // 1024)) for s in (16, 8, 0))
+        pts = sorted(((u0, v0), (u1, v1), (u2, v2)), key=lambda p: p[1])
+        (xa, ya), (xb, yb), (xc, yc) = pts
+        for y in range(max(0, ya), min(h - 1, yc) + 1):
+            # the long edge a-c and the short one a-b or b-c
+            if yc == ya:
+                xs = [xa, xb, xc]
+            else:
+                xl = xa + (xc - xa) * (y - ya) / (yc - ya)
+                if y < yb and yb != ya:
+                    xr = xa + (xb - xa) * (y - ya) / (yb - ya)
+                elif yc != yb:
+                    xr = xb + (xc - xb) * (y - yb) / (yc - yb)
+                else:
+                    xr = xb
+                xs = [xl, xr]
+            lo, hi = int(min(xs)), int(max(xs))
+            for x in range(max(0, lo), min(w - 1, hi) + 1):
+                i = (y * w + x) * 3
+                px[i] = r
+                px[i + 1] = g
+                px[i + 2] = b
+    return px
+
+
+def write_png(path, px, w, h):
+    raw = b"".join(b"\x00" + bytes(px[y * w * 3:(y + 1) * w * 3]) for y in range(h))
+
+    def chunk(kind, body):
+        return (len(body).to_bytes(4, "big") + kind + body
+                + zlib.crc32(kind + body).to_bytes(4, "big"))
+    data = (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", w.to_bytes(4, "big") + h.to_bytes(4, "big") + b"\x08\x02\x00\x00\x00")
+            + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+    Path(path).write_bytes(data)
+
+
+def shot(rules: Rules, path: str, script=None) -> None:
+    """Play `script` -- (ticks, keys) pairs -- with no window, then write
+    one frame.  The default walks onto the level and jumps for a coin."""
+    world = rules.new_game()
+    # W and A together walk straight along -x under the kit's 45 degree
+    # camera: onto the medium platform three metres over, through its
+    # coin, and a jump toward the brick above it
+    script = script or [(60, set()), (44, {"a", "w"}), (20, set()), (1, {"jump"}), (14, set())]
+    for ticks, keys in script:
+        for _ in range(ticks):
+            world = rules.tick(world, keys)
+    t0 = time.perf_counter()
+    faces = [list_to_python(f) for f in rules.frame(world)]
+    steps = rules.rt.steps
+    write_png(path, rasterise(faces, VIEW_W, VIEW_H), VIEW_W, VIEW_H)
+    x, y, z = (v / F for v in list_to_python(rules.call("where", world)))
+    print(f"{path}: {len(faces)} faces, {steps:,} LOVA steps in "
+          f"{(time.perf_counter() - t0) * 1000:.0f} ms; the player at "
+          f"({x:.2f}, {y:.2f}, {z:.2f}) with {rules.call('coins', world)} coin(s)")
+
+
+def main() -> int:
+    rules = Rules()
+    if len(sys.argv) > 2 and sys.argv[1] == "--shot":
+        shot(rules, sys.argv[2])
+        return 0
+    import tkinter as tk
+    root = tk.Tk()
+    root.title("platformer -- the window is Python, the game is LOVA")
+    root.configure(bg="#0e1116")
+    root.resizable(False, False)
+    Game(root, rules)
+    root.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

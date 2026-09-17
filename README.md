@@ -179,6 +179,7 @@ python apps/war/war.py                # an isometric battlefield, terrain and al
 python apps/g2048/game2048.py 7       # 2048, ported from gabrielecirulli/2048
 python apps/tactics/tactics.py        # a tactics battle, ported out of GDScript
 python apps/model/model.py            # low-poly meshes, turned and lit in real time
+python apps/platformer/platformer.py  # Kenney's 3D platformer kit, ported out of GDScript
 python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded
@@ -375,6 +376,32 @@ something and kept as a test. What they demonstrate:
   ```bash
   python apps/model/model.py                        # 1-5 pick a model, drag to turn
   python apps/model/obj_to_lova.py mine.obj lib/mine.lova mine   # what Blender exports
+  ```
+
+- **And a 3D platformer, ported from Kenney's starter kit.**
+  `lib/platformer.lova` holds the rules of
+  [KenneyNL/Starter-Kit-3D-Platformer](https://github.com/KenneyNL/Starter-Kit-3D-Platformer)
+  (MIT, about 1 200 stars), written against its GDScript: the character
+  that walks, jumps twice and squashes when it lands, the coins that
+  bob and spin, the platforms that give way, the bricks broken from
+  below, the camera that follows, turns and zooms, and the fall off the
+  world that starts everything again — every constant the kit's own.
+  `lib/scene3d.lova` puts the kit's models into one picture under a
+  camera that moves: forty-six objects placed, turned, tilted, culled
+  and lit, about **4 000 LOVA steps a tick and 150 000 a frame**. The
+  models and the level are the kit's, read out of its `.glb` files and
+  its scene by `apps/platformer/import_kit.py` and decimated to a
+  budget each with the paint kept where it was. `tests/test_platformer.py`
+  transliterates the kit's five scripts and runs them beside the port
+  one tick at a time over a scripted play: **every position within four
+  thousandths of a metre**, the same coins taken, and the fall off the
+  world on the same tick.
+
+  ![Kenney's platformer level: the window is Python, the game is LOVA](apps/platformer/screenshot.png)
+
+  ```bash
+  python apps/platformer/platformer.py                   # WASD, space, arrows, +/-
+  python apps/platformer/platformer.py --shot out.png    # one frame, no window
   ```
 
 - **Logic runs right the first time.** The word count, the games, the

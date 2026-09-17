@@ -1,0 +1,153 @@
+;;; scene3d.lova  --  many models in one picture, seen by a camera that moves
+;;;
+;;; `(use "scene3d")`.  `lib/mesh3d.lova` draws one model turning in
+;;; front of a fixed camera.  A game has a world: objects standing at
+;;; places, each turned its own way, and a camera that follows the
+;;; player round -- Godot's Camera3D under a pivot, which is what the
+;;; platformer kit does.  This file is that: a list of placed objects
+;;; and one camera give one list of faces, far objects first.
+;;;
+;;;   (obj m x y z yaw scale tall)   ; a placed model: position in 1024ths of
+;;;                                  ; a metre, turn in 256ths, scale in
+;;;                                  ; 1024ths -- across, and `tall` up, so a
+;;;                                  ; character can squash when it lands
+;;;   (camera tx ty tz yaw pitch zoom focal sw sh far)
+;;;                                  ; looks at the target from `zoom` away,
+;;;                                  ; turned by yaw then tilted by pitch --
+;;;                                  ; Godot's YXZ order; `focal` is pixels a
+;;;                                  ; metre at a metre; anything more than
+;;;                                  ; `far` from the target is not drawn
+;;;   (scene-shot objs cam)          ; the picture: a list of faces, each
+;;;                                  ; (u0 v0 u1 v1 u2 v2 colour light)
+;;;
+;;; The camera is Godot's: it sits at +zoom on its own z axis and looks
+;;; down -z, so a point's depth is zoom minus its z in the camera's
+;;; frame, and the picture is the mirror image of `mesh3d`'s -- which
+;;; is why the back-face test here keeps the faces with the *other*
+;;; sign, a fact settled by counting a sphere's visible faces, as the
+;;; first one was.
+;;;
+;;; What is sorted is the objects, by the depth of where they stand,
+;;; and not the faces: a platform, a coin, a brick and a cloud are
+;;; convex enough that dropping their back faces orders the rest, and
+;;; a frame of a thousand faces spent a third of its steps sorting them
+;;; before this was measured.  The character is the one object that is
+;;; not convex, and an arm may be drawn over the torso in front of it.
+;;;
+;;; Each object costs one turn per vertex, exactly as in `mesh3d`,
+;;; because the object's own yaw and the camera's add: turning a model
+;;; by its yaw and then the camera's is one turn by their sum.  The sun
+;;; is in the world -- the kit's DirectionalLight3D, over the right
+;;; shoulder -- and is carried into each object's frame once per
+;;; object, a yaw the other way.  A placed vertex is a three-list
+;;; (u v depth) and a face an eight-list, because a map costs three
+;;; steps a field to build and a cons one.
+
+(use "mesh3d")
+
+;; Toward the sun, a unit vector in the world, from the kit's Sun node.
+(def SUN [] (rec x 597 y 784 z -278))
+
+(def obj [m x y z yaw scale tall]
+  (rec m m x x y y z z yaw yaw scale scale tall tall))
+
+(def camera [tx ty tz yaw pitch zoom focal sw sh far]
+  (rec tx tx ty ty tz tz yaw yaw pitch pitch zoom zoom focal focal
+       sw sw sh sh far far))
+
+;; A vertex, turned by the object's yaw and the camera's together and
+;; tilted by the camera's pitch, pushed by where the object stands in
+;; the camera's frame, and divided by its depth: (u v depth).
+(def place-vertex [v cy sy cp sp ox oy oz zoom focal cx cyy]
+  (let x (get v x)
+    (let y (get v y)
+      (let z (get v z)
+        (let x1 (div (merge (mul x cy) (mul z sy)) ONE)
+          (let z1 (div (sub (mul z cy) (mul x sy)) ONE)
+            (let d (max NEAR (sub zoom (merge (div (merge (mul y sp) (mul z1 cp)) ONE) oz)))
+              (list (merge cx (div (mul (merge x1 ox) focal) d))
+                    (sub cyy (div (mul (merge (div (sub (mul y cp) (mul z1 sp)) ONE) oy) focal) d))
+                    d))))))))
+
+(def scaled [v s t]
+  (if (and (eq s ONE) (eq t ONE))
+    v
+    (rec x (div (mul (get v x) s) ONE)
+         y (div (mul (get v y) t) ONE)
+         z (div (mul (get v z) s) ONE))))
+
+(def placed-in [m cy sy cp sp scale tall ox oy oz zoom focal cx cyy]
+  (fold (lambda acc (lambda pr
+          (map-put acc (head (tail pr))
+                   (place-vertex (scaled (head pr) scale tall) cy sy cp sp ox oy oz
+                                 zoom focal cx cyy))))
+        (nil)
+        (zip (get m vs) (range 0 (len (get m vs))))))
+
+(def nowhere3 [] (list 0 0 0))
+
+;; A face on the screen, or the accumulator unchanged if its back is
+;; turned: the same test as mesh3d's `face-of`, with the sign the other
+;; way.
+(def face-in [pv sun f acc]
+  (let p (map-get pv (get f a) nowhere3)
+    (let q (map-get pv (get f b) nowhere3)
+      (let r (map-get pv (get f c) nowhere3)
+       (let pu (head p) (let pv2 (head (tail p))
+        (let qu (head q) (let qv (head (tail q))
+         (let ru (head r) (let rv (head (tail r))
+          (if (ge (sub (mul (sub qu pu) (sub rv pv2)) (mul (sub ru pu) (sub qv pv2))) 0)
+            acc
+            (cons (list pu pv2 qu qv ru rv
+                        (get f k)
+                        (merge AMBIENT
+                               (max 0 (div (merge (mul (get f nx) (get sun x))
+                                                  (merge (mul (get f ny) (get sun y))
+                                                         (mul (get f nz) (get sun z))))
+                                           ONE))))
+                  acc))))))))))))
+
+;; One object's faces in front of `acc`, or `acc` if it stands too far
+;; from the target.  `off` is where the object stands in the camera's
+;; frame, computed once by `stand`.
+(def object-faces [o off cam cp sp cx cyy acc]
+  (let oy (get o yaw)
+    (let ocy (cos (sub oy (get cam yaw)))
+      (let osy (sin (sub oy (get cam yaw)))
+        (let m (get o m)
+          (let pv (placed-in m ocy osy cp sp (get o scale) (get o tall)
+                             (get off x) (get off y) (get off z)
+                             (get cam zoom) (get cam focal) cx cyy)
+            ;; the sun in the object's frame: the yaw undone
+            (let sun (turn SUN (cos (neg oy)) (sin (neg oy)) ONE 0)
+              (fold (lambda acc2 (lambda f (face-in pv sun f acc2)))
+                    acc (get m fs)))))))))
+
+;; Where an object stands in the camera's frame, paired with the
+;; object; nil if it is too far from the target to draw.
+(def stand [o cam cy sy cp sp]
+  (let dx (sub (get o x) (get cam tx))
+    (let dz (sub (get o z) (get cam tz))
+      (if (gt (merge (abs dx) (abs dz)) (get cam far))
+        (nil)
+        (list o (turn (rec x dx y (sub (get o y) (get cam ty)) z dz) cy sy cp sp))))))
+
+(def scene-shot [objs cam]
+  (let cy (cos (neg (get cam yaw)))
+    (let sy (sin (neg (get cam yaw)))
+      (let cp (cos (neg (get cam pitch)))
+        (let sp (sin (neg (get cam pitch)))
+          (let cx (div (get cam sw) 2)
+            (let cyy (div (get cam sh) 2)
+              (let stood (filter (lambda s (not (nil? s)))
+                                 (map (lambda o (stand o cam cy sy cp sp)) objs))
+                ;; the nearest object (the largest z: depth is zoom minus
+                ;; z) goes into the fold first, so that consing each
+                ;; object's faces in front leaves it at the back of the
+                ;; list, painted last
+                (fold (lambda acc (lambda s
+                        (object-faces (head s) (head (tail s)) cam cp sp cx cyy acc)))
+                      (nil)
+                      (sort-by (lambda i (lambda j
+                                 (gt (get (head (tail i)) z) (get (head (tail j)) z))))
+                               stood))))))))))
