@@ -127,7 +127,10 @@ class DepthTrap(BudgetTrap):
             "repair_hint": (
                 "the recursion has no reachable base case, or needs more "
                 f"than {limit} frames; add or fix the `if` that terminates "
-                "it, or make the loop an accumulator recursion, or shrink the input"
+                "it.  LOVA does not turn a tail call into a loop, so a "
+                "recursion over more elements than that -- accumulator or "
+                "not -- must be `fold` / `map` / `range`, `loop-until`, or "
+                "the prelude's `iterate`"
             ),
         }
 

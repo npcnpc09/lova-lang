@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-11
 **Script:** `experiments/experiment_24_linear.py`
-**Status:** Done, four sessions on Opus (frontier x2, blind x2). **WIN for the measurement, NULL for the claim.**
+**Status:** Done, four sessions on Opus (frontier x2, blind x2); **run 2, 2026-09-18, four more on the pending stack (Q108).** **WIN for the measurement, NULL for the claim, twice.**
 
 ## Hypothesis
 
@@ -293,6 +293,136 @@ already holds it.
   The fine-tune corpus exists (`corpus/finetune`); does a model taught
   the substrate compose in it, or transcribe faster?
 
+## Run 2 (2026-09-18) -- Q108, the pending stack in place of the alphabet
+
+Four fresh sessions (S1-S4, Opus, the same four tasks in the same
+order, the same card), with the third arm: after every emission the
+harness prints the pending stack -- which forms are open, which
+operator owns each, what each still owes, and whether `;` may close
+the variadic in front of you -- and never the alphabet. Each session
+was asked the same four questions afterwards, with the same
+assurance that "I composed the tree first" is a finding.
+
+### The numbers
+
+| arm | sessions | tasks | pass | refusals | restarts | tokens (c01/c04/b04/b01) |
+|---|---|---|---|---|---|---|
+| stack | 4 | 16 | 16/16 | 0 | 0 | 17 / 28 / 26-28 / 36-42 |
+
+Sixteen of sixteen, not one refused token, not one restart, every
+token written a token kept (107 written and 107 kept in three
+sessions, 115 and 115 in the fourth). Three of the four sessions
+produced programs identical to each other on every task; the fourth
+took the text route on b04 (28 tokens against 26) and carried a
+counter as a second parameter on b01 (42 against 36). Nothing in the
+table differs from run 1 except that the b04 and b01 programs are
+shorter than run 1's 26 / 36 in three sessions, which is the card's
+`let`-recursion recipe being reused.
+
+### What the sessions said, again unanimously
+
+**All four held the tree.** "Up front, completely, on all four";
+"what I composed up front was a *tree*, not a *stream* ... the prefix
+stream is not how I think about the program; it is an output format I
+convert to"; "emitting was transcription of a pre-order walk of that
+tree, and my chunks were exactly the subtrees I had already named to
+myself". One session had composed all four programs before emitting
+the first token of the first. Three of the four volunteered the same
+tell as run 1: "zero refusals across 107 tokens is not what
+exploration looks like, it is what reading out a finished plan looks
+like".
+
+**The stack changed nothing.** All four read it after every emission
+and all four say it altered zero tokens. What it was: "a checksum",
+"a receipt, not input", "accurate, legible, and not load-bearing for
+a program I had already finished composing". The one figure they
+would keep is `debt`, the count of open slots, "the only cheap check
+that the tree I am transcribing is the size I think it is"; the one
+line that ever confirmed a belief rather than echoed it was
+`` `;` closes it here `` on b01. One session's estimate of when it
+would matter: "a memory aid for a writer who has run out of memory,
+and on 17-42 token programs I had not".
+
+**The no-revision rule did what it did in run 1, and one thing more.**
+All four: more composition up front, earlier, none of it in the
+stream. Two of the four add that it made them compose *smaller and
+duller* -- the arithmetic b04 over the text b04, the integer seed over
+a head/tail seed -- "to avoid a restart on an unknown", so the
+irreversible interface selects against the program the session
+thought was better.
+
+**What they wanted, in the same three words each.** Not one asked for
+the valid-token set and not one asked for more of the stack. All four
+asked for:
+
+1. *The tree back.* The accepted prefix re-printed as the s-expression
+   it already determines, with a hole at the frontier: "the machine has
+   that tree; it is showing me the serialisation instead". The stream
+   line "becomes unreadable by ~25 tokens".
+2. *The binding table.* What `ref 0` and `ref 1` denote at the open
+   form, and by which construct they were bound. Every session carried
+   this in its head as an external table and named it as the one
+   mistake it feared: a swapped reference is well-typed and silently
+   wrong, "two of my four programs are one token away from that
+   failure and the machine would have applauded either". This is Q106
+   again, and Q89 (a scope the runtime can list) from the other side.
+3. *A dry run on a subtree.* "Evaluate this partial subtree on this
+   input" before committing; the only oracle for a semantic bet
+   (`text-slice` half-open or not, the operand order of `deviation`)
+   was `finish`.
+
+And, from every session, the same account of where the cost went: not
+the missing parentheses ("easy to *write*, genuinely hard to *read
+back*"), but the missing vocabulary -- a comparison is three or four
+tokens, subtraction is `merge a (mul -1 b)`, a five-element list is
+eleven tokens of `cons` -- and every such encoding "is a place where a
+mistake is well-typed and therefore silent".
+
+### Findings of run 2
+
+**F8. Q108 is answered: no.** The pending stack, offered to four fresh
+sessions in place of the alphabet, changed no token, no chunk and no
+account. The frontier was not the problem; the interface's premise
+was.
+
+**F9. The finding of run 1 is now eight sessions wide.** Eight of
+eight, across three arms, composed a tree and transcribed it, and
+eight of eight say so unprompted in the same terms. For a current
+model the substrate is a serialisation format. Nothing short of Q110
+(a model trained on the stream) can reopen this, and Q109 (the size at
+which transcription breaks) would measure a failure of memory, not the
+appearance of linear composition.
+
+**F10. The three things every session asked for are the tree, its
+scope and its value** -- the s-expression with a hole, the binding
+table, and a scratch evaluation. Those are the working surface of the
+*text* loop: `explain`, the scope listing of Q89, and `lova_execute`
+on a fragment. The substrate-authoring line of experiments has, in
+answering its own question, pointed back at the surface the project
+already authors in.
+
+**F11. The irreversible interface selects against the better program.**
+New in run 2: two sessions chose the duller design on b04 because a
+wrong bet on an operator's semantics would cost a restart. An
+authoring interface that punishes probing gets conservative programs,
+not incremental ones.
+
+### Next questions raised by run 2
+
+- ~~**Q108**~~: answered, no. Closed.
+- **Q112**: the tree echo -- render the accepted prefix as an
+  s-expression with a hole, plus the binders in scope at the hole, in
+  `render_pending`. Cheap, asked for by 4 of 4, and the measurement
+  that would justify it is a run at Q109's size, where the sessions say
+  they would run out of memory. Not built until that run is wanted.
+- **Q113**: the semantic bet -- a session's only oracle for an
+  operator's exact semantics (`text-slice` half-open, `mod` on a
+  negative, `sort-by` strict) is running the program. One worked
+  example per operator on the card, and a scratch evaluation of a
+  fragment in the loop harness, would remove the one uncertainty every
+  session named. This is the card's number-1 lever from Exp 18 again,
+  and it applies to the text loop as much as to the substrate.
+
 ## Status
 
 **WIN for the measurement, NULL for the claim.** Sixteen of sixteen
@@ -305,4 +435,10 @@ not thinking. Axiom 3's constraint was inert except at function-typed
 slots, and disjoint from the three real costs (variadic `;`, arity
 debt, semantic guesses). What every session wanted instead of the valid
 -token list was a rendering of the pending stack, which the state
-machine already holds: Q108.
+machine already holds: Q108. **Run 2 (2026-09-18) offered it to four
+fresh sessions: 16/16, zero refusals, zero restarts, and all four
+composed the tree first and say the stack changed no token. Eight of
+eight sessions over three arms; the substrate is a serialisation
+format for a current model, and what every session asked for is the
+tree, its scope and its value -- the working surface of the text
+loop.**

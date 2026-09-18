@@ -1014,6 +1014,22 @@ def expand_uses(src: str, _seen: Optional[set] = None) -> str:
     return _USE_FORM.sub(include, src)
 
 
+_PRELUDE_DEF = re.compile(r"^\(def(?:n)?\s+([^\s\[\]()]+)", re.M)
+_prelude_names = None
+
+
+def prelude_names() -> frozenset:
+    """The names ``lib/prelude.lova`` defines, so a diagnostic can tell a
+    program's own bindings from the library's (the audit of 2026-09-18:
+    an unbound-ref anomaly listed all forty prelude names on every
+    miss, four hundred of its six hundred characters, and the model
+    reads every one of them)."""
+    global _prelude_names
+    if _prelude_names is None:
+        _prelude_names = frozenset(_PRELUDE_DEF.findall(load_prelude()))
+    return _prelude_names
+
+
 def parse_with_prelude(src: str) -> Node:
     """Parse ``src`` with the standard library in scope.
 

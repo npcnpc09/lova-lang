@@ -666,6 +666,117 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### The audit (2026-09-18) -- the design against the goal
+
+The owner opened the city-builder port, found it frozen (a city frame
+is 1 007 033 LOVA steps, two seconds on CPython; a tick of the rules
+is 965 steps, three milliseconds; the camera's lerp chains dozens of
+re-renders), asked whether a Rust runtime would be faster (yes,
+50-100x, runtime only, one to two weeks, deferred), asked whether the
+language had reached its goal (no), and then asked for this: an audit
+of the architecture and the code against the one goal, with the
+changes made rather than proposed. The standard is
+`spec/ai-convenience.md` and the three rules of 2026-09-11.
+
+**Where the four numbers stand.**
+
+| number | evidence | standing |
+|---|---|---|
+| 1. attempts to run correctly | Exp 17 79/80 both; Exp 18 11 vs 10; Exp 19 35 vs 26; Exp 20 31 vs 26 | parity, behind at size, every extra attempt a rewrite for interpreter cost |
+| 2. context per failure | Exp 19 594 chars vs 71; Exp 21: 47 of 48 faults found by reading, feedback located 0 | behind; the anomaly has not yet been the thing that found a fault |
+| 3. host scaffolding | a function call under a budget and a boundary, against a subprocess with a timeout | won |
+| 4. reuse / repair / trace | Exp 21 NULL at 20-40 lines (reading covers it); the variant-task half and `why` on a value untested | unproven |
+| the north star | Exp 24: emittable, not authorable; every session composed the tree and transcribed it | serialisation until Q108 / Q110 say otherwise |
+
+**What holds its place by evidence.** Each of these was moved by a
+measured number and stays: the span on every anomaly and the patch by
+span (M24, Exp 19-21); `hot` in the step trap (Exp 20, 35 -> 31
+attempts); `example` forms as the program's own contract (M26);
+the generated card (Exp 18: every hindrance a missing sentence);
+records (Q81's crossed arguments); the text family (M25, 28 s -> 5.5
+s); the list family (M27, 4-25x an element); the boundary and the
+budget, which are the whole of number 3; type-constrained generation
+where a model's prior is weakest, the function-typed slot (Exp 24);
+and the s-expression as the authoring surface for a current model
+(Exp 22-24).
+
+**What holds its place by lineage only.** Counted over the 34 real
+programs in `apps/` and `lib/` (assets and the prelude excluded):
+
+| family | programs using it | what it stands on |
+|---|---|---|
+| Evolution (8 slots: `defpop` `fitness` `variant` `select` `retire` `evolve` `clone` `mutate`) | 2 (`apps/evolve.lova`, `lib/evolution.lova`), plus Exp 15 which is the axiom's own demonstration | Axiom 6, standing; no yardstick task has needed a population |
+| Meta lineage (`hash` `uid` `ancestor-of` 0; `why` `lineage-query` `explain` 2 each) | the lineage demo | Axiom 5, standing; "leave evidence" is on the owner's list of AI operations and no host-side tool records anything; number 4's "origin from the value alone" is untested |
+| Number theory (`p` `tau` `sigma` `mobius` `gcd`) | 0-2 each | DNA OS; LOVABench v1/v2's sixty tasks were selected for them, so the 60/60 and the 5.38x are measurements of this family |
+| Telemetry and the weighted sampler (Exp 10) | none | random generation; no model has used the alphabet (Exp 24) |
+| Conservation (`surprise` 4, `when-anomaly` 3, `budget` 2, `conserve` 1) | a handful | `example` runs on it, so it earns its place through the check step |
+
+None of these slots changed hands. A byte change without a number
+calling for it is exactly what rule 3 forbids, and the corpus, Exp
+01-11 and the fine-tune pairs are built on the number-theory bytes.
+What changed is the labelling: `CLAUDE.md`'s headline numbers now say
+what they measure. The two standing axioms with no yardstick evidence
+(5 and 6) are the owner's question, not the audit's.
+
+**What changed today**, all against number 2, each from a fault met in
+the first ten minutes of the audit, in `core/cli.py`,
+`core/surface.py`, `core/conservation.py`, `core/mcp_server.py`:
+
+- The first program written for the audit used `add`, and the
+  anomaly said `Nearest: all, odd`. The commonest miss is not a typo
+  but another language's name for something LOVA has; edit distance
+  cannot see it. `SYNONYMS` in the CLI maps sixty such names
+  (`add`, `length`, `first`, `reduce`, `print`, `while`, ...) to the
+  LOVA form, and the hint says "in LOVA that is `(merge a b)`".
+- An unbound-ref anomaly listed all forty prelude names on every
+  miss: 400 of its 660 characters, read by the model each time. The
+  `bound` list is now the program's own names, plus any prelude name
+  close to the miss. 660 -> 267-300 characters.
+- `valid_alternatives: (11, 12)` was printed for a division by zero:
+  the generator's token bytes for `mul` / `mod`, which is not a
+  repair. It stays in the schema for samplers and is not printed.
+- The depth trap's hint said "make the loop an accumulator
+  recursion" to a program that was one. LOVA does not turn a tail
+  call into a loop; the hint now says so and names `fold` / `range` /
+  `loop-until` / `iterate`.
+- The MCP server sent the full `position_path` -- twenty thousand
+  integers for a ten-thousand-frame recursion -- where the CLI had
+  elided it since M23. Both elide now.
+
+`tests/test_diagnostics.py` holds one test per change: 944 -> 949.
+
+**What the audit did not change, and why.** Tail calls: no session
+in Exp 18-21 met the depth trap, so the card's teaching holds and a
+change would be a proposal. The interpreter: the owner deferred the
+native runtime until the goal is met. The prelude: eight of its
+thirty-nine definitions are used by no program in 59 files, but the
+card is 2 130 tokens and they are 60 of them. Q98 was closed by the
+parser change of 2026-09-15 and is marked so.
+
+**What the audit says about the roadmap.** Exp 24 is the measurement:
+the substrate is emittable and not authorable by a current model. The
+honest architecture, restated in `CLAUDE.md`'s orientation, is the one
+the project already has -- the tree is the authoring form, the
+s-expression its projection for a current model, the integer its
+identity, storage and transport. Stage 2 and Stage 3 are serialisation
+until an experiment says otherwise, and the experiment is Q108, run
+the same day in four fresh sessions with the pending stack in place
+of the alphabet (`journal/experiment_24.md`, run 2), then Q110.
+
+**Q108, run the same afternoon** (`journal/experiment_24.md`, run
+2): four fresh sessions with the pending stack, 16/16, zero refusals,
+zero restarts, every one composed the tree first and says the stack
+changed no token. Eight of eight sessions over three arms: for a
+current model the substrate is a serialisation format, and what every
+session asked for is the tree back, its scope and its value -- the
+text loop's own surface. The north star is retired as an authoring
+goal until Q110.
+
+**Next, in the agreed order:** Q95 / Q96, the
+second and fourth numbers at a size reading cannot cover, in programs
+carrying their examples; then the split of number 1 into the
+language's cost and the interpreter's.
+
 ### The ruling (2026-09-11) — the design method
 After M27, the owner asked what the remaining experiments would yield
 and got the estimate: parity with Python on writing and repairing
@@ -1901,10 +2012,22 @@ the corpus grows again.
   refusals, and all four reported composing the tree first and reading
   it out. The substrate is emittable, not authorable, by a current
   model; Stage 2 and Stage 3 are serialisation, not thinking.
-- **Q108**: render the pending stack, not the alphabet -- replace the
-  valid-token frontier with "slots open, which operator owns each, and
-  whether `;` is legal here", and re-run Exp 24. All four sessions
-  asked for exactly this, and the state machine already holds it.
+- ~~**Q108**~~ *(answered by Exp 24 run 2, 2026-09-18)*: no. Four
+  fresh sessions with the pending stack in place of the alphabet:
+  16/16, zero refusals, zero restarts, every one composed the tree
+  first and says the stack changed no token ("a receipt, not input").
+  Eight of eight sessions over three arms. What all four asked for is
+  the tree echoed with a hole, the binders in scope, and a scratch
+  evaluation -- Q112, Q113.
+- **Q112**: the tree echo -- the accepted prefix rendered as an
+  s-expression with a hole, plus the binders in scope at the hole, in
+  `render_pending`. Asked for by 4 of 4; justified only by a run at
+  Q109's size, where the sessions say memory would run out.
+- **Q113**: the semantic bet -- every session's only oracle for an
+  operator's exact semantics was running the program. One worked
+  example per operator on the card, and a scratch evaluation of a
+  fragment in the loop harness. Applies to the text loop as much as
+  to the substrate.
 - **Q109**: the size where transcription breaks. These programs fit in
   working memory, which is why nobody composed forward. At what token
   count does a session start discovering at token k that it wanted
@@ -1923,9 +2046,9 @@ the corpus grows again.
 - **Q107**: the cards are not self-sufficient -- `let` and `apply` are
   absent from the operator table of all three, and the tok card has no
   text literal. Generate every card from the token table itself.
-- **Q98**: a `def` whose name is an operator's (`range`, `any`, `map`
-  ...) is read as the operator at every call site, silently. A compile
-  warning, or an error?
+- ~~**Q98**~~ *(closed 2026-09-15)*: a `def` whose name is an
+  operator's is refused by the parser, which says which operator owns
+  the name; a parameter may still take one. `tests/test_diagnostics.py`.
 - **Q99** *(replay half answered by M27)*: the natural game-tree
   search under the list family: two of six first attempts fit 7M
   (6.3M, 6.8M), four do not (9.5M-29.3M), their cost now the program's
@@ -2117,7 +2240,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
-| 24 | 2026-09-11 | Linear authoring of the substrate (Q105) | Done (4 sessions, Opus, 2 arms, 4 tasks) | **WIN for the measurement, NULL for the claim.** 16/16 passed with zero refused tokens and zero restarts, identical programs in both arms; the type-constrained frontier changed nothing. All four sessions reported composing the tree first and transcribing it -- one identifying the zero-refusal count as the proof, another tracing the cause to the no-revision rule, which produced *more* up-front tree-building. The substrate is emittable, not authorable, by a current model. The real costs (variadic `;`, arity debt, semantic guesses) are all outside what the checker checks. Q108-Q111. |
+| 24 | 2026-09-11 | Linear authoring of the substrate (Q105) | Done (4 sessions, Opus, 2 arms, 4 tasks) | **WIN for the measurement, NULL for the claim.** 16/16 passed with zero refused tokens and zero restarts, identical programs in both arms; the type-constrained frontier changed nothing. All four sessions reported composing the tree first and transcribing it -- one identifying the zero-refusal count as the proof, another tracing the cause to the no-revision rule, which produced *more* up-front tree-building. The substrate is emittable, not authorable, by a current model. The real costs (variadic `;`, arity debt, semantic guesses) are all outside what the checker checks. Q108-Q111. **Run 2 (2026-09-18, Q108):** four fresh sessions with the pending stack: 16/16, 0 refusals, 0 restarts, all four composed the tree first; the stack changed no token. Eight of eight over three arms. Q108 closed; Q112, Q113. |
 | 23 | 2026-09-11 | Does the substrate form hold at size? (Q104) | Done (5 sessions, Opus, 6 tasks 2x-5x larger) | **PARTIAL.** 30/30 first-try in all three forms, no wrong values; Stage-2's cost edge grew to 2.0x the s-expression on what was emitted. But neither Stage-2 session authored in Stage-2 -- both composed a tree and serialised it with an external binding table, so the substrate is shown as a storage/transport form, not an authoring one (Q105). All three substrate sessions named the same silent risk: a swapped reference is well-typed, so it is a wrong value with no diagnostic (Q106). The byte encoding proved the easy part; the missing vocabulary is the cost. A card defect (six reference letters where the form has ten) distorted one program -- the third card confound in this family (Q107). |
 | 22 | 2026-09-11 | The three-form experiment (Q100) | Done (5 sessions, Opus, cost + generation axes) | **PARTIAL.** Cost: s2 1.36x cheaper than s1 in LLM tokens on dense code, tok 2.71x MORE. Generation first-try s1 100% / s2 85% / tok 60%, attempts/task 1.00 / 1.25 / 2.00 -- reliability degrades toward the substrate. The s2/tok cards, projected from the s-expression, dropped nine comparison/branch macros (no byte) and the arities parentheses supply, so those greens are contaminated (synthesis, hard-coding, reverse-engineering from decode errors) -- the ruling's point shown. For a current model the s-expression is the authoring surface. Q101-Q103. |
 | 21 | 2026-09-11 | The repair leg: a planted fault | Done (3 sessions × 2 languages, 8 faults) | **NULL for the language, WIN for the measurement.** LOVA 24/24 in 30 attempts, Python 24/24 in 28; emitted 672 vs 391 chars, read 27 108 vs 12 069 (programs 2.35× longer). 47 of 48 faults found by reading before any feedback; failure feedback located an original fault 0 times on either side. 9 of 10 extra attempts were offset arithmetic in the harness (fixed: `--find`, `--dry-run`). Repair cost is reading, so density is charged per repair. Q95-Q97. |

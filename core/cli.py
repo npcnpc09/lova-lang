@@ -171,10 +171,15 @@ def name_anomaly(anomaly: Any, symbols: Any) -> None:
     detail["name"] = name
     if anomaly.get("kind") != "unbound-ref" or detail.get("reason"):
         return
-    from core.surface import MACROS, NAME_TO_TOKEN
+    from core.surface import MACROS, NAME_TO_TOKEN, prelude_names
     bound = [symbols.name_of(i) for i in detail.get("bound_names", [])]
     bound = [b for b in bound if b is not None and not b.startswith("%")]
-    detail["bound"] = bound
+    # The program's own names, not the library's: the card already
+    # lists the prelude, and forty names a miss is context spent on
+    # nothing (audit, 2026-09-18).  A prelude name that is close to the
+    # miss still reaches the hint below through `bound`.
+    library = prelude_names()
+    detail["bound"] = [b for b in bound if b not in library or _similar(name, b)]
     detail.pop("bound_names", None)      # the ids are the same list; the names are what is read
     arity = None
     if name in NAME_TO_TOKEN:
@@ -191,6 +196,15 @@ def name_anomaly(anomaly: Any, symbols: Any) -> None:
             f"`{name}` is an operator, not a function value, so it cannot "
             f"be passed or referenced by name; call it, or wrap it: {call}."
         )
+    elif name in SYNONYMS:
+        # The commonest miss is not a typo but another language's name
+        # for something LOVA has (`add` for `merge`, `length` for `len`):
+        # the first program written in the audit of 2026-09-18 made it,
+        # and Exp 18's one miss was of this kind.  Edit distance cannot
+        # see it; a table can.
+        anomaly["repair_hint"] = (
+            f"`{name}` is not defined; in LOVA that is {SYNONYMS[name]}."
+        )
     else:
         close = [b for b in bound if _similar(name, b)][:3]
         near = f"  Nearest: {', '.join(close)}." if close else ""
@@ -198,6 +212,44 @@ def name_anomaly(anomaly: Any, symbols: Any) -> None:
             f"`{name}` is not defined.  Define it with (def {name} [...] ...) "
             f"or use a name in scope.{near}"
         )
+
+
+# What a model reaching for another language's name most likely meant.
+# Keyed by the name it wrote; the value is what the hint says.
+SYNONYMS = {
+    "add": "`(merge a b)`", "plus": "`(merge a b)`", "+": "`(merge a b)`",
+    "minus": "`(sub a b)`", "-": "`(sub a b)`", "subtract": "`(sub a b)`",
+    "times": "`(mul a b)`", "*": "`(mul a b)`", "multiply": "`(mul a b)`",
+    "/": "`(div a b)`", "quot": "`(div a b)`", "divide": "`(div a b)`",
+    "%": "`(mod a b)`", "rem": "`(mod a b)`", "remainder": "`(mod a b)`",
+    "=": "`(eq a b)`", "==": "`(eq a b)`", "equal": "`(eq a b)`", "equals": "`(eq a b)`",
+    "!=": "`(ne a b)`", "<": "`(lt a b)`", ">": "`(gt a b)`", "<=": "`(le a b)`", ">=": "`(ge a b)`",
+    "length": "`(len xs)`", "count": "`(len xs)`", "size": "`(len xs)`",
+    "first": "`(head xs)`", "car": "`(head xs)`", "rest": "`(tail xs)`", "cdr": "`(tail xs)`",
+    "empty?": "`(nil? xs)`", "null?": "`(nil? xs)`",
+    "empty": "`(nil)` for the empty list, `(nil? xs)` to test for it",
+    "reduce": "`(fold f init xs)`, where f takes the accumulator then the element",
+    "foldl": "`(fold f init xs)`", "foldr": "`(fold f init (reverse xs))`",
+    "concat": "`(append xs ys)` for lists, `(text-cat a b)` for texts",
+    "str": "`(int-text n)`", "string": "`(int-text n)`", "to-string": "`(int-text n)`",
+    "int": "`(text-int t)`", "parse": "`(parse-int t)`", "to-int": "`(text-int t)`",
+    "print": "`(println x)`", "display": "`(println x)`", "puts": "`(println x)`",
+    "max": "`(if (gt a b) a b)`", "min": "`(if (lt a b) a b)`",
+    "cond": "nested `(if c a b)`", "when": "`(if c a 0)`", "unless": "`(if c 0 a)`",
+    "let*": "`(let x v body)`", "letrec": "`(let x v body)`",
+    "define": "`(def name [args] body)`",
+    "fn": "`(lambda x body)`", "fun": "`(lambda x body)`", "function": "`(lambda x body)`",
+    "while": "`(loop-until stop step init)`",
+    "for": "`(map f (range a b))` or `(fold f init (range a b))`",
+    "assoc": "`(map-put m k v)`", "dict": "`(map-of ...)`", "hash-map": "`(map-of ...)`",
+    "identity": "`(lambda x x)`",
+    "second": "`(nth xs 1)`", "index": "`(nth xs i)`", "at": "`(nth xs i)`",
+    "slice": "`(text-slice xs from to)`, on a text or a list",
+    "substring": "`(text-slice t from to)`", "substr": "`(text-slice t from to)`",
+    "zero?": "`(eq n 0)`", "pos?": "`(gt n 0)`", "neg?": "`(lt n 0)`",
+    "even?": "`(even n)`", "odd?": "`(odd n)`",
+    "true": "`1`", "false": "`0`", "none": "`(nil)`", "null": "`(nil)`",
+}
 
 
 def _similar(a: str, b: str) -> bool:
@@ -323,8 +375,11 @@ def report_error(exc: Exception, source: Optional[str] = None) -> int:
     print(f"{anomaly['kind']}:", file=sys.stderr)
     if source is not None and anomaly.get("span"):
         print(f"  at: {describe_span(source, anomaly['span'])}", file=sys.stderr)
-    for key in ("detail", "offending_op_name", "position_path",
-                "valid_alternatives", "body_offender"):
+    # `valid_alternatives` is the generator's list of token bytes that
+    # could stand at the position -- `(11, 12)` for a division by zero,
+    # meaning `mul` / `mod`, which is not a repair.  It stays in the
+    # schema for samplers and is not printed (audit, 2026-09-18).
+    for key in ("detail", "offending_op_name", "position_path", "body_offender"):
         value = anomaly.get(key)
         if not value:
             continue

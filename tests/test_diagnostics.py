@@ -148,3 +148,60 @@ class OperatorNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Feedback(unittest.TestCase):
+    """The audit of 2026-09-18, against the yardstick's second number
+    (context spent per failure).  Measured on the first program written
+    that morning: an unbound-ref anomaly was 660 characters, 400 of them
+    the prelude's forty names, and the miss itself -- `add` for `merge`
+    -- got `Nearest: all, odd`."""
+
+    def _anomaly(self, src):
+        from core.mcp_server import tool_execute
+        r = tool_execute({"source": src})
+        self.assertFalse(r["ok"])
+        return r["anomaly"]
+
+    def test_a_synonym_from_another_language_is_translated(self):
+        a = self._anomaly("(add 1 2)")
+        self.assertEqual(a["kind"], "unbound-ref")
+        self.assertIn("in LOVA that is `(merge a b)`", a["repair_hint"])
+        a = self._anomaly('(length (list 1 2))')
+        self.assertIn("`(len xs)`", a["repair_hint"])
+
+    def test_the_bound_list_is_the_programs_own_names(self):
+        a = self._anomaly("(def total [xs] (fold (lambda a (lambda b (merge a b))) 0 xs))" + NL +
+                          "(totl (list 1 2 3))")
+        self.assertEqual(a["detail"]["bound"], ["total"])
+        self.assertIn("Nearest: total", a["repair_hint"])
+
+    def test_a_near_prelude_name_is_still_offered(self):
+        a = self._anomaly('(map parse-in (list "1"))')
+        self.assertIn("parse-int", a["detail"]["bound"])
+
+    def test_raw_alternatives_are_not_printed(self):
+        import io
+        from contextlib import redirect_stderr
+        from core.cli import build, report_error
+        from core.runtime import Runtime, evaluate
+        src = "(div 1 0)"
+        tree, _ = build(src)
+        err = io.StringIO()
+        with redirect_stderr(err):
+            try:
+                evaluate(tree, Runtime())
+            except Exception as exc:          # noqa: BLE001 -- the trap under test
+                report_error(exc, src)
+        text = err.getvalue()
+        self.assertIn("domain-error", text)
+        self.assertNotIn("valid_alternatives", text)
+
+    def test_the_depth_hint_names_the_loop_forms(self):
+        a = self._anomaly("(def up [n acc] (if (gt n 20000) acc (up (merge n 1) (merge acc n))))" + NL +
+                          "(up 0 0)")
+        self.assertEqual(a["kind"], "recursion-depth-exceeded")
+        self.assertIn("does not turn a tail call into a loop", a["repair_hint"])
+        self.assertIn("`fold`", a["repair_hint"])
+        # and the path per frame is elided, as the CLI has done since M23
+        self.assertLess(len(a["position_path"]), 12)

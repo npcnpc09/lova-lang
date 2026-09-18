@@ -1,0 +1,19 @@
+{"task": "c01", "tokens": "fold", "accepted": 1, "refused": false, "reason": null, "time": 1789702308.8733766}
+{"task": "c01", "tokens": "lambda 0 lambda 1", "accepted": 4, "refused": false, "reason": null, "time": 1789702318.8253593}
+{"task": "c01", "tokens": "merge ref 0 mul ref 1 ref 1", "accepted": 8, "refused": false, "reason": null, "time": 1789702332.5879993}
+{"task": "c01", "tokens": "0 range 1 6", "accepted": 4, "refused": false, "reason": null, "time": 1789702343.862812}
+{"task": "c01", "final": true, "passed": true, "got": "55", "tokens": 17, "written": 17, "refusals": 0, "frontier": true, "arm": "stack", "time": 1789702354.852977}
+{"task": "c04", "tokens": "fold", "accepted": 1, "refused": false, "reason": null, "time": 1789702383.3546216}
+{"task": "c04", "tokens": "lambda", "accepted": 1, "refused": false, "reason": null, "time": 1789702393.9688885}
+{"task": "c04", "tokens": "0 lambda 1 if-surprise", "accepted": 4, "refused": false, "reason": null, "time": 1789702404.4755182}
+{"task": "c04", "tokens": "threshold deviation ref 1 ref 0 ref 1 ref 0", "accepted": 10, "refused": false, "reason": null, "time": 1789702417.457175}
+{"task": "c04", "tokens": "0 cons 4 cons 9 cons 2 cons 9 cons 5 nil", "accepted": 12, "refused": false, "reason": null, "time": 1789702426.9567585}
+{"task": "c04", "final": true, "passed": true, "got": "9", "tokens": 28, "written": 28, "refusals": 0, "frontier": true, "arm": "stack", "time": 1789702438.3409681}
+{"task": "b04", "tokens": "let 0 int-text 1048576", "accepted": 4, "refused": false, "reason": null, "time": 1789702467.8996937}
+{"task": "b04", "tokens": "fold lambda 1 lambda 2 merge ref 1 text-int text-slice ref 0 ref 2 merge ref 2 1", "accepted": 18, "refused": false, "reason": null, "time": 1789702482.413061}
+{"task": "b04", "tokens": "0 range 0 text-len ref 0", "accepted": 6, "refused": false, "reason": null, "time": 1789702493.3291686}
+{"task": "b04", "final": true, "passed": true, "got": "31", "tokens": 28, "written": 28, "refusals": 0, "frontier": true, "arm": "stack", "time": 1789702502.820573}
+{"task": "b01", "tokens": "let 0 lambda 1 lambda 2 if-surprise deviation ref 1 1", "accepted": 11, "refused": false, "reason": null, "time": 1789702532.634823}
+{"task": "b01", "tokens": "apply ref 0 if-surprise mod ref 1 2 merge mul 3 ref 1 1 div ref 1 2 merge ref 2 1 ;", "accepted": 23, "refused": false, "reason": null, "time": 1789702542.6193101}
+{"task": "b01", "tokens": "ref 2 apply ref 0 27 0 ;", "accepted": 8, "refused": false, "reason": null, "time": 1789702557.076671}
+{"task": "b01", "final": true, "passed": true, "got": "111", "tokens": 42, "written": 42, "refusals": 0, "frontier": true, "arm": "stack", "time": 1789702566.0132658}

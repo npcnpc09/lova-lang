@@ -232,6 +232,14 @@ def _failure(stage: str, exc: Exception, source: Optional[str] = None) -> Dict[s
     if anomaly is None:
         anomaly = {"kind": "error", "message": str(exc)}
     anomaly = _jsonable(anomaly)
+    path = anomaly.get("position_path") if isinstance(anomaly, dict) else None
+    if isinstance(path, list) and len(path) > 12:
+        # A depth trap carries a path per frame -- twenty thousand
+        # integers for a ten-thousand-frame recursion, eighty kilobytes
+        # the model would read back for nothing, since `span` and
+        # `excerpt` say where the fault is.  The CLI has elided it since
+        # M23; the server now does the same (audit, 2026-09-18).
+        anomaly["position_path"] = path[:6] + [f"... {len(path) - 9} more ..."] + path[-3:]
     # M24: the span as offsets into the source the caller sent, and the
     # text there, so the caller can patch that expression and nothing else.
     if source is not None and isinstance(anomaly, dict) and anomaly.get("span"):

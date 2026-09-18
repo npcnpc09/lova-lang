@@ -31,7 +31,10 @@ Three-stage roadmap:
    *emit* this surface is untested (Q47).
 3. **Stage 3 — Pure-AI LOVA.** No text. Programs are integer
    sequences. Human access only through `(explain program)` on-demand
-   projection. **The north star.**
+   projection. **The north star** -- and, since Exp 24 (2026-09-11)
+   and the audit of 2026-09-18, a serialisation format until an
+   experiment shows a model composing in it: every session that has
+   emitted the substrate composed a tree first and transcribed it.
 
 **Design thesis**: if you believe "AI writes most code by 2030-2035,"
 then current languages (Python / TypeScript / Rust) are transitional —
@@ -204,6 +207,44 @@ every session wanted instead of the valid-token list was a rendering of
 the pending stack, which the machine already holds (Q108).
 `journal/experiment_24.md`.
 
+## The audit (2026-09-18) -- the design against the goal
+
+The owner asked for the architecture and the code to be audited
+against the one goal and changed where they fell short. The full
+account is in `journal/README.md`, "The audit"; the standing result:
+
+- **The four numbers:** 3 won (a function call under a budget and a
+  boundary, against a subprocess); 1 at parity and behind at size, the
+  gap all interpreter cost; 2 behind (Exp 19: 594 characters a failure
+  against 71; Exp 21: the anomaly has not yet been what found a
+  fault); 4 unproven.
+- **By evidence:** spans and patch-by-span, `hot`, `example` forms,
+  the generated card, records, the text and list families, the
+  boundary and budget, type constraint at the function-typed slot,
+  and the s-expression as the authoring surface.
+- **By lineage only** (counted over the 34 real programs): the
+  Evolution family (2 programs), the lineage half of Meta (`hash`,
+  `uid`, `ancestor-of`: none), number theory (0-2 each, and the
+  benchmark selected for it), telemetry (none). No slot changed hands
+  -- a byte change with no number calling for it is what rule 3
+  forbids -- but the headline numbers below now say what they
+  measure, and Axioms 5 and 6, standing with no yardstick evidence,
+  are the owner's question.
+- **Changed that day**, all against number 2: a synonym table in the
+  unbound-ref hint (`add` -> "in LOVA that is `(merge a b)`"); the
+  `bound` list cut to the program's own names (660 -> 267
+  characters a miss); raw `valid_alternatives` no longer printed; the
+  depth hint says LOVA has no tail calls and names the loop forms;
+  the MCP server elides the per-frame `position_path` as the CLI does.
+- **The roadmap, restated:** the tree is the authoring form, the
+  s-expression its projection for a current model, the integer its
+  identity, storage and transport. Stage 2 and 3 are serialisation
+  until Q110 says otherwise: Q108 was run the same afternoon (Exp 24,
+  run 2) and answered no, eight of eight sessions over three arms.
+- **Not changed:** tail calls (no session has met the depth trap),
+  the interpreter (a native runtime is deferred until the goal is
+  met), the prelude's eight unused definitions (60 card tokens).
+
 ## The goal (owner's ruling, 2026-09-10)
 
 **LOVA has one goal: an AI uses it more conveniently than any other
@@ -350,8 +391,13 @@ you may be closed. `core/generator.py` now answers that: `open_forms`,
 form was opened at so that two `merge`s nested in each other are two
 forms and not one owing three. `lova_valid_next` returns it beside the
 choices, and `experiments/experiment_24_linear.py` has a third arm,
-`--frontier stack`, so the re-run Q108 asks for is one flag. The
-re-run itself needs fresh sessions and has not been done.
+`--frontier stack`, so the re-run Q108 asks for is one flag. **Run 2
+(2026-09-18): four fresh sessions, 16/16, zero refusals, zero
+restarts, all four composed the tree first and say the stack changed
+no token.** Eight of eight sessions over three arms; the substrate is
+a serialisation format for a current model. What every session asked
+for is the tree echoed with a hole, the binders in scope and a scratch
+evaluation (Q112, Q113) -- the text loop's own surface.
 
 **Three messages that pointed at the wrong place** (2026-09-15, from
 writing 3 000 lines of `lib/` in one session -- journal Exp 25). A
@@ -904,7 +950,7 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-944 unit tests passing, 21 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+949 unit tests passing, 24 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 24 first-class apps (the last Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 
@@ -921,7 +967,11 @@ same keyword-argument weakness. Quote the correctness number with Exp
 13's F3 attached: the prompts state the formula, so the baseline
 measures transcription, not synthesis.
 
-**Launch-ready numbers:**
+**Launch-ready numbers** (audit, 2026-09-18: the LOVABench v1/v2
+correctness and density figures measure the number-theory family's
+built-ins, `p` / `tau` / `sigma` / `mobius` / `gcd`, on sixty tasks
+selected for them; the algorithmic figures and the loop experiments
+measure the language):
 - **Expressiveness** (Exp 12): 44/44 cases across ten recursion- or
   iteration-requiring tasks; 0/10 were representable before M9.
 - **Correctness** (Exp 07, LOVABench v2): LOVA 60/60 vs Python 59/60 pass@1, same tasks/LLM — but see the transcription caveat above.
