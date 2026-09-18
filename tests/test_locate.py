@@ -117,3 +117,36 @@ class Located(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SecondOracle(unittest.TestCase):
+    """Q115: candidate literals come from the examples' data, and every
+    full fix is scored by how many nearby inputs it changes the answer
+    on, so an edit that fits the examples by widening a test ranks below
+    the constant the examples mention."""
+
+    SRC = ('(def punct? [c] (or (eq c 39) (eq c 58)))' + NL +          # 39 should be 46
+           '(def strip [t] (if (nil? t) t (if (punct? (last t)) (take (sub (len t) 1) t) t)))' + NL +
+           '(example (text-of-chars (strip (text-chars "cat."))) "cat")' + NL +
+           '(example (text-of-chars (strip (text-chars "dog:"))) "dog")' + NL +
+           '(example (text-of-chars (strip (text-chars "ox1"))) "ox1")' + NL +
+           '(strip (text-chars "a"))')
+
+    def test_a_constant_from_the_examples_beats_a_widened_test(self):
+        results = check(self.SRC)
+        fault = [r for r in results if not r["passed"]][0]["fault"]
+        self.assertEqual(fault["kind"], "literal")
+        self.assertEqual(fault["replacement"], "46")
+        self.assertIn("impact", fault)
+        self.assertLess(fault["impact"], fault["nearby"])
+        text = summary(results)
+        self.assertIn("should be 46 (`.`)", text)
+        self.assertIn("changes the answer on", text)
+
+    def test_data_literals_are_the_examples_numbers_and_characters(self):
+        from core.cli import build
+        from core.locate import data_literals, example_expression
+        tree, _ = build('(list (text-len "ab.") 7)')
+        lits = data_literals([example_expression(tree)])
+        for v in (7, ord("a"), ord("b"), ord(".")):
+            self.assertIn(v, lits)

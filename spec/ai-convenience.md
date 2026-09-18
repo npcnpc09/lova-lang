@@ -166,7 +166,9 @@ Consequences, each a change the numbers above would reward:
   pass, with the replacement text for `lova_patch`; on Exp 21's eight
   planted faults it names five exactly or with a fix that passes every
   test, one partially, two not at all -- the two that were never one
-  edit.)* Recording them in the lineage is still to do.
+  edit.)* *(M30: every full fix scored by the nearby inputs it changes,
+  constants from the examples' data, ties named together.)* Recording
+  them in the lineage is still to do.
 - **The language ships its own card, generated.** *(M26, done:
   `python -m corpus.make_card` renders `corpus/language_card.md` from
   a narrative template plus the prelude's own sections and signatures

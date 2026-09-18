@@ -666,6 +666,52 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 30 (2026-09-18) -- A second oracle for a located edit (Q115)
+
+Six sessions of Exp 28 met the same confident mislead on h02: the
+locator proposed `(eq c 58)` -> `(lt c 58)`, which passes all three
+examples by making every character below `:` punctuation, and every
+session caught it by the same rule -- the edit could not be restated
+as a clause of the prompt -- which is the model's rule and not the
+machine's. Two changes make it partly the machine's.
+
+**Candidate literals come from the examples' data.** A wrong constant
+was tried only at +-1 and negated, so `39 -> 46` was never a
+candidate. `data_literals` collects the numbers the examples mention
+and the codepoints of the characters in their texts, most frequent
+first (twenty-four of them), and every user-written literal is tried
+against each. The example's input contained a `.`, so 46 was on the
+list.
+
+**Every full fix is scored by its impact.** The search no longer stops
+at the first edit that fixes all the examples; it collects every one,
+then runs the original and the edited program on the examples'
+inputs perturbed -- a character deleted, a `1`, `.`, `-` or `a`
+inserted at the end of the text and before its first two separators,
+a number nudged -- and counts the inputs on which the answer changed.
+The smallest impact is reported first, and the line says the number:
+`[changes the answer on 19 of 48 nearby inputs]`. `(lt c 58)` changes
+the answer wherever a digit ends a word; `46` only where a `.` does.
+
+**What the examples cannot tell apart is said so.** Five literals in
+`punct?` could each become 46 with the same effect on every example
+and every nearby input, so the report names them all: `or the same
+edit at: 59 [84, 86), 63 [70, 72), 33 [56, 58), 39 [28, 30) -- the
+examples cannot tell these places apart`. A reader who knows that `'`
+is not punctuation in the task sees the odd one out; the machine
+does not pretend to. Runners-up with a different replacement are
+listed with their impact.
+
+On the eight planted faults, in the def-calling shape the harness now
+writes: h01, h03, h06, h08 exact; h02 the right constant at one of
+five places the examples cannot separate, where it was the widened
+test before; h04 a partial lead under the budget; h05 and h07 no
+single edit, and the report says which defs the failing example
+reaches. One to seven seconds a task, h04 twenty-two. `tests/
+test_locate.py` grew the case. Q115 is answered in part: the second
+oracle is the neighbourhood of the examples' own inputs, not a
+declared property; a declared property is still the way to a reason.
+
 ### Milestone 29 (2026-09-18) -- Questions about a program
 
 The owner asked what an AI's own commonest problems are and how the
@@ -2141,8 +2187,13 @@ the corpus grows again.
   report reprinting them) and a third the sessions reading anyway,
   because the line was trusted only where the prompt could confirm it.
   "An address, not a diagnosis." Q95 sharpened; Q115-Q117.
-- **Q115**: a second oracle for a located edit -- check it against a
-  declared contract, so "fixes all 3 examples" becomes a reason.
+- ~~**Q115**~~ *(answered in part, M30, 2026-09-18)*: the second
+  oracle built is the neighbourhood of the examples' own inputs --
+  every full fix scored by how many perturbed inputs it changes the
+  answer on, candidate constants taken from the examples' data, and
+  places the examples cannot tell apart named together. h02 now
+  reports the constant, not the widened test. A declared property as
+  the oracle -- a reason rather than a count -- is still open.
 - **Q116**: the confident mislead as a number: how often a full-fix
   edit that is not the fault appears, as a function of the number of
   examples.

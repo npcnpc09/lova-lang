@@ -132,10 +132,34 @@ def _scopes(body: Node) -> Dict[int, List[int]]:
     return out
 
 
+def data_literals(exprs: List[Node], limit: int = 24) -> List[int]:
+    """The numbers the examples mention and the codepoints of the
+    characters in their texts, most frequent first: what a wrong
+    constant is most likely meant to be (Exp 28, h02: `39` for `46`,
+    and `.` was in the example's input)."""
+    counts: Dict[int, int] = {}
+
+    def go(node: Node) -> None:
+        if node.op == LIT_INT:
+            v = int(node.args[0])
+            counts[v] = counts.get(v, 0) + 1
+        elif node.op == LIT_TEXT:
+            for ch in str(node.args[0]):
+                counts[ord(ch)] = counts.get(ord(ch), 0) + 1
+        for arg in node.args:
+            if isinstance(arg, Node):
+                go(arg)
+
+    for e in exprs:
+        go(e)
+    return [v for v, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]]
+
+
 def _edits(node: Node, in_scope: List[int], params: List[int],
-           name_of: Callable[[int], Optional[str]], text: Callable[[Node], Optional[str]]):
+           name_of: Callable[[int], Optional[str]], text: Callable[[Node], Optional[str]],
+           literals: Optional[List[int]] = None):
     """The single-node edits worth trying at `node`, each as
-    (kind, description, replacement-source-or-None, new-node)."""
+    (kind, description, replacement-source-or-None, new-node, key)."""
     src = text(node)
     edits = []
     a = node.args
@@ -160,9 +184,13 @@ def _edits(node: Node, in_scope: List[int], params: List[int],
     if node.op == LIT_INT:
         v = int(a[0])
         what = f"the literal {v}" if src is not None else f"a value {v} computed here"
-        for nv, why in ((v + 1, f"{what} should be {v + 1}"),
-                        (v - 1, f"{what} should be {v - 1}"),
-                        (-v, f"{what} should be {-v}")):
+        tries = [(v + 1, f"{what} should be {v + 1}"),
+                 (v - 1, f"{what} should be {v - 1}"),
+                 (-v, f"{what} should be {-v}")]
+        if src is not None and literals:
+            tries += [(lv, f"{what} should be {lv}" + (f" (`{chr(lv)}`)" if 32 < lv < 127 else ""))
+                      for lv in literals if lv not in (v, v + 1, v - 1, -v)]
+        for nv, why in tries:
             if nv != v:
                 edits.append(("literal", why, str(nv) if src is not None else None, _lit(nv),
                               ("literal", "neg" if nv == -v else nv - v)))
@@ -258,9 +286,50 @@ def _at(node: Node, path: Tuple[int, ...]) -> Optional[Node]:
     return node
 
 
+def _perturbed(expr: Node, limit_per_literal: int = 8) -> List[Node]:
+    """Nearby inputs: the expression with one of its literal arguments
+    changed -- a character deleted, a digit / space / `.` inserted, a
+    number nudged."""
+    out: List[Node] = []
+    spots: List[Tuple[Tuple[int, ...], Node]] = []
+
+    def find(node: Node, path: Tuple[int, ...]) -> None:
+        for i, arg in enumerate(node.args):
+            if isinstance(arg, Node):
+                if arg.op in (LIT_INT, LIT_TEXT) and _span(arg) is not None:
+                    spots.append((path + (i,), arg))
+                else:
+                    find(arg, path + (i,))
+
+    find(expr, ())
+    for path, lit in spots:
+        variants: List[Node] = []
+        if lit.op == LIT_INT:
+            v = int(lit.args[0])
+            for nv in (v + 1, v - 1, 0, -v, v * 2, v // 2):
+                if nv != v:
+                    variants.append(_lit(nv))
+        else:
+            t = str(lit.args[0])
+            n = len(t)
+            # Where an insertion tells edits apart: at the ends of words --
+            # the end of the text and before the first two separators.
+            ends = [n] + [i for i, ch in enumerate(t) if ch in " ,;:" + chr(10)][:2]
+            for i in ends:
+                for ins in ("1", ".", "-", "a"):
+                    variants.append(Node(op=LIT_TEXT, args=[t[:i] + ins + t[i:]]))    # one inserted at a word's end
+            for i in sorted({0, n // 2, max(n - 1, 0)}):
+                if n:
+                    variants.append(Node(op=LIT_TEXT, args=[t[:i] + t[i + 1:]]))       # a character deleted
+        for v in variants[:limit_per_literal + 6]:
+            out.append(_replace(expr, path, v))
+    return out
+
+
 def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool],
            others: List[Tuple[Node, Callable[[Any], bool]]], frame: Any,
-           closures: List[Closure], *, max_steps: int, budget_s: float = 2.0) -> Optional[Dict[str, Any]]:
+           closures: List[Closure], *, max_steps: int, budget_s: float = 2.0,
+           literals: Optional[List[int]] = None) -> Optional[Dict[str, Any]]:
     """The single-node edit -- of a user def the example ran through, or
     of the example's own expression -- that makes `expr` satisfy
     `passes` and the most of `others` besides.  Deepest first; the search
@@ -282,19 +351,26 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
     probes = 0
     best: Optional[Dict[str, Any]] = None
 
-    def rank(found: Dict[str, Any]) -> Tuple[int, int, int]:
+    full: List[Dict[str, Any]] = []          # every edit that fixes all the examples
+
+    def rank(found: Dict[str, Any]) -> Tuple[int, int, int, int]:
         return (found["others_passing"], 1 if found.get("replacement") else 0,
-                _PRIORITY.get(found["kind"], 0))
+                -found.get("impact", 0), _PRIORITY.get(found["kind"], 0))
 
     def consider(found: Dict[str, Any]) -> bool:
         nonlocal best
         if best is None or rank(found) > rank(best):
             best = found
-        # Stop early only at a full fix of the best kind -- an exact
-        # spelling; a structural fix that also passes every example keeps
-        # the search going in case the exact one is further up the tree.
-        return (found["others_passing"] == len(others) and bool(found.get("replacement"))
-                and _PRIORITY.get(found["kind"], 0) >= 6)
+        if found["others_passing"] == len(others) and found.get("replacement"):
+            full.append(found)
+        # Q115: the search does not stop at the first full fix; every one is
+        # scored by impact at the end.  Eight are enough to choose from.
+        return len(full) >= 64
+
+    # Nearby inputs, and what the program answers on them now.
+    nearby = _perturbed(expr) + [p for other_expr, _ in others for p in _perturbed(other_expr)]
+    nearby = nearby[:48]
+    baseline: List[Any] = []
 
     # Targets: each called user def's body, then the expression itself.
     targets: List[Tuple[Optional[Closure], Node, Any]] = [(c, c.body, c.env) for c in closures if c.name is not None]
@@ -310,7 +386,7 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
         for path, node, depth, anchor in nodes:
             if anchor is None:
                 continue
-            for kind, why, replacement, new, key in _edits(node, scopes.get(id(node), []), params, name_of, text):
+            for kind, why, replacement, new, key in _edits(node, scopes.get(id(node), []), params, name_of, text, literals):
                 if _span(node) is None:
                     # A node the parser synthesised inside a macro: the edit
                     # is reported at the macro form, and its text is a lead,
@@ -364,7 +440,7 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
                         there = _at(other_expr, path)
                         if there is None or there.op != node.op:
                             continue
-                        again = [e for e in _edits(there, _scopes(other_expr).get(id(there), []), params, name_of, text)
+                        again = [e for e in _edits(there, _scopes(other_expr).get(id(there), []), params, name_of, text, literals)
                                  if e[4] == key]
                         if not again:
                             continue
@@ -380,12 +456,74 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
                     "excerpt": text(anchor),
                     "within": _span(node) is None,
                     "others_passing": fixed_others, "others": len(others), "probes": probes,
+                    "_closure": closure, "_body": edited_body if closure is not None else None,
                 }
                 if consider(found):
-                    return best
+                    break
+            else:
+                continue
+            break
+        else:
+            continue
+        break
+
+    # Q115: score every full fix by how many nearby inputs it changes the
+    # answer on, and report the smallest.
+    if full and nearby:
+        for p in nearby:
+            try:
+                baseline.append(run(p))
+            except Exception:      # noqa: BLE001
+                baseline.append(("trap",))
+        for found in full:
+            closure, edited = found["_closure"], found["_body"]
+            if closure is None or edited is None:
+                continue
+            probe = Closure(param=closure.param, body=edited, env=closure.env,
+                            caps=closure.caps, enclosed=closure.enclosed, owner=closure.owner)
+            probe.name = closure.name
+            closure.env[closure.name] = probe
+            changed = 0
+            try:
+                for p, before in zip(nearby, baseline):
+                    try:
+                        after = run(p)
+                    except Exception:      # noqa: BLE001
+                        after = ("trap",)
+                    if not _same_value(before, after):
+                        changed += 1
+            finally:
+                closure.env[closure.name] = closure
+            found["impact"] = changed
+            found["nearby"] = len(nearby)
+        best = max(full, key=rank)
+        # The runner-up edits, for a reader who wants to see the choice
+        # (Exp 28 run 2, one session's ask).
+        ranked = sorted(full, key=rank, reverse=True)
+        tied = [f for f in ranked[1:] if rank(f) == rank(best) and f["kind"] == best["kind"]
+                and f.get("replacement") == best.get("replacement") and f.get("excerpt") != best.get("excerpt")]
+        if tied:
+            best["tied_with"] = [{"excerpt": f.get("excerpt"), "span": f.get("span"), "def": f.get("def")}
+                                 for f in tied[:6]]
+        best["also"] = [{"edit": f["edit"], "replacement": f.get("replacement"), "impact": f.get("impact"),
+                         "kind": f["kind"], "excerpt": f.get("excerpt")}
+                        for f in ranked[1:4] if f not in tied]
     if best is not None:
+        best.pop("_closure", None); best.pop("_body", None)
         return best
     return {"kind": "none", "probes": probes}
+
+
+def _same_value(a: Any, b: Any) -> bool:
+    if a.__class__ is int and b.__class__ is int:
+        return a == b
+    if isinstance(a, tuple) or isinstance(b, tuple):
+        return a == b
+    from core.cli import format_value
+    try:
+        return format_value(a) == format_value(b)
+    except Exception:      # noqa: BLE001
+        return False
 
 
 def user_closures(rt: Runtime, source_len: int, library: Any) -> List[Closure]:

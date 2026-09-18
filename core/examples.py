@@ -165,7 +165,7 @@ def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwarg
                 body_start, expr_spans) -> None:
     """One combined run holds every def any example uses; probe in it."""
     from core.cli import build
-    from core.locate import example_expression, locate, user_closures
+    from core.locate import data_literals, example_expression, locate, user_closures
     from core.runtime import Cons, NIL_VALUE
     order = [i for i in sorted(exprs) if i in wants]
     listed = "(list " + " ".join(exprs[i] for i in order) + ")"
@@ -199,13 +199,15 @@ def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwarg
     if len(nodes) != len(order):
         return
     by_index = dict(zip(order, nodes))
+    literals = data_literals(nodes)
     max_steps = max(kwargs.get("max_steps", 0) or 0, rt.steps * 10 + 10_000)
     for r in failed:
         i = r["index"]
         want = wants[i]
         others = [(by_index[j], (lambda v, w=wants[j]: same(v, w))) for j in order if j != i]
         found = locate(compiled, combined, by_index[i], lambda v, w=want: same(v, w), others,
-                       closures[0].env, closures, max_steps=max_steps, budget_s=budget_s)
+                       closures[0].env, closures, max_steps=max_steps, budget_s=budget_s,
+                       literals=literals)
         if found and found.get("span") and found.get("def") is None:
             # A fault in the expression itself: back to the example's text.
             delta = expr_spans[i][0] - starts[i]
@@ -268,12 +270,22 @@ def summary(results: List[Dict[str, Any]], *, verbose: bool = False) -> str:
                      f"  [fixes this and {n} of {m} other examples; the fault may be elsewhere]")
             if fault.get("budget"):
                 score += "  (search cut short by the time budget)"
+            if "impact" in fault:
+                score += f"  [changes the answer on {fault['impact']} of {fault['nearby']} nearby inputs]"
             if fault.get("def") and "reached_by" in fault:
                 score += f"  [def {fault['def']} is reached by {fault['reached_by']} of {fault['examples']} examples]"
             rep = f"  -> {fault['replacement']}" if fault.get("replacement") else ""
             a0, b0 = fault["span"]
             line = (f"        fault: {fault['line']}:{fault['col']} [{a0}, {b0})  {fault['excerpt']}  "
                     f"-- {fault['edit']}{rep}{score}")
+            if fault.get("tied_with"):
+                places = ", ".join(f"{t['excerpt']} [{t['span'][0]}, {t['span'][1]})" for t in fault["tied_with"])
+                line += (f"{chr(10)}        or the same edit at: {places} -- the examples cannot tell "
+                         f"these places apart")
+            if fault.get("also"):
+                others = "; ".join(f"{a['replacement']} ({a['impact']})" for a in fault["also"] if a.get("replacement"))
+                if others:
+                    line += f"{chr(10)}        runners-up, by nearby inputs changed: {others}"
             if line in seen_faults:
                 lines.append(f"        fault: the same as at {seen_faults[line]}:{r['col']} above")
             else:
