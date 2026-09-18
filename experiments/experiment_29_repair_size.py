@@ -13,8 +13,8 @@ Exp 21 measured repair at 20-40 lines and found it was reading; Exp 28
 gave the fault an address and a def-scoped read and won at that size.
 Both sessions' rule was the same: reading a program of that size
 costs less than deciding whether a hint is safe.  This experiment is
-the same measurement where reading is not cheap: three programs of
-120-300 lines, each with a Python transliteration of the same
+the same measurement where reading is not cheap: two programs of
+110-160 lines, each with a Python transliteration of the same
 structure (experiments/exp29/, built and checked to agree on hundreds
 of random inputs), two faults planted in each at the analogous place
 in both languages, with run-time symptoms -- a wrong value on some
@@ -48,18 +48,13 @@ HERE = Path(__file__).resolve().parent
 PAIRS = HERE / "exp29"
 RESULTS = HERE / "results_29"
 
-PROGRAMS = ("g2048", "fleet", "ttt")
+PROGRAMS = ("g2048", "ttt")
 PROMPTS = {
     "g2048": ("The 2048 engine: `main(board, moves)` takes sixteen cells (space-separated, "
               "cell order as `board-of` takes them) and a text of moves from `u r d l`, applies "
               "each move with the original game's rules (a tile merged this move cannot merge "
               "again; the traversal order decides which pair merges), and returns "
               "'<score> <moves that moved> <sixteen cells>'."),
-    "fleet": ("The fleet health policy: `main(sweep)` takes machines as blocks separated by a "
-              "`---` line (a name line, then the machine's health output with `___cpu___`-style "
-              "markers, possibly nothing), reads each reading, grades it against the warn and "
-              "alarm thresholds (3 = the reading never came back), and returns one line per "
-              "machine worst first, `name worst`, then `total alarm warn quiet mute`."),
     "ttt": ("Noughts and crosses: `main(board)` takes nine characters from `.XO` (square 0 "
             "first, row by row), the side to move being X when the counts are equal, else O; "
             "it returns the memoised negamax's chosen square and the score for the side to move "
@@ -89,14 +84,6 @@ FAULTS: Dict[str, Any] = {
         "b": ("the letter for left names a direction that does not exist",
               ("        3))", "        4))"),
               ("    return 3" + chr(10), "    return 4" + chr(10))),
-    },
-    "fleet": {
-        "a": ("a memory reading whose total is zero is divided by",
-              ("(if (or (eq used NA) (or (eq whole NA) (le whole 0)))", "(if (or (eq used NA) (eq whole NA))"),
-              ("    if used == NA or whole == NA or whole <= 0:", "    if used == NA or whole == NA:")),
-        "b": ("a reading exactly at the warn threshold is not a warning",
-              ("        (ge value warn) 1", "        (gt value warn) 1"),
-              ("    if value >= warn:", "    if value > warn:")),
     },
     "ttt": {
         "a": ("among equally good squares the last is chosen instead of the first",
