@@ -133,8 +133,12 @@ of the excess the instrument and a third the sessions reading the
 program anyway. The line named the planted token three times of
 five, a wrong edit that passed every example twice, nothing twice.
 All three sessions: "an address, not a diagnosis" -- trusted blind
-only where the task text confirmed the edit. The repair claim lives
-at the size where reading fails (Q95).
+only where the task text confirmed the edit. **Run 2, the same day,
+after M29** (the span in the line, a free def list, a def-scoped read
+and patch): 24 of 24 first-try, 24 attempts, 817 characters written,
+program read 1 436-2 765 a session against Python's 4 023 -- the
+repair half won at this size. The claim at the size where reading
+fails is still Q95.
 
 ## 4. What the measure asks of the design
 

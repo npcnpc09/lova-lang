@@ -215,7 +215,15 @@ the MCP server, and `lova_patch` addressed by `def` and `find` (the
 text must occur once in that def, wherever else it occurs), which
 Exp 28's three sessions asked for in the same words. The fault line
 says how many examples reach the def it names. Q89 answered the other
-way round. Tests 957 -> 964.
+way round. Tests 957 -> 964. **Exp 28 run 2, with M29 in place:**
+three fresh sessions, 24/24 first-try, 24 attempts, program read
+1 436-2 765 characters a session against Python's 4 023 and run 1's
+13 924; four of eight repairs blind in every session, the rest read
+as one to three defs from the free def list. The repair half of the
+fourth number is won at this size; the confident mislead (h02) is
+caught every time by the sessions' own rule -- "trust the line when
+its edit is a clause of the prompt" -- which Q115 would give the
+machine.
 
 **M28** (2026-09-18) made a failed example locate its fault. An
 `(example ...)` that misses used to say `offender: apply at depth 0`,

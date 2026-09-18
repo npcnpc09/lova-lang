@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-18
 **Script:** `experiments/experiment_21_repair.py` (the examples arm: a session named `e*`, and the `fault` command)
-**Status:** Done. Three fresh Opus sessions, e1-e3, LOVA, against Exp 21's r1-r3 in both languages. **PARTIAL: WIN on attempts, NULL on reading.**
+**Status:** Done, two runs. Run 1: three fresh Opus sessions, e1-e3, against Exp 21's r1-r3 in both languages -- **PARTIAL: WIN on attempts, NULL on reading.** Run 2, the same afternoon, e4-e6 with what run 1's sessions asked for (M29) -- **WIN: 24/24 first-try, and the program read falls below Python's.**
 
 ## Hypothesis
 
@@ -120,6 +120,78 @@ becomes the binding constraint rather than the language"; the
 programs read "three times longer than their logic warrants".
 
 
+## Run 2 (2026-09-18, later) -- with what run 1's sessions asked for
+
+Three more fresh Opus sessions, e4-e6, the same eight tasks and
+faults, after M29 and the report changes: the body is a def the
+examples call; the fault line carries the span and how many examples
+reach the def; a miss says "no single edit of a def"; no edit is
+offered inside an example; `show --defs` (free), `show --def name`
+(logged as the def's size) and `patch --def name --find text`.
+
+### The numbers
+
+| arm | sessions | first-try | attempts | written | read, total | of which fault reports | of which program | whole-program reads |
+|---|---|---|---|---|---|---|---|---|
+| run 2 (M29) | e4, e5, e6 | 24/24 | 24 | 269 / 274 / 274 | 5 529 / 6 858 / 5 738 = 18 125 | 4 093 each | 1 436 / 2 765 / 1 645 | 0 / 1 / 0 |
+| run 1 | e1, e2, e3 | 23/24 | 28 | 3 333 / 279 / 3 333 | 78 127 | 11 214-13 278 | 13 924 each | 6 a session |
+| Exp 21 LOVA | r1-r3 | 18/24 | 30 | 672 | 27 108 | -- | 27 108 | 8 a session |
+| Exp 21 Python | r1-r3 | 20/24 | 28 | 391 | 12 069 | -- | 12 069 | 8 a session |
+
+Every session repaired every task at the first submission. The same
+four tasks were patched blind in all three sessions -- h01, h03, h06,
+h08 -- from the span in the fault line; the other four were read as
+one to three defs (57 to 634 characters each) chosen from the free
+def list, and one session opened the whole program once (h04). The
+program read per session, 1 436-2 765 characters, is below Python's
+4 023 a session in Exp 21; the total read, with the reports, is 6 042
+a session against Python's 4 023 and run 1's 26 042.
+
+### What the sessions said
+
+The rule, stated by all three: trust the line when its edit "can be
+restated as a clause of the prompt" -- `le` for "touching", `ge` for
+"covers it", `gt` for "descending", a `neg` under a unary minus --
+and read when it cannot. "The prompt plus the line was a complete
+argument"; "half these repairs were done blind".
+
+On the free def list: "the single most valuable command in the
+loop"; "the quiet hero"; "the def list plus the parameter names told
+me the architecture before I read a single body, and let me pick the
+right two or three bodies out of seven"; on h04 "I could see `w3` was
+57 chars and spend that before spending the 634 of `best2`". On the
+honest miss: "a cheap, honest negative that saved me from probing by
+hand"; "the honest 'no single edit' message is worth more than a
+confident wrong one, and h02 is the case that proves it".
+
+h02 was again the confident mislead in all three, and again caught by
+reading the replacement against the prompt: "`(lt c 58)` is not a
+description of punctuation; it is a description of the test suite".
+
+What they asked for, this time: on a miss, which defs the failing
+example reaches (built: the miss now names them); the step-limit
+failure diagnosed beside the wrong value on h04, with `hot` (built:
+a trap in an example prints its hint); a runner-up edit; a
+counterexample search rather than an example-fitting one (Q115); a
+way to evaluate an expression of their own without submitting.
+
+### Findings of run 2
+
+**F7. The repair half of the fourth number is won at this size, on
+reading as well as attempts.** 24 of 24 first-try; the program read
+below Python's; the total read above it only by the report, which has
+since been cut to the failures.
+
+**F8. The address was the product, and the def list its index.**
+Nothing about the locator changed between the runs; what changed is
+that the address could be acted on (a span, a def-scoped patch) and
+that the program could be read a def at a time. Reading fell from
+13 924 to 558-1 645 characters a session.
+
+**F9. The confident mislead is unchanged and was caught three of
+three times** by the same rule, which is the model's, not the
+machine's. Q115 is what would make it the machine's.
+
 ## Findings
 
 **F1. Attempts: WIN, small.** First-try repairs 23 of 24 against Exp
@@ -224,11 +296,14 @@ def.
 
 ## Status
 
-**PARTIAL.** The located fault takes first-try repairs from 18 of 24
-to 23 of 24 and attempts to green from 30 to 27, and reads three
-times as much, two thirds of it the instrument and one third the
-sessions reading anyway because the line is trusted only where the
-prompt can confirm it. Three of five lines named the planted token;
-two named an edit that passes every example and is wrong; two faults
-were never one edit. "An address, not a diagnosis" -- all three
-sessions. The line pays at a size where reading fails, which is Q95.
+**Run 1, PARTIAL; run 2, WIN.** The located fault takes first-try
+repairs from 18 of 24 to 23 of 24 (run 1) and 24 of 24 (run 2), and
+attempts to green from 30 to 27 and then 24. Reading tripled in run 1
+-- two thirds instrument, a third the sessions reading anyway -- and
+in run 2, with the span in the line, a free def list and a def-scoped
+read and patch, fell to 1 436-2 765 characters of program a session,
+below Python's 4 023. Four of eight repairs blind in every session;
+the same rule in all six: trust the line when its edit is a clause of
+the prompt. The confident mislead (h02) is unchanged and caught every
+time by that rule, which is the model's; Q115 would make it the
+machine's. Q95 remains the size where the claim is untested.

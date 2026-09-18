@@ -123,6 +123,11 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
             anomaly = getattr(exc, "anomaly", None) or {"kind": "error", "message": str(exc)}
             anomaly = dict(anomaly)
             anomaly.pop("_enriched", None)
+            try:
+                from core.cli import name_anomaly
+                name_anomaly(anomaly, getattr(compiled, "symbols", None) if "compiled" in dir() else None)
+            except Exception:      # noqa: BLE001 -- the hint is a courtesy
+                pass
             result.update(passed=False, anomaly=anomaly, expected=_shown(want))
         else:
             if same(got, want):
@@ -231,44 +236,60 @@ def _first_line(text: str) -> str:
     return head + " ..." if sep else head
 
 
-def summary(results: List[Dict[str, Any]]) -> str:
-    """One line per example, then the count."""
+def summary(results: List[Dict[str, Any]], *, verbose: bool = False) -> str:
+    """The failures, one fault line per distinct fault, and the count.
+    A session reads every character of this (Exp 28 run 2: 4 093 a
+    session against 558-1 645 of program), so the passing examples are
+    a count unless `verbose`."""
     lines = []
+    seen_faults: Dict[str, int] = {}
     for r in results:
         if r["passed"]:
-            lines.append(f"  ok    {r['line']}:{r['col']}  {_first_line(r['excerpt'])}")
+            if verbose:
+                lines.append(f"  ok    {r['line']}:{r['col']}  {_first_line(r['excerpt'])}")
+            continue
+        a = r.get("anomaly", {})
+        if "got" in r:
+            why = f"expected {r['expected']}, got {r['got']}"
+        elif r.get("note"):
+            why = r["note"] + ": " + a.get("kind", "error")
         else:
-            a = r.get("anomaly", {})
-            if "got" in r:
-                why = f"expected {r['expected']}, got {r['got']}"
-            elif r.get("note"):
-                why = r["note"] + ": " + a.get("kind", "error")
+            why = a.get("kind", "error") + (f", expected {r['expected']}" if "expected" in r else "")
+        lines.append(f"  FAIL  {r['line']}:{r['col']}  {_first_line(r['excerpt'])}  -- {why}")
+        if "got" not in r and a.get("repair_hint"):
+            lines.append(f"        {a.get('kind', 'trap')}: {a['repair_hint']}")
+            if a.get("span") and a.get("kind") not in ("conservation-violated",):
+                lines.append(f"        at [{a['span'][0]}, {a['span'][1]})")
+        fault = r.get("fault")
+        if fault and fault.get("span"):
+            n, m = fault.get("others_passing", 0), fault.get("others", 0)
+            score = ("" if not m else
+                     f"  [fixes all {m + 1} examples]" if n == m else
+                     f"  [fixes this and {n} of {m} other examples; the fault may be elsewhere]")
+            if fault.get("budget"):
+                score += "  (search cut short by the time budget)"
+            if fault.get("def") and "reached_by" in fault:
+                score += f"  [def {fault['def']} is reached by {fault['reached_by']} of {fault['examples']} examples]"
+            rep = f"  -> {fault['replacement']}" if fault.get("replacement") else ""
+            a0, b0 = fault["span"]
+            line = (f"        fault: {fault['line']}:{fault['col']} [{a0}, {b0})  {fault['excerpt']}  "
+                    f"-- {fault['edit']}{rep}{score}")
+            if line in seen_faults:
+                lines.append(f"        fault: the same as at {seen_faults[line]}:{r['col']} above")
             else:
-                why = a.get("kind", "error") + (f", expected {r['expected']}" if "expected" in r else "")
-            lines.append(f"  FAIL  {r['line']}:{r['col']}  {_first_line(r['excerpt'])}  -- {why}")
-            fault = r.get("fault")
-            if fault and fault.get("span"):
-                n, m = fault.get("others_passing", 0), fault.get("others", 0)
-                score = ("" if not m else
-                         f"  [fixes all {m + 1} examples]" if n == m else
-                         f"  [fixes this and {n} of {m} other examples; the fault may be elsewhere]")
-                if fault.get("budget"):
-                    score += "  (search cut short by the time budget)"
-                if fault.get("def") and "reached_by" in fault:
-                    score += f"  [def {fault['def']} is reached by {fault['reached_by']} of {fault['examples']} examples]"
-                rep = f"  -> {fault['replacement']}" if fault.get("replacement") else ""
-                a0, b0 = fault["span"]
-                lines.append(f"        fault: {fault['line']}:{fault['col']} [{a0}, {b0})  {fault['excerpt']}  "
-                             f"-- {fault['edit']}{rep}{score}")
-            elif fault and fault.get("kind") == "budget":
-                lines.append(f"        fault: not found within the time budget ({fault['probes']} probes)")
-            elif fault and fault.get("kind") == "none":
-                lines.append(f"        fault: no single edit of a def makes this example pass "
-                             f"({fault['probes']} probes); the fix is more than one token, or elsewhere")
-            hint = a.get("body_offender")
-            if hint and not fault:
-                lines.append(f"        offender: {hint.get('op_name')} at depth {hint.get('depth')}, "
-                             f"observed {hint.get('observed')}, needed {hint.get('needed')}")
+                seen_faults[line] = r["line"]
+                lines.append(line)
+        elif fault and fault.get("kind") == "budget":
+            lines.append(f"        fault: not found within the time budget ({fault['probes']} probes)")
+        elif fault and fault.get("kind") == "none":
+            reaches = ", ".join(r.get("reaches", [])) or "no def of the program"
+            lines.append(f"        fault: no single edit of a def makes this example pass "
+                         f"({fault['probes']} probes); the fix is more than one token. "
+                         f"This example reaches: {reaches}")
+        hint = a.get("body_offender")
+        if hint and not fault and "got" in r:
+            lines.append(f"        offender: {hint.get('op_name')} at depth {hint.get('depth')}, "
+                         f"observed {hint.get('observed')}, needed {hint.get('needed')}")
     passed = sum(1 for r in results if r["passed"])
     lines.append(f"  {passed}/{len(results)} examples pass")
     return chr(10).join(lines)
