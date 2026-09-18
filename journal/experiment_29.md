@@ -36,9 +36,8 @@ cannot merge again; traversal order decides which pair merges), the
 score and the moved count returned. `ttt` -- noughts and crosses: the
 memoised negamax's chosen square and score, or the winner when the
 board is decided. Each pair was built together and checked to agree on
-random inputs (`*_check.py`). A third pair, taken from the SSH fleet
-manager's policy layer, was removed before the run at the owner's
-standing rule against that subject.
+random inputs (`*_check.py`). A third pair was removed before the run
+at the owner's standing rule against its subject.
 
 **The faults**, the same in both languages:
 
