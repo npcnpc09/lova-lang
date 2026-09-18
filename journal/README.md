@@ -712,9 +712,15 @@ On Exp 21's eight planted faults, given the task's tests as examples:
 
 Five of eight located with a fix that passes every test, three of them
 the planted token itself; the two misses were never one edit. Half a
-second a task except the search. Whether a session given the `fault:`
-line repairs in fewer attempts and less reading than one given the
-program is Q96, now runnable.
+second a task except the search. **Exp 28 ran Q96 the same
+afternoon** (`journal/experiment_28.md`): first-try repairs 23 of 24
+against 18, attempts 27 against 30, and three times the reading; the
+sessions' rule, "an address, not a diagnosis". What they asked for is
+in: the span in the line, a word on a miss, no edits inside an
+example's own expression, the example count in the score, an
+exchanged reference that compares a thing with itself not offered,
+the report printing an example as its first line, and the harness
+writing the body as a def the examples call.
 
 Beside it: an example may state any value -- a list, a text, a record
 -- compared structurally, where a conservation contract took only a
@@ -2095,10 +2101,20 @@ the corpus grows again.
   List, slot expects Map) where `(map-put (nil) k v)` is accepted and
   the card says the empty map is `(nil)`. Widen `map-get`'s first
   slot, or make the card say `(map-of (nil))`.
-- **Q96** *(runnable since M28)*: three sessions given Exp 21's
-  programs with the task's tests as examples and the `fault:` line,
-  against Exp 21's three given the program alone: attempts, characters
-  read, characters written.
+- ~~**Q96**~~ *(answered by Exp 28, 2026-09-18)*: PARTIAL. Three
+  sessions with the examples and the `fault:` line: first-try 23/24
+  against 18/24, attempts 27 against 30 -- and three times the reading,
+  two thirds of it the instrument (examples copying the body, the
+  report reprinting them) and a third the sessions reading anyway,
+  because the line was trusted only where the prompt could confirm it.
+  "An address, not a diagnosis." Q95 sharpened; Q115-Q117.
+- **Q115**: a second oracle for a located edit -- check it against a
+  declared contract, so "fixes all 3 examples" becomes a reason.
+- **Q116**: the confident mislead as a number: how often a full-fix
+  edit that is not the fault appears, as a function of the number of
+  examples.
+- **Q117**: examples that call a def against examples that copy the
+  body, the read and write cost measured.
 - **Q109**: the size where transcription breaks. These programs fit in
   working memory, which is why nobody composed forward. At what token
   count does a session start discovering at token k that it wanted
@@ -2311,6 +2327,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 28 | 2026-09-18 | The located fault in the repair loop (Q96) | Done (3 sessions, Opus, LOVA with examples, vs Exp 21) | **PARTIAL.** First-try 23/24 vs 18/24 (LOVA) and 20/24 (Python); attempts 27 vs 30 / 28. Read 78 127 vs 27 108 / 12 069 -- two thirds instrument (examples copying the body, the report reprinting them), a third the sessions reading `given` on six of eight tasks anyway. The line named the planted token 3 of 5 times, a wrong full fix twice (few examples), nothing twice (never one edit). All three: "an address, not a diagnosis"; trusted blind only where the prompt confirmed the edit. Fixes the same day: span in the line, a word on a miss, no edits inside examples, the example count in the score, degenerate reference edits dropped, examples calling a def. Q95 sharpened; Q115-Q117. |
 | 24 | 2026-09-11 | Linear authoring of the substrate (Q105) | Done (4 sessions, Opus, 2 arms, 4 tasks) | **WIN for the measurement, NULL for the claim.** 16/16 passed with zero refused tokens and zero restarts, identical programs in both arms; the type-constrained frontier changed nothing. All four sessions reported composing the tree first and transcribing it -- one identifying the zero-refusal count as the proof, another tracing the cause to the no-revision rule, which produced *more* up-front tree-building. The substrate is emittable, not authorable, by a current model. The real costs (variadic `;`, arity debt, semantic guesses) are all outside what the checker checks. Q108-Q111. **Run 2 (2026-09-18, Q108):** four fresh sessions with the pending stack: 16/16, 0 refusals, 0 restarts, all four composed the tree first; the stack changed no token. Eight of eight over three arms. Q108 closed; Q112, Q113. |
 | 23 | 2026-09-11 | Does the substrate form hold at size? (Q104) | Done (5 sessions, Opus, 6 tasks 2x-5x larger) | **PARTIAL.** 30/30 first-try in all three forms, no wrong values; Stage-2's cost edge grew to 2.0x the s-expression on what was emitted. But neither Stage-2 session authored in Stage-2 -- both composed a tree and serialised it with an external binding table, so the substrate is shown as a storage/transport form, not an authoring one (Q105). All three substrate sessions named the same silent risk: a swapped reference is well-typed, so it is a wrong value with no diagnostic (Q106). The byte encoding proved the easy part; the missing vocabulary is the cost. A card defect (six reference letters where the form has ten) distorted one program -- the third card confound in this family (Q107). |
 | 22 | 2026-09-11 | The three-form experiment (Q100) | Done (5 sessions, Opus, cost + generation axes) | **PARTIAL.** Cost: s2 1.36x cheaper than s1 in LLM tokens on dense code, tok 2.71x MORE. Generation first-try s1 100% / s2 85% / tok 60%, attempts/task 1.00 / 1.25 / 2.00 -- reliability degrades toward the substrate. The s2/tok cards, projected from the s-expression, dropped nine comparison/branch macros (no byte) and the arities parentheses supply, so those greens are contaminated (synthesis, hard-coding, reverse-engineering from decode errors) -- the ruling's point shown. For a current model the s-expression is the authoring surface. Q101-Q103. |

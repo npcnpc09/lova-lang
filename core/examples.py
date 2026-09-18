@@ -208,12 +208,20 @@ def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwarg
             r["fault"] = found
 
 
+def _first_line(text: str) -> str:
+    """An example as its first line: a session reads every character of
+    the report, and Exp 28's were eleven thousand a session of reprinted
+    expressions."""
+    head, sep, _ = text.partition(chr(10))
+    return head + " ..." if sep else head
+
+
 def summary(results: List[Dict[str, Any]]) -> str:
     """One line per example, then the count."""
     lines = []
     for r in results:
         if r["passed"]:
-            lines.append(f"  ok    {r['line']}:{r['col']}  {r['excerpt']}")
+            lines.append(f"  ok    {r['line']}:{r['col']}  {_first_line(r['excerpt'])}")
         else:
             a = r.get("anomaly", {})
             if "got" in r:
@@ -222,20 +230,24 @@ def summary(results: List[Dict[str, Any]]) -> str:
                 why = r["note"] + ": " + a.get("kind", "error")
             else:
                 why = a.get("kind", "error") + (f", expected {r['expected']}" if "expected" in r else "")
-            lines.append(f"  FAIL  {r['line']}:{r['col']}  {r['excerpt']}  -- {why}")
+            lines.append(f"  FAIL  {r['line']}:{r['col']}  {_first_line(r['excerpt'])}  -- {why}")
             fault = r.get("fault")
             if fault and fault.get("span"):
                 n, m = fault.get("others_passing", 0), fault.get("others", 0)
                 score = ("" if not m else
-                         "  [fixes every example]" if n == m else
+                         f"  [fixes all {m + 1} examples]" if n == m else
                          f"  [fixes this and {n} of {m} other examples; the fault may be elsewhere]")
                 if fault.get("budget"):
                     score += "  (search cut short by the time budget)"
                 rep = f"  -> {fault['replacement']}" if fault.get("replacement") else ""
-                lines.append(f"        fault: {fault['line']}:{fault['col']}  {fault['excerpt']}  "
+                a0, b0 = fault["span"]
+                lines.append(f"        fault: {fault['line']}:{fault['col']} [{a0}, {b0})  {fault['excerpt']}  "
                              f"-- {fault['edit']}{rep}{score}")
             elif fault and fault.get("kind") == "budget":
                 lines.append(f"        fault: not found within the time budget ({fault['probes']} probes)")
+            elif fault and fault.get("kind") == "none":
+                lines.append(f"        fault: no single edit of a def makes this example pass "
+                             f"({fault['probes']} probes); the fix is more than one token, or elsewhere")
             hint = a.get("body_offender")
             if hint and not fault:
                 lines.append(f"        offender: {hint.get('op_name')} at depth {hint.get('depth')}, "

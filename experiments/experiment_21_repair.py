@@ -328,13 +328,19 @@ def with_examples(program: str, task) -> str:
         src = src.replace("{" + k + "}", stand)
     body_span = parse_with_prelude(src).body_span
     body = program[body_span[0]:body_span[1]]
-    forms = []
+    names = list(task.tests[0]["inputs"])
+    # Exp 28's sessions e1-e3 ran with the body copied into every
+    # example; since then the body is a def the examples and the
+    # program both call, which is how an author would write it.
+    inner = body
+    for k in names:
+        inner = inner.replace("{" + k + "}", k)
+    main = "(def main [" + " ".join(names) + "] " + inner + ")"
+    forms = [main]
     for t in task.tests:
-        expr = body
-        for k, v in t["inputs"].items():
-            expr = expr.replace("{" + k + "}", _lit(v))
-        forms.append(f"(example {expr} {_lit(t['expected'])})")
-    return program[:body_span[0]] + chr(10).join(forms) + chr(10) + program[body_span[0]:]
+        forms.append("(example (main " + " ".join(_lit(t["inputs"][k]) for k in names) + ") " + _lit(t["expected"]) + ")")
+    call = "(main " + " ".join("{" + k + "}" for k in names) + ")"
+    return program[:body_span[0]] + chr(10).join(forms) + chr(10) + call + program[body_span[1]:]
 
 
 GIVEN_EXAMPLES = {tid: with_examples(GIVEN[tid]["lova"], BY_ID[tid]) for tid in BY_ID}

@@ -124,6 +124,18 @@ instrument attempts (offset spans on a console that prints CRLF) are
 fixed. The claim that a located anomaly beats a traceback stands
 untested until the faults are ones reading cannot find (Q95).
 
+**Fifth measurement (Exp 28, 2026-09-18, the repair half again, with
+the located fault):** Exp 21's eight programs carrying the task's
+tests as examples, and a `fault` command; three sessions. First-try
+23 of 24 against 18 (LOVA) and 20 (Python); attempts 27 against 30
+and 28; characters read 78 127 against 27 108 and 12 069, two thirds
+of the excess the instrument and a third the sessions reading the
+program anyway. The line named the planted token three times of
+five, a wrong edit that passed every example twice, nothing twice.
+All three sessions: "an address, not a diagnosis" -- trusted blind
+only where the task text confirmed the edit. The repair claim lives
+at the size where reading fails (Q95).
+
 ## 4. What the measure asks of the design
 
 Consequences, each a change the numbers above would reward:

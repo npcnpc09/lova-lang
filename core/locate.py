@@ -233,6 +233,23 @@ def _edits(node: Node, in_scope: List[int], params: List[int],
     return edits
 
 
+def _degenerate(body: Node, path: Tuple[int, ...]) -> bool:
+    """True when the edit at `path` left an ancestor within three levels
+    with two structurally identical operands -- `(lt x x)` -- which is
+    how an exchanged reference passes a few examples by making a test
+    constant."""
+    for up in (1, 2, 3):
+        if len(path) < up:
+            break
+        parent = _at(body, path[:-up])
+        if parent is None:
+            continue
+        kids = [k for k in parent.args if isinstance(k, Node)]
+        if len(kids) == 2 and repr(kids[0]) == repr(kids[1]):
+            return True
+    return False
+
+
 def _at(node: Node, path: Tuple[int, ...]) -> Optional[Node]:
     for i in path:
         if not isinstance(node, Node) or i >= len(node.args) or not isinstance(node.args[i], Node):
@@ -273,11 +290,16 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
         nonlocal best
         if best is None or rank(found) > rank(best):
             best = found
-        return found["others_passing"] == len(others) and bool(found.get("replacement"))
+        # Stop early only at a full fix of the best kind -- an exact
+        # spelling; a structural fix that also passes every example keeps
+        # the search going in case the exact one is further up the tree.
+        return (found["others_passing"] == len(others) and bool(found.get("replacement"))
+                and _PRIORITY.get(found["kind"], 0) >= 6)
 
     # Targets: each called user def's body, then the expression itself.
     targets: List[Tuple[Optional[Closure], Node, Any]] = [(c, c.body, c.env) for c in closures if c.name is not None]
-    targets.append((None, expr, frame))
+    if not targets:
+        targets.append((None, expr, frame))
 
     for closure, body, scope_frame in targets:
         params = [closure.param] if closure is not None else []
@@ -306,7 +328,10 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
                     name = closure.name
                     if name not in scope_frame:
                         continue
-                    probe = Closure(param=closure.param, body=_replace(body, path, new), env=closure.env,
+                    edited_body = _replace(body, path, new)
+                    if kind == "ref" and _degenerate(edited_body, path):
+                        continue
+                    probe = Closure(param=closure.param, body=edited_body, env=closure.env,
                                     caps=closure.caps, enclosed=closure.enclosed, owner=closure.owner)
                     probe.name = name
                     scope_frame[name] = probe

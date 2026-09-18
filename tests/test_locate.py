@@ -42,7 +42,8 @@ class Located(unittest.TestCase):
         self.assertEqual(fault["def"], "score")
         self.assertEqual((fault["line"], fault["col"]), (2, 64))
         self.assertEqual((fault["others_passing"], fault["others"]), (2, 2))
-        self.assertIn("`a` here should be `x`  -> x  [fixes every example]", summary(results))
+        self.assertIn("`a` here should be `x`  -> x  [fixes all 3 examples]", summary(results))
+        self.assertIn("[123, 124)", summary(results))
 
     def test_a_comparison_off_by_one(self):
         fault, _ = _fault(
@@ -66,19 +67,26 @@ class Located(unittest.TestCase):
         self.assertEqual(fault["replacement"], "(neg n)")
         self.assertEqual(fault["others_passing"], 1)
 
-    def test_a_fault_in_the_expression_itself(self):
-        # 9 - 2 is 7; the example states 11, and the edit is `sub` -> `merge`.
+    def test_a_fault_in_the_expression_is_not_probed(self):
+        # Exp 28: an edit inside an example's own expression repairs the
+        # statement, not the program, so the defs alone are probed and a
+        # miss says so.
         fault, results = _fault(
             "(def sq [n] (mul n n))" + NL +
             "(example (sub (sq 3) 2) 11)" + NL +
             "(example (sub (sq 2) 2) 6)" + NL +
             "(sq 1)")
-        self.assertIsNone(fault["def"])
-        self.assertEqual(fault["in"], "the example's expression")
-        self.assertEqual(fault["excerpt"], "(sub (sq 3) 2)")
-        self.assertEqual(fault["kind"], "operator")
-        self.assertEqual((fault["line"], fault["col"]), (2, 10))
-        self.assertEqual(fault["others_passing"], 1)
+        self.assertEqual(fault["kind"], "none")
+        self.assertIn("no single edit of a def makes this example pass", summary(results))
+
+    def test_an_exchanged_reference_that_compares_a_thing_with_itself_is_not_offered(self):
+        fault, results = _fault(
+            "(def bigger [a b] (if (lt a b) a b))" + NL +        # `lt` should be `gt`
+            "(example (bigger 3 5) 5)" + NL +
+            "(example (bigger 9 2) 9)" + NL +
+            "(bigger 1 2)")
+        self.assertEqual(fault["kind"], "compare")
+        self.assertEqual(fault["replacement"], "(gt a b)")
 
     def test_a_fault_no_single_edit_closes_says_so(self):
         fault, results = _fault(
@@ -92,7 +100,7 @@ class Located(unittest.TestCase):
         if fault and fault.get("span"):
             self.assertIn("the fault may be elsewhere", text)
         else:
-            self.assertNotIn("fault:", text)
+            self.assertIn("no single edit of a def makes this example pass", text)
 
     def test_examples_may_state_lists_and_texts(self):
         results = check(
