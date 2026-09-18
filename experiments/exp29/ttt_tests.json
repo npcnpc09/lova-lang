@@ -1,0 +1,50 @@
+[
+ {
+  "inputs": {
+   "board": "X...O...."
+  },
+  "expected": "1 0"
+ },
+ {
+  "inputs": {
+   "board": "OO..X...X"
+  },
+  "expected": "2 1"
+ },
+ {
+  "inputs": {
+   "board": "OO.XX...X"
+  },
+  "expected": "2 1"
+ },
+ {
+  "inputs": {
+   "board": "XXXOO...."
+  },
+  "expected": "-1 1"
+ },
+ {
+  "inputs": {
+   "board": "XOXXOOOXX"
+  },
+  "expected": "-1 0"
+ },
+ {
+  "inputs": {
+   "board": "OX..X...."
+  },
+  "expected": "7 0"
+ },
+ {
+  "inputs": {
+   "board": "XO..X...."
+  },
+  "expected": "2 -1"
+ },
+ {
+  "inputs": {
+   "board": "O...X...."
+  },
+  "expected": "1 0"
+ }
+]

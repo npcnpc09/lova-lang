@@ -1,0 +1,146 @@
+;;; g2048.lova  --  2048, the deterministic half of it
+;;;
+;;; A port of gabrielecirulli/2048 (MIT), whose `js/game_manager.js`
+;;; and `js/grid.js` are the specification followed here: the same
+;;; traversal order, the same farthest-position walk, the same rule
+;;; that a tile merged this move cannot merge again, the same score.
+;;; The chance -- the tile that appears after a move that moved
+;;; something -- is left out, so a board and a list of moves go in and
+;;; a board and a score come out, with nothing random in between.
+;;;
+;;; The grid is `cells[x][y]` as the original has it: x is the column
+;;; and y the row, y growing downward, so `up` is (0, -1).  It lives in
+;;; a map keyed x * 4 + y, with an absent cell and a cell holding zero
+;;; meaning the same thing -- a map has no delete, so a tile that moves
+;;; away leaves a zero behind.
+;;;
+;;; `(main board moves)`: `board` is sixteen non-negative numbers
+;;; separated by single spaces, in cell order; `moves` is a text of the
+;;; letters `u r d l`.  Out comes one text -- the score, the number of
+;;; moves that moved something, then the sixteen final cells.
+
+(def SIZE [] 4)
+(def GOAL [] 2048)
+
+(def ckey [x y] (merge (mul x SIZE) y))
+
+(def within [x y]
+  (and (and (ge x 0) (lt x SIZE)) (and (ge y 0) (lt y SIZE))))
+
+;; Out of bounds reads as empty.  Without the guard, (0, 4) and (1, 0)
+;; would be the same key and a tile would merge with the wrong
+;; neighbour at the edge of the board.
+(def at [b x y] (if (within x y) (map-get b (ckey x y) 0) 0))
+
+;; The original's direction numbering and vectors.
+(def vx [d] (nth (list 0 1 0 -1) d))
+(def vy [d] (nth (list -1 0 1 0) d))
+
+;; The traversal is built so that the tiles furthest along the vector
+;; are visited first; that is the whole reason a row of four twos
+;; becomes two fours and not one eight.
+(def order [rev] (if rev (list 3 2 1 0) (list 0 1 2 3)))
+
+;; The last free cell along the vector, and the cell after it -- the
+;; original's findFarthestPosition, which walks while it is inside the
+;; board and empty.
+(def farthest [b x y dx dy]
+  (let nx (merge x dx)
+    (let ny (merge y dy)
+      (if (and (within nx ny) (not (at b nx ny)))
+        (farthest b nx ny dx dy)
+        (rec fx x fy y nx nx ny ny)))))
+
+;; --- one cell of one move -------------------------------------------
+;;
+;; `st` carries the board, the cells that have already merged this move
+;; (the original hangs a `mergedFrom` on the tile; a tile here is a
+;; number and has nowhere to hang anything, so the flags are a map),
+;; the score, whether anything moved at all, and whether 2048 appeared.
+
+(def move-cell [st x y d]
+  (let v (at (get st b) x y)
+    (if (not v)
+      st
+      (let p (farthest (get st b) x y (vx d) (vy d))
+        (let n (at (get st b) (get p nx) (get p ny))
+          (if (and (eq n v)
+                   (not (map-get (get st m) (ckey (get p nx) (get p ny)) 0)))
+            ;; the tile in front is the same and has not merged yet
+            (let k (ckey (get p nx) (get p ny))
+              (let v2 (mul v 2)
+                (put (put (put (put (put st
+                                         b (map-put (map-put (get st b) (ckey x y) 0) k v2))
+                                    m (map-put (get st m) k 1))
+                               s (merge (get st s) v2))
+                          won (or (get st won) (eq v2 GOAL)))
+                     moved 1)))
+            ;; otherwise it slides as far as it can, if that is anywhere
+            (if (and (eq (get p fx) x) (eq (get p fy) y))
+              st
+              (put (put st b (map-put (map-put (get st b) (ckey x y) 0)
+                                      (ckey (get p fx) (get p fy)) v))
+                   moved 1))))))))
+
+(def sweep [w d]
+  (let ys (order (eq (vy d) 1))
+    (fold (lambda a (lambda x
+            (fold (lambda a2 (lambda y (move-cell a2 x y d))) a ys)))
+          (rec b (get w board) m (nil) s (get w score) moved 0 won (get w won))
+          (order (eq (vx d) 1)))))
+
+;; --- the cells, in order --------------------------------------------
+;;
+;; In the original's order -- column by column, and within a column top
+;; to bottom -- because that is the order a board is written down in
+;; and read back out of.
+
+(def all-cells []
+  (fold (lambda acc (lambda x
+          (append acc (map (lambda y (ckey x y)) (range 0 SIZE)))))
+        (nil) (range 0 SIZE)))
+
+;; A board from sixteen numbers in cell order, and back again.
+(def board-of [xs]
+  (fold (lambda m (lambda p (map-put m (head p) (head (tail p))))) (nil) (zip all-cells xs)))
+
+(def cells-of [b] (map (lambda k (map-get b k 0)) all-cells))
+
+;; --- a text of moves ------------------------------------------------
+;;
+;; `u r d l` are the original's 0 1 2 3; anything else is a push to the
+;; left, which is the last of them.
+
+(def dir-of [c]
+  (cond (eq c 117) 0
+        (eq c 114) 1
+        (eq c 100) 2
+        3))
+
+;; The world a sweep reads -- the board, the score and whether 2048 has
+;; appeared -- together with how many moves have moved anything, which
+;; is what the original decides on whether to drop a new tile.
+
+(def step [g d]
+  (let st (sweep (get g w) d)
+    (rec w (put (put (put (get g w) board (get st b))
+                     score (get st s))
+                won (get st won))
+         n (merge (get g n) (get st moved)))))
+
+(def play [g ds] (fold (lambda a (lambda d (step a d))) g ds))
+
+(def start [cs] (rec w (rec board (board-of cs) score 0 won 0) n 0))
+
+(def report [g]
+  (text-join (cons (int-text (get (get g w) score))
+                   (cons (int-text (get g n))
+                         (map (lambda v (int-text v)) (cells-of (get (get g w) board)))))
+             " "))
+
+(def main [board moves]
+  (let cs (map (lambda t (text-int t)) (text-split board ""))
+    (let ds (map dir-of (text-chars moves))
+      (report (play (start cs) ds)))))
+
+(main {board} {moves})
