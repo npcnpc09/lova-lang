@@ -131,7 +131,9 @@ def _build_tasks():
         ref_py = _read(PAIRS / f"{name}.py")
         for tag, (what, lova_edit, py_edit) in FAULTS.get(name, {}).items():
             tid = f"{name}-{tag}"
-            tasks.append(loop.Task(tid, PROMPTS[name] + f"  ({what})", tuple(names),
+            # The prompt says what the program is for; what was planted
+            # is the harness's own knowledge, for the journal.
+            tasks.append(loop.Task(tid, PROMPTS[name], tuple(names),
                                    [{"inputs": t["inputs"], "expected": t["expected"]} for t in tests]))
             given[tid] = {"lova": with_examples(_plant(ref_lova, lova_edit), tests, names),
                           "python": _plant(ref_py, py_edit),
@@ -212,7 +214,7 @@ def cmd_fault(args) -> int:
     from core.examples import check, summary
     program = _current(args.lang, args.task)
     try:
-        results = check(program, locate_budget_s=15.0, max_steps=20_000_000)
+        results = check(program, locate_budget_s=90.0, max_steps=20_000_000)
         report = summary(results)
     except Exception as exc:          # noqa: BLE001
         a = getattr(exc, "anomaly", None)

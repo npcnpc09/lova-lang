@@ -26,6 +26,7 @@ expression swapped in.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional
 
 from core.conservation import BudgetTrap, DeltaTrap
@@ -128,10 +129,10 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
                 name_anomaly(anomaly, getattr(compiled, "symbols", None) if "compiled" in dir() else None)
             except Exception:      # noqa: BLE001 -- the hint is a courtesy
                 pass
-            result.update(passed=False, anomaly=anomaly, expected=_shown(want))
+            result.update(passed=False, anomaly=anomaly, expected=_shown(want), steps=rt.steps)
         else:
             if same(got, want):
-                result.update(passed=True, value=got)
+                result.update(passed=True, value=got, steps=rt.steps)
             else:
                 # A miss is an anomaly like any other: the same kind the
                 # conservation contract raised when an example was one.
@@ -154,7 +155,10 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
         result["reaches"] = sorted(reached)
         results.append(result)
 
-    failed = [r for r in results if not r["passed"] and "got" in r]
+    # A miss and a trap alike: the example that trapped in `(nth powers k)`
+    # has its fault three defs upstream in `(range 0 10)` (Exp 29, ttt-b),
+    # and an edit that makes it produce the stated value is a fix either way.
+    failed = [r for r in results if not r["passed"] and ("got" in r or "expected" in r)]
     if failed and locate_budget_s > 0:
         _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwargs, locate_budget_s,
                     body_span[0], expr_spans)
@@ -165,7 +169,7 @@ def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwarg
                 body_start, expr_spans) -> None:
     """One combined run holds every def any example uses; probe in it."""
     from core.cli import build
-    from core.locate import data_literals, example_expression, locate, user_closures
+    from core.locate import data_literals, deepest_frame, example_expression, locate, user_closures
     from core.runtime import Cons, NIL_VALUE
     order = [i for i in sorted(exprs) if i in wants]
     listed = "(list " + " ".join(exprs[i] for i in order) + ")"
@@ -182,13 +186,11 @@ def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwarg
     except Exception:          # noqa: BLE001 -- then there is nothing to probe
         return
     rt = Runtime(**kwargs)
+    trapped = False
     try:
         evaluate(compiled, rt)
     except Exception:          # noqa: BLE001 -- a trap in one example; the defs still exist
-        pass
-    closures = user_closures(rt, len(source), prelude_names())
-    if not closures:
-        return
+        trapped = True
     # The example expressions, as the nodes of the list the body builds.
     body = example_expression(compiled)
     nodes: List[Any] = []
@@ -198,16 +200,74 @@ def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwarg
         node = node.args[1]
     if len(nodes) != len(order):
         return
+    frame = deepest_frame(user_closures(rt, len(source), prelude_names(), called=False))
+    if frame is None:
+        return
+    if trapped:
+        # The list stopped at the first trap, so the examples after it
+        # never ran and the defs only they reach show no calls.  Run each
+        # on its own in the same frame; the counters are cumulative.
+        for n in nodes:
+            again = Runtime(**kwargs)
+            again.env = frame
+            try:
+                evaluate(n, again)
+            except Exception:  # noqa: BLE001
+                pass
+    closures = user_closures(rt, len(source), prelude_names())
+    if not closures:
+        return
     by_index = dict(zip(order, nodes))
     literals = data_literals(nodes)
-    max_steps = max(kwargs.get("max_steps", 0) or 0, rt.steps * 10 + 10_000)
+    # The defs in the order to probe them: the ones the failing examples
+    # reach and the passing ones reach least, first (Ochiai over the
+    # per-example `reaches`); a def every example runs through -- `cell`
+    # in Exp 29's noughts and crosses, 51 653 calls -- is the least likely
+    # place for a fault that spares five examples of eight.
+    symbols = getattr(compiled, "symbols", None)
+    passing = [x for x in results if x["passed"]]
+    failing = [x for x in results if not x["passed"]]
+
+    def suspicion(c) -> float:
+        name = symbols.name_of(c.name) if symbols is not None and c.name is not None else None
+        ef = sum(1 for x in failing if name in x.get("reaches", []))
+        ep = sum(1 for x in passing if name in x.get("reaches", []))
+        if ef == 0:
+            return 0.0
+        return ef / ((len(failing) * (ef + ep)) ** 0.5)
+
+    closures.sort(key=lambda c: (-suspicion(c), c.calls))
+    ceiling = kwargs.get("max_steps") or Runtime(**kwargs).max_steps
+    longest_pass = max([x.get("steps", 0) for x in passing] or [0])
+    # The cheapest failing example first: a fix found on it that passes
+    # every other example is the other failures' fix too, unprobed.
+    failed = sorted(failed, key=lambda x: x.get("steps", 0))
+    # One budget for the check, not one a failing example: the edits
+    # probed are the same for every example, so a search that found no
+    # fix on the first would find none on the second, and a search cut
+    # short would be cut at the same place (Exp 29: three searches of
+    # 60 s each on the same forty probes).
+    deadline = time.perf_counter() + budget_s
+    longest_known = max([x.get("steps", 0) for x in results] or [0])
     for r in failed:
+        if r.get("fault"):
+            continue
         i = r["index"]
         want = wants[i]
         others = [(by_index[j], (lambda v, w=wants[j]: same(v, w))) for j in order if j != i]
+        # A probe runs the example again; a runaway edit is bounded at
+        # twice the longest run any example has needed, not at the
+        # program's ceiling (Exp 29: six such probes cost 73 s of 74);
+        # the locator retries a probe that hit the cap with more room.
+        cap = 2 * max(r.get("steps", 0), longest_known) + 10_000
+        max_steps = min(cap, ceiling) if ceiling else cap
+        left = deadline - time.perf_counter()
+        if left <= 0:
+            r["fault"] = {"kind": "budget", "probes": 0}
+            continue
         found = locate(compiled, combined, by_index[i], lambda v, w=want: same(v, w), others,
-                       closures[0].env, closures, max_steps=max_steps, budget_s=budget_s,
-                       literals=literals)
+                       frame, closures, max_steps=max_steps, budget_s=left,
+                       literals=literals, ceiling=ceiling)
         if found and found.get("span") and found.get("def") is None:
             # A fault in the expression itself: back to the example's text.
             delta = expr_spans[i][0] - starts[i]
@@ -226,8 +286,23 @@ def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwarg
                 r["anomaly"]["repair_hint"] = (f"{found['edit']} at {found['line']}:{found['col']} "
                                                f"`{found['excerpt']}`{rep}")
                 r["anomaly"]["fault"] = found
+            if found.get("def") and found.get("others_passing") == found.get("others") and found.get("others"):
+                # It fixed every other example, the other failures among
+                # them: theirs is the same fault, and the search is saved.
+                for x in failed:
+                    if x is not r and not x.get("fault"):
+                        x["fault"] = dict(found)
+                        if isinstance(x.get("anomaly"), dict):
+                            x["anomaly"]["repair_hint"] = r["anomaly"].get("repair_hint") if isinstance(r.get("anomaly"), dict) else None
+                            x["anomaly"]["fault"] = found
         elif found:
             r["fault"] = found
+            if found.get("kind") in ("budget", "none"):
+                # The same edits would be probed again for the other
+                # failures, with the same answer.
+                for x in failed:
+                    if x is not r and not x.get("fault"):
+                        x["fault"] = dict(found)
 
 
 def _first_line(text: str) -> str:
@@ -258,11 +333,14 @@ def summary(results: List[Dict[str, Any]], *, verbose: bool = False) -> str:
         else:
             why = a.get("kind", "error") + (f", expected {r['expected']}" if "expected" in r else "")
         lines.append(f"  FAIL  {r['line']}:{r['col']}  {_first_line(r['excerpt'])}  -- {why}")
-        if "got" not in r and a.get("repair_hint"):
-            lines.append(f"        {a.get('kind', 'trap')}: {a['repair_hint']}")
-            if a.get("span") and a.get("kind") not in ("conservation-violated",):
-                lines.append(f"        at [{a['span'][0]}, {a['span'][1]})")
         fault = r.get("fault")
+        if "got" not in r and a.get("repair_hint"):
+            located = bool(fault and fault.get("span"))
+            if not located:
+                lines.append(f"        {a.get('kind', 'trap')}: {a['repair_hint']}")
+            if a.get("span") and a.get("kind") not in ("conservation-violated",):
+                lines.append(f"        {'trapped at' if located else 'at'} [{a['span'][0]}, {a['span'][1]})"
+                             + (f"  {a['excerpt']}" if located and a.get("excerpt") else ""))
         if fault and fault.get("span"):
             n, m = fault.get("others_passing", 0), fault.get("others", 0)
             score = ("" if not m else
@@ -276,7 +354,12 @@ def summary(results: List[Dict[str, Any]], *, verbose: bool = False) -> str:
                 score += f"  [def {fault['def']} is reached by {fault['reached_by']} of {fault['examples']} examples]"
             rep = f"  -> {fault['replacement']}" if fault.get("replacement") else ""
             a0, b0 = fault["span"]
-            line = (f"        fault: {fault['line']}:{fault['col']} [{a0}, {b0})  {fault['excerpt']}  "
+            # An edit that fixes every example is a fault line; one that
+            # fixes some is a lead, and says so in its label (Exp 29: two
+            # of three sessions asked that a partial not wear the same
+            # dress as a repair).
+            label = "fault" if not m or n == m else "lead "
+            line = (f"        {label}: {fault['line']}:{fault['col']} [{a0}, {b0})  {fault['excerpt']}  "
                     f"-- {fault['edit']}{rep}{score}")
             if fault.get("tied_with"):
                 places = ", ".join(f"{t['excerpt']} [{t['span'][0]}, {t['span'][1]})" for t in fault["tied_with"])
@@ -287,7 +370,7 @@ def summary(results: List[Dict[str, Any]], *, verbose: bool = False) -> str:
                 if others:
                     line += f"{chr(10)}        runners-up, by nearby inputs changed: {others}"
             if line in seen_faults:
-                lines.append(f"        fault: the same as at {seen_faults[line]}:{r['col']} above")
+                lines.append(f"        {label}: the same as at {seen_faults[line]}:{r['col']} above")
             else:
                 seen_faults[line] = r["line"]
                 lines.append(line)

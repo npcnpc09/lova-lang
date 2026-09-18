@@ -666,6 +666,61 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 31 (2026-09-18) -- The locator at the size of Exp 29
+
+Exp 29's four planted faults were put to the locator before any
+session ran, and the locator found none of them. Four causes, each a
+one-line story in `tests/test_locate.py`:
+
+**The frame.** `ttt.lova` defines `lines`, a name the prelude binds,
+so the letrec opens a child frame there and every def after it --
+`main` among them -- lives in the child. The locator evaluated the
+example in the first closure's frame (the most-called def, `cell`, in
+the parent), where `main` is unbound, so every one of 2 180 probes
+failed with the same trap and the report said "no single edit".
+`deepest_frame` now picks the frame every other def's frame is an
+ancestor of.
+
+**The runaways.** A probe ran under the combined run's steps times
+ten; six edits that made the search loop cost 12 s each, 73 s of a
+74 s search. A probe is now capped at twice the longest run any
+example has needed, a probe the cap cuts off is inconclusive rather
+than failed, and the inconclusive ones are retried with sixteen times
+the room while the budget lasts (ttt-b: the trap at 5 000 steps, the
+fixed run at 790 000).
+
+**The order.** Defs went most-called first and every edit of a def
+deepest first, so on the noughts-and-crosses search -- a second a
+probe -- the budget went on exchanging references in `cell` before
+the comparison in `choose` was reached. Defs now go by spectrum
+suspicion over the per-example `reaches` (Ochiai: reached by the
+failing examples, by the fewest passing ones), ties to the fewest
+calls; within a def the kinds with the fewest candidates first
+(swaps and drops, then a comparison or operator for its sibling, a
+literal, and last a name for a name), a minus or a `not` added at
+every node after every def. One budget serves a check, not one a
+failing example, on the cheapest failure first; a full fix found
+there is the other failures' fix without a search, and a search that
+found nothing is not run again for the next.
+
+**The traps.** A trapped example was never located -- `_locate_all`
+took only value misses -- though ttt-b's trap in `(nth powers k)` has
+its fault three defs upstream in `(range 0 10)`. Traps are located
+now; a trap in the combined run no longer hides the defs the later
+examples reach (each is run on its own in the frame afterwards); and
+the report's `trapped at [904, 918)` stands beside the `fault:` line
+instead of the generic guard hint.
+
+After: ttt-a `ge` -> `gt` exact, fixes all 8, 77 s; ttt-b `10` -> `9`
+exact, fixes all 8, 22 s; g2048-b `4` -> `3` exact, fixes all 8, 6 s;
+g2048-a a wrong partial (`dy` -> `dx`, 2 of 7 others, "the fault may
+be elsewhere") because the planted fault is a node added, not one
+changed. The harness's `tasks` had been printing what was planted
+after each prompt; it prints the prompt. Tests 966 -> 970. After the
+run, at the sessions' asking: an edit that fixes some examples is
+printed as `lead:`, not `fault:`; the brief names `patch --span`; the
+harness's attempt label no longer counts reads.
+
 ### Milestone 30 (2026-09-18) -- A second oracle for a located edit (Q115)
 
 Six sessions of Exp 28 met the same confident mislead on h02: the
@@ -2199,6 +2254,19 @@ the corpus grows again.
   examples.
 - **Q117**: examples that call a def against examples that copy the
   body, the read and write cost measured.
+- **Q118** *(Exp 29)*: the control arm -- Python with a test run that
+  is not an attempt and no locator, to separate "the tests are free"
+  from "the fault is located".
+- **Q119** *(Exp 29)*: the dropped and added node as an edit class --
+  g2048-a's fault wraps an argument in a call with in-scope arguments;
+  the examples' data and the def's own sub-expressions bound the
+  candidates.
+- **Q120** *(Exp 29)*: pairs split across sessions, and faults whose
+  fix is not a clause of the prompt, so that "fixes all N examples"
+  is tested on its own.
+- **Q121** *(Exp 29)*: examples as the locator's power -- the same
+  faults with three, eight and twenty examples; the confident-mislead
+  rate (Q116) as a function of the count.
 - **Q109**: the size where transcription breaks. These programs fit in
   working memory, which is why nobody composed forward. At what token
   count does a session start discovering at token k that it wanted
@@ -2234,9 +2302,15 @@ the corpus grows again.
   every fault found by reading before feedback. NULL at this size;
   the variant-task half and `why` on the result are still open, and
   the size where reading fails is Q95.
-- **Q95**: the repair leg at a size where reading fails: faults with
-  run-time symptoms in `apps/`-sized programs, the span and `hot`
-  against a traceback, on the same faults.
+- ~~**Q95**~~ *(answered 2026-09-18, Exp 29)*: at 110-160 lines, four
+  faults with run-time symptoms in two programs, three sessions a
+  language: 12/12 first-try on both sides; LOVA read 52% of Python's
+  characters and 14% of its program text; nine of twelve repairs
+  blind on a line that said "fixes all 8 examples", which was right
+  every time; the one lead was distrusted and was wrong. `hot` was
+  not needed: every fault was a wrong value or a domain trap. What
+  the win owes: the control arm (Q118) and the edit class the
+  locator cannot express (Q119).
 - **Q96**: is a program that carries `example` forms repaired in fewer
   attempts than the same program without them?
 - **Q97**: density as a repair cost -- 2.2× read per touch at Stage 1;
@@ -2413,6 +2487,7 @@ the corpus grows again.
 | 11 | 2026-04-24 | LLM-token density (LOVA vs Python) v1 | Done (20 tasks × 3 baselines) | **WIN (pilot, v1).** Measured with tiktoken cl100k_base (GPT-4/Claude-class). Aggregate across 20 LOVABench v1 tasks: **Stage-1 LOVA text surface uses 2.5× fewer LLM tokens than sympy-Python (60% savings), 13.3× fewer than pure-Python (93%)**. Stage-2 projection: **4.0× vs sympy, 21× vs pure**. 18/20 tasks win vs sympy. |
 | 11b | 2026-04-25 | LLM-token density v2 re-run | Done (60 tasks, 5 categories) | **WIN (v2, broader & honest).** Re-run on LOVABench v2 (60 tasks = v1's 20 + 4 × 10 extensions). Aggregate density drops to **Stage-1 2.0× vs sympy (50%), 8.5× vs pure (88%)** — v1's narrower set over-represented LOVA's strongest shapes. Per-category: deep-compose **13.5×/2.8×** (LOVA peak), conserve 7.2×/2.3×, surprise 5.5×/1.4×, let-heavy 4.9×/1.4×. Stage-2 projection **3.2× vs sympy (68%)**. Launch copy updated; v1 preserved as historical slice. |
 | 12 | 2026-09-09 | Abstraction and iteration (M9) | Done (10 tasks × 44 cases; 5 runaway shapes) | **WIN on expressiveness, NEGATIVE on density.** 10 tasks that need recursion or iteration: **44/44 cases pass under M9, 0/10 were representable before it**. μ-recursive basis exhibited (zero test, successor, predecessor, primitive recursion, unbounded minimisation via `loop-until`); μ-search runs under `max_call_depth=4` because iteration consumes no frames. Runaway shapes **5/5 trapped, 5/5 with the full L2 anomaly schema**. Zero new tokens — 0x0B/0x0C reclaimed from the never-implemented mock-theta stubs. **NEGATIVE:** on tasks with no built-in shortcut on either side, the Stage-1 surface costs **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2 projection does not rescue it (0.65×); bytes stay mildly positive at 1.19×. The 8.5× headline was measuring the number-theory built-ins, not the language. Q30-Q36 raised. |
+| 29 | 2026-09-18 | The repair leg at the size where reading fails (Q95) | Done (3 sessions a language, Opus, 4 planted faults in two 110-160-line programs, LOVA with examples and `fault` vs Python) | **WIN.** 12/12 first-try on both sides, 12 attempts each; LOVA read 14 244 characters against Python's 27 259, of which program text 3 882 against 27 259 (14%); written 167 against 318. Nine of twelve LOVA repairs applied with no program text read: every line that said "fixes all 8 examples" was right (9/9) and trusted blind; the one that said "may be elsewhere" (g2048-a, a node dropped, outside the single-node class) was wrong (1/1) and distrusted, and all three sessions found that fault from the failing example's own value plus the free def list, reading one def. The M30 perturbation score decided nothing (never two full fixes to choose from). Python sessions read by the prompt's clauses over the free def list, never saw a failure, and all three asked for a test run that is not an attempt. Confound: pairs (P1, P3). Before the run, M31 fixed four locator faults these programs exposed. Q118-Q121. |
 | 28 | 2026-09-18 | The located fault in the repair loop (Q96) | Done (3 sessions, Opus, LOVA with examples, vs Exp 21) | **PARTIAL.** First-try 23/24 vs 18/24 (LOVA) and 20/24 (Python); attempts 27 vs 30 / 28. Read 78 127 vs 27 108 / 12 069 -- two thirds instrument (examples copying the body, the report reprinting them), a third the sessions reading `given` on six of eight tasks anyway. The line named the planted token 3 of 5 times, a wrong full fix twice (few examples), nothing twice (never one edit). All three: "an address, not a diagnosis"; trusted blind only where the prompt confirmed the edit. Fixes the same day: span in the line, a word on a miss, no edits inside examples, the example count in the score, degenerate reference edits dropped, examples calling a def. **Run 2 (e4-e6, after M29): 24/24 first-try, 24 attempts, read 5 529-6 858 a session of which program 558-1 645 -- below Python's 4 023; four of eight repairs blind in every session; "trust the line when its edit is a clause of the prompt".** Q95 sharpened; Q115-Q117. |
 | 24 | 2026-09-11 | Linear authoring of the substrate (Q105) | Done (4 sessions, Opus, 2 arms, 4 tasks) | **WIN for the measurement, NULL for the claim.** 16/16 passed with zero refused tokens and zero restarts, identical programs in both arms; the type-constrained frontier changed nothing. All four sessions reported composing the tree first and transcribing it -- one identifying the zero-refusal count as the proof, another tracing the cause to the no-revision rule, which produced *more* up-front tree-building. The substrate is emittable, not authorable, by a current model. The real costs (variadic `;`, arity debt, semantic guesses) are all outside what the checker checks. Q108-Q111. **Run 2 (2026-09-18, Q108):** four fresh sessions with the pending stack: 16/16, 0 refusals, 0 restarts, all four composed the tree first; the stack changed no token. Eight of eight over three arms. Q108 closed; Q112, Q113. |
 | 23 | 2026-09-11 | Does the substrate form hold at size? (Q104) | Done (5 sessions, Opus, 6 tasks 2x-5x larger) | **PARTIAL.** 30/30 first-try in all three forms, no wrong values; Stage-2's cost edge grew to 2.0x the s-expression on what was emitted. But neither Stage-2 session authored in Stage-2 -- both composed a tree and serialised it with an external binding table, so the substrate is shown as a storage/transport form, not an authoring one (Q105). All three substrate sessions named the same silent risk: a swapped reference is well-typed, so it is a wrong value with no diagnostic (Q106). The byte encoding proved the easy part; the missing vocabulary is the cost. A card defect (six reference letters where the form has ten) distorted one program -- the third card confound in this family (Q107). |

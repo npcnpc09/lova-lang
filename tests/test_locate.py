@@ -150,3 +150,82 @@ class SecondOracle(unittest.TestCase):
         lits = data_literals([example_expression(tree)])
         for v in (7, ord("a"), ord("b"), ord(".")):
             self.assertIn(v, lits)
+
+
+class AtSize(unittest.TestCase):
+    """What Exp 29's programs found in the locator before any session ran
+    (2026-09-18): a def taking a name the prelude binds opens a child
+    frame, and the example must be evaluated there; a trapped example
+    locates its fault as a miss does; a probe the step cap cut off is
+    retried with room."""
+
+    def test_a_def_that_shadows_a_prelude_name_does_not_hide_the_later_defs(self):
+        fault, results = _fault(
+            "(def lines [n] (mul n 2))" + NL +                 # `lines` is a prelude name
+            "(def big? [n] (gt (lines n) 10))" + NL +          # `gt` should be `ge`
+            "(example (big? 5) 1)" + NL +
+            "(example (big? 4) 0)" + NL +
+            "(example (big? 6) 1)" + NL +
+            "(big? 1)")
+        self.assertEqual(fault["kind"], "compare")
+        self.assertEqual(fault["replacement"], "(ge (lines n) 10)")
+        self.assertEqual(fault["def"], "big?")
+        self.assertEqual((fault["others_passing"], fault["others"]), (2, 2))
+
+    def test_a_trapped_example_locates_its_fault_upstream_of_the_trap(self):
+        fault, results = _fault(
+            "(def idx [n] (merge n 1))" + NL +                 # should be n
+            "(def pick [xs n] (nth xs (idx n)))" + NL +
+            "(example (pick (list 5 6 7) 2) 7)" + NL +         # nth 3: a trap, not a miss
+            "(example (pick (list 5 6 7) 0) 5)" + NL +
+            "(example (pick (list 1) 0) 1)" + NL +
+            "(pick (list 1) 0)")
+        self.assertEqual(fault["kind"], "literal")
+        self.assertEqual(fault["def"], "idx")
+        self.assertEqual(fault["replacement"], "0")
+        self.assertEqual((fault["others_passing"], fault["others"]), (2, 2))
+        text = summary(results)
+        self.assertIn("trapped at", text)
+        self.assertIn("the literal 1 should be 0", text)
+        self.assertNotIn("guard with", text)
+
+    def test_a_probe_the_step_cap_cut_off_is_retried_with_room(self):
+        # The trap comes at once; the fixed run is thirty thousand steps,
+        # past the cap set from the examples' own runs.
+        fault, results = _fault(
+            "(def total [n] (if (gt n 5) (head (nil)) (fold (lambda a (lambda k (merge a k))) 0 (range 0 n))))" + NL +
+            "(example (total 5000) 12497500)" + NL +
+            "(example (total 3) 3)" + NL +
+            "(total 1)")
+        self.assertEqual(fault["def"], "total")
+        self.assertEqual((fault["others_passing"], fault["others"]), (1, 1))
+        self.assertFalse(fault.get("budget"))
+        offered = [fault.get("replacement")] + [a.get("replacement") for a in fault.get("also", [])]
+        self.assertIn("5000", offered)
+
+    def test_one_search_serves_every_failing_example(self):
+        # Two failures of one fault: the fix found on the first is the
+        # second's, and its search is not run again.
+        results = check(
+            "(def lines [n] (mul n 2))" + NL +
+            "(def big? [n] (gt (lines n) 10))" + NL +
+            "(example (big? 5) 1)" + NL +
+            "(example (big? 4) 0)" + NL +
+            "(example (big? 6) 1)" + NL +
+            "(example (lt (big? 5) 2) 1)" + NL +
+            "(big? 1)")
+        failed = [r for r in results if not r["passed"]]
+        self.assertEqual(len(failed), 1)
+        results = check(
+            "(def lines [n] (mul n 2))" + NL +
+            "(def big? [n] (gt (lines n) 10))" + NL +
+            "(example (big? 5) 1)" + NL +
+            "(example (merge (big? 5) 1) 2)" + NL +
+            "(example (big? 4) 0)" + NL +
+            "(big? 1)")
+        failed = [r for r in results if not r["passed"]]
+        self.assertEqual(len(failed), 2)
+        self.assertEqual(failed[0]["fault"]["replacement"], "(ge (lines n) 10)")
+        self.assertEqual(failed[1]["fault"]["replacement"], "(ge (lines n) 10)")
+        self.assertEqual(failed[0]["fault"]["probes"], failed[1]["fault"]["probes"])
+        self.assertIn("the same as at", summary(results))

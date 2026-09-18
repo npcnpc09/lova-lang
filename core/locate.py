@@ -32,7 +32,7 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from core.runtime import Closure, Node, Runtime, evaluate
+from core.runtime import Closure, Node, Runtime, StepTrap, evaluate
 from core.tokens import (
     DEVIATION, IF_SURPRISE, LAMBDA, LET, LIT_INT, LIT_TEXT, MERGE, MUL, REF,
     SIGNATURES, THRESHOLD,
@@ -329,7 +329,7 @@ def _perturbed(expr: Node, limit_per_literal: int = 8) -> List[Node]:
 def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool],
            others: List[Tuple[Node, Callable[[Any], bool]]], frame: Any,
            closures: List[Closure], *, max_steps: int, budget_s: float = 2.0,
-           literals: Optional[List[int]] = None) -> Optional[Dict[str, Any]]:
+           literals: Optional[List[int]] = None, ceiling: Optional[int] = None) -> Optional[Dict[str, Any]]:
     """The single-node edit -- of a user def the example ran through, or
     of the example's own expression -- that makes `expr` satisfy
     `passes` and the most of `others` besides.  Deepest first; the search
@@ -342,8 +342,8 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
         s = _span(node)
         return source[s[0]:s[1]] if s and s[0] is not None and s[1] is not None and s[1] <= len(source) else None
 
-    def run(node: Node) -> Any:
-        rt = Runtime(max_steps=max_steps)
+    def run(node: Node, cap: Optional[int] = None) -> Any:
+        rt = Runtime(max_steps=cap or max_steps)
         rt.env = frame
         return evaluate(node, rt)
 
@@ -357,14 +357,20 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
         return (found["others_passing"], 1 if found.get("replacement") else 0,
                 -found.get("impact", 0), _PRIORITY.get(found["kind"], 0))
 
+    first_full: Optional[float] = None
+
     def consider(found: Dict[str, Any]) -> bool:
-        nonlocal best
+        nonlocal best, first_full
         if best is None or rank(found) > rank(best):
             best = found
         if found["others_passing"] == len(others) and found.get("replacement"):
             full.append(found)
+            if first_full is None:
+                first_full = time.perf_counter()
         # Q115: the search does not stop at the first full fix; every one is
-        # scored by impact at the end.  Eight are enough to choose from.
+        # scored by impact at the end.  Eight are enough to choose from --
+        # and a quarter of the budget more is enough to look for them,
+        # where a probe costs a second (Exp 29).
         return len(full) >= 64
 
     # Nearby inputs, and what the program answers on them now.
@@ -372,100 +378,178 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
     nearby = nearby[:48]
     baseline: List[Any] = []
 
-    # Targets: each called user def's body, then the expression itself.
+    # Targets: each called user def's body (in the order given: the most
+    # suspect first), then the expression itself.  Within a def the edits
+    # go by kind, the kinds with the fewest candidates first -- operands
+    # or branches swapped, a minus or a `not` dropped, a comparison or
+    # an operator for its sibling, a literal nudged, and only then a name
+    # for another in scope (every ref times every name) -- deepest first
+    # within a kind; and a minus or a `not` added at every node, two
+    # probes a node, come last of all, across every def.  Under a budget
+    # this is the order that finds a fault of any kind soonest when a
+    # probe is dear (Exp 29: a probe of the noughts-and-crosses search
+    # is a second, and the budget went on refs before the comparison).
     targets: List[Tuple[Optional[Closure], Node, Any]] = [(c, c.body, c.env) for c in closures if c.name is not None]
     if not targets:
         targets.append((None, expr, frame))
-
+    _ORDER = {"swap-operands": 0, "swap-branches": 0, "drop-minus": 0, "drop-not": 0,
+              "compare": 1, "operator": 2, "literal": 3, "ref": 4, "add-minus": 9, "add-not": 9}
+    plans: List[List[Any]] = []
     for closure, body, scope_frame in targets:
         params = [closure.param] if closure is not None else []
         nodes: List[Any] = []
         _walk(body, (), 0, nodes)
-        scopes = _scopes(body)
         nodes.sort(key=lambda c: (-c[2], c[0]))
+        scopes = _scopes(body)
+        items: List[Any] = []
         for path, node, depth, anchor in nodes:
             if anchor is None:
                 continue
-            for kind, why, replacement, new, key in _edits(node, scopes.get(id(node), []), params, name_of, text, literals):
-                if _span(node) is None:
-                    # A node the parser synthesised inside a macro: the edit
-                    # is reported at the macro form, and its text is a lead,
-                    # not a replacement, unless the edit made one itself.
-                    if kind not in ("drop-minus", "drop-not", "ref", "literal"):
-                        replacement = None
-                if time.perf_counter() - started > budget_s:
-                    if best is not None:
-                        best["budget"] = True
-                        return best
-                    return {"kind": "budget", "probes": probes}
-                probes += 1
-                fixed_others = 0
-                if closure is not None:
-                    name = closure.name
-                    if name not in scope_frame:
-                        continue
-                    edited_body = _replace(body, path, new)
-                    if kind == "ref" and _degenerate(edited_body, path):
-                        continue
-                    probe = Closure(param=closure.param, body=edited_body, env=closure.env,
-                                    caps=closure.caps, enclosed=closure.enclosed, owner=closure.owner)
-                    probe.name = name
-                    scope_frame[name] = probe
+            for edit in _edits(node, scopes.get(id(node), []), params, name_of, text, literals):
+                items.append((_ORDER.get(edit[0], 5), closure, body, scope_frame, params, path, node, anchor, edit))
+        items.sort(key=lambda it: it[0])       # stable: depth order kept within a kind
+        plans.append(items)
+
+    def rounds():
+        for additions in (False, True):
+            for items in plans:
+                for it in items:
+                    if (it[0] >= 9) == additions:
+                        yield it[1:]
+
+    deferred: List[Any] = []     # probes the step cap cut off: inconclusive, retried larger
+
+    def roomy(cap: int) -> int:
+        # A probe that passed the failing example is rare, so its other
+        # examples may have the program's own ceiling.
+        return ceiling if ceiling else cap * 16
+
+    def probe(item, cap: int):
+        """One edit tried: the `found` record when the example passes,
+        None when it does not, or `StepTrap` when the cap cut it off."""
+        nonlocal probes
+        closure, body, scope_frame, params, path, node, anchor, edit = item
+        kind, why, replacement, new, key = edit
+        if _span(node) is None:
+            # A node the parser synthesised inside a macro: the edit
+            # is reported at the macro form, and its text is a lead,
+            # not a replacement, unless the edit made one itself.
+            if kind not in ("drop-minus", "drop-not", "ref", "literal"):
+                replacement = None
+        probes += 1
+        fixed_others = 0
+        edited_body = None
+        if closure is not None:
+            name = closure.name
+            if name not in scope_frame:
+                return None
+            edited_body = _replace(body, path, new)
+            if kind == "ref" and _degenerate(edited_body, path):
+                return None
+            rebuilt = Closure(param=closure.param, body=edited_body, env=closure.env,
+                              caps=closure.caps, enclosed=closure.enclosed, owner=closure.owner)
+            rebuilt.name = name
+            scope_frame[name] = rebuilt
+            try:
+                try:
+                    value = run(expr, cap)
+                except StepTrap:
+                    return StepTrap
+                except Exception:      # noqa: BLE001 -- a probe that faults is not a fix
+                    return None
+                if not passes(value):
+                    return None
+                # The others run with room: an example that trapped
+                # early says nothing of what its fixed run costs.
+                for other_expr, other_passes in others:
                     try:
-                        try:
-                            value = run(expr)
-                        except Exception:      # noqa: BLE001 -- a probe that faults is not a fix
-                            continue
-                        if not passes(value):
-                            continue
-                        for other_expr, other_passes in others:
-                            try:
-                                if other_passes(run(other_expr)):
-                                    fixed_others += 1
-                            except Exception:  # noqa: BLE001
-                                pass
-                    finally:
-                        scope_frame[name] = closure
-                else:
-                    edited = _replace(body, path, new)
-                    try:
-                        value = run(edited)
-                    except Exception:          # noqa: BLE001
-                        continue
-                    if not passes(value):
-                        continue
-                    # The other examples are the same expression with other
-                    # inputs: the same edit at the same path, where the shape agrees.
-                    for other_expr, other_passes in others:
-                        there = _at(other_expr, path)
-                        if there is None or there.op != node.op:
-                            continue
-                        again = [e for e in _edits(there, _scopes(other_expr).get(id(there), []), params, name_of, text, literals)
-                                 if e[4] == key]
-                        if not again:
-                            continue
-                        try:
-                            if other_passes(run(_replace(other_expr, path, again[0][3]))):
-                                fixed_others += 1
-                        except Exception:      # noqa: BLE001
-                            pass
-                found = {
-                    "kind": kind, "edit": why, "replacement": replacement,
-                    "def": name_of(closure.name) if closure is not None else None,
-                    "span": list(_span(anchor)),
-                    "excerpt": text(anchor),
-                    "within": _span(node) is None,
-                    "others_passing": fixed_others, "others": len(others), "probes": probes,
-                    "_closure": closure, "_body": edited_body if closure is not None else None,
-                }
-                if consider(found):
-                    break
-            else:
-                continue
-            break
+                        if other_passes(run(other_expr, roomy(cap))):
+                            fixed_others += 1
+                    except Exception:  # noqa: BLE001
+                        pass
+            finally:
+                scope_frame[name] = closure
         else:
+            edited = _replace(body, path, new)
+            try:
+                value = run(edited, cap)
+            except StepTrap:
+                return StepTrap
+            except Exception:          # noqa: BLE001
+                return None
+            if not passes(value):
+                return None
+            # The other examples are the same expression with other
+            # inputs: the same edit at the same path, where the shape agrees.
+            for other_expr, other_passes in others:
+                there = _at(other_expr, path)
+                if there is None or there.op != node.op:
+                    continue
+                again = [e for e in _edits(there, _scopes(other_expr).get(id(there), []), params, name_of, text, literals)
+                         if e[4] == key]
+                if not again:
+                    continue
+                try:
+                    if other_passes(run(_replace(other_expr, path, again[0][3]), roomy(cap))):
+                        fixed_others += 1
+                except Exception:      # noqa: BLE001
+                    pass
+        return {
+            "kind": kind, "edit": why, "replacement": replacement,
+            "def": name_of(closure.name) if closure is not None else None,
+            "span": list(_span(anchor)),
+            "excerpt": text(anchor),
+            "within": _span(node) is None,
+            "others_passing": fixed_others, "others": len(others), "probes": probes,
+            "_closure": closure, "_body": edited_body,
+        }
+
+    def out_of_time() -> bool:
+        now = time.perf_counter()
+        if first_full is not None and now - first_full > budget_s / 4:
+            return True
+        return now - started > budget_s
+
+    stopped = False
+    for item in rounds():
+        if out_of_time():
+            if best is not None:
+                best["budget"] = not full
+                if full:
+                    stopped = True
+                    break
+                return best
+            return {"kind": "budget", "probes": probes}
+        found = probe(item, max_steps)
+        if found is StepTrap:
+            deferred.append(item)
             continue
-        break
+        if found is not None and consider(found):
+            stopped = True
+            break
+    # The probes the cap cut off, again with more room: a fix for an
+    # example that trapped early may run far longer than the trap did
+    # (Exp 29, ttt-b: the trap at 5 000 steps, the fixed run at 790 000).
+    cap = max_steps
+    while deferred and not stopped and ceiling and cap < ceiling:
+        cap = min(cap * 16, ceiling)
+        again, deferred = deferred, []
+        for item in again:
+            if out_of_time():
+                if best is not None:
+                    best["budget"] = not full
+                    if full:
+                        stopped = True
+                        break
+                    return best
+                return {"kind": "budget", "probes": probes}
+            found = probe(item, cap)
+            if found is StepTrap:
+                deferred.append(item)
+                continue
+            if found is not None and consider(found):
+                stopped = True
+                break
 
     # Q115: score every full fix by how many nearby inputs it changes the
     # answer on, and report the smallest.
@@ -526,17 +610,47 @@ def _same_value(a: Any, b: Any) -> bool:
         return False
 
 
-def user_closures(rt: Runtime, source_len: int, library: Any) -> List[Closure]:
+def user_closures(rt: Runtime, source_len: int, library: Any, *, called: bool = True) -> List[Closure]:
     """The named closures of a run that were defined in the user's source
-    and were called, most-called first."""
+    and were called (or, with `called=False`, merely defined), most-called
+    first."""
     out = []
     for c in rt.named:
         s = _span(c.body)
-        if c.calls <= 0 or s is None or s[0] is None or s[1] is None or s[1] > source_len:
+        if (called and c.calls <= 0) or s is None or s[0] is None or s[1] is None or s[1] > source_len:
             continue
         out.append(c)
     out.sort(key=lambda c: -c.calls)
     return out
+
+
+def deepest_frame(closures: List[Closure]) -> Any:
+    """The frame the example's expression must be evaluated in: the one
+    every other def's frame is an ancestor of.  A chain of defs shares one
+    frame until a def takes a name the prelude already binds -- ttt.lova's
+    `lines` (Exp 29) -- where the letrec opens a child frame, and the defs
+    after it, `main` among them, live there.  Probing from the first
+    closure's frame then finds no `main` and every edit fails."""
+    frames = []
+    for c in closures:
+        if all(f is not c.env for f in frames):
+            frames.append(c.env)
+    if not frames:
+        return None
+
+    def ancestors(env: Any) -> List[Any]:
+        out = []
+        while env is not None:
+            out.append(env)
+            env = getattr(env, "parent", None)
+        return out
+
+    best, best_depth = frames[0], -1
+    for f in frames:
+        chain = ancestors(f)
+        if all(any(g is x for x in chain) for g in frames) and len(chain) > best_depth:
+            best, best_depth = f, len(chain)
+    return best
 
 
 def example_expression(compiled: Node) -> Node:

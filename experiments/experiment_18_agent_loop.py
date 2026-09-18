@@ -343,7 +343,8 @@ def _submit(lang: str, task_id: str, program: str, emitted: int, how: str) -> in
     started = time.perf_counter()
     result = run_lova(program, task) if lang == "lova" else run_python(program, task)
     text = feedback_text(lang, result)
-    attempt = 1 + sum(1 for r in _records(lang) if r["task"] == task_id)
+    # Reads (`given`, `fault`) are logged in the same file; an attempt is a submit or a patch.
+    attempt = 1 + sum(1 for r in _records(lang) if r["task"] == task_id and r.get("how") not in ("given", "fault"))
     _append(lang, {"task": task_id, "attempt": attempt, "how": how, "emitted_chars": emitted,
                    "feedback_chars": len(text), "passed": result["passed"], "program": program,
                    "feedback": text, "seconds": round(time.perf_counter() - started, 3),
