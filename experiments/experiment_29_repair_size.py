@@ -5,6 +5,7 @@
     python experiments/experiment_29_repair_size.py given  --session L1 --lang lova --task g2048-a
     python experiments/experiment_29_repair_size.py show   --session L1 --lang lova --task g2048-a [--defs | --def name]
     python experiments/experiment_29_repair_size.py fault  --session L1 --lang lova --task g2048-a
+    python experiments/experiment_29_repair_size.py probe  --session P4 --lang python --task g2048-a   (Q118: the tests, not an attempt)
     python experiments/experiment_29_repair_size.py patch  --session L1 --lang lova --task g2048-a --def sweep --find "..." --replacement "..."
     python experiments/experiment_29_repair_size.py submit --session L1 --lang lova --task g2048-a --file x.lova
     python experiments/experiment_29_repair_size.py report [--lang lova] [--session L1]
@@ -84,6 +85,10 @@ FAULTS: Dict[str, Any] = {
         "b": ("the letter for left names a direction that does not exist",
               ("        3))", "        4))"),
               ("    return 3" + chr(10), "    return 4" + chr(10))),
+        # Q120: a helper's constant that no clause of the prompt names.
+        "c": ("the cell key folds a row of four into three, so two cells share a key",
+              ("(merge (mul x SIZE) y)", "(merge (mul x 3) y)"),
+              ("x * SIZE + y", "x * 3 + y")),
     },
     "ttt": {
         "a": ("among equally good squares the last is chosen instead of the first",
@@ -94,6 +99,10 @@ FAULTS: Dict[str, Any] = {
                "(def empties [b] (filter (lambda k (not (cell b k))) (range 0 10)))"),
               ("    return [k for k in range(0, 9) if not cell(b, k)]",
                "    return [k for k in range(0, 10) if not cell(b, k)]")),
+        # Q120: a helper's constant that no clause of the prompt names.
+        "c": ("a power of three in the board's base is off by one, so squares 6-8 misread",
+              ("243 729 2187", "243 728 2187"),
+              ("243, 729, 2187", "243, 728, 2187")),
     },
 }
 
@@ -225,6 +234,25 @@ def cmd_fault(args) -> int:
     return 0
 
 
+def cmd_probe(args) -> int:
+    """Q118: run the hidden tests on the current program and show the
+    failures, as `fault` does for LOVA -- counted as read, not as an
+    attempt."""
+    program = _current(args.lang, args.task)
+    task = BY_ID[args.task]
+    result = loop.run_lova(program, task) if args.lang == "lova" else loop.run_python(program, task)
+    if result["passed"]:
+        text = "all tests pass"
+    else:
+        text = chr(10).join(loop.feedback_text(args.lang, {"passed": False, "failures": [f]})
+                            for f in result["failures"])
+    loop._append(args.lang, {"task": args.task, "how": "probe", "read_chars": len(text), "time": time.time()})
+    print(f"{len(result['failures'])} of {len(task.tests)} tests fail" if not result["passed"] else text)
+    if not result["passed"]:
+        print(text)
+    return 0
+
+
 def cmd_patch(args) -> int:
     base = _current(args.lang, args.task)
     if args.find is not None and getattr(args, "def_name", None) and args.lang == "lova":
@@ -261,7 +289,7 @@ def _sessions() -> List[str]:
 def cmd_report(args) -> int:
     sessions = [args.session] if args.session else _sessions()
     langs = [args.lang] if args.lang else ["lova", "python"]
-    cols = ("tasks", "green", "first", "attempts", "patches", "emitted", "read", "fails", "faults", "givens", "defreads")
+    cols = ("tasks", "green", "first", "attempts", "patches", "emitted", "read", "fails", "faults", "probes", "givens", "defreads")
     print(f"  {'lang':7s} {'session':8s} " + " ".join(f"{c:>8s}" for c in cols))
     grand: Dict[str, Dict[str, int]] = {}
     for lang in langs:
@@ -281,6 +309,7 @@ def cmd_report(args) -> int:
                    "read": sum(r.get("read_chars", 0) for r in allrecs) + sum(r["feedback_chars"] for r in fails),
                    "fails": len(fails),
                    "faults": sum(1 for r in allrecs if r.get("how") == "fault"),
+                   "probes": sum(1 for r in allrecs if r.get("how") == "probe"),
                    "givens": sum(1 for r in allrecs if r.get("how") == "given" and not r.get("def")),
                    "defreads": sum(1 for r in allrecs if r.get("how") == "given" and r.get("def"))}
             print(f"  {lang:7s} {session:8s} " + " ".join(f"{row[c]:8d}" for c in cols))
@@ -312,7 +341,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("tasks"); p.set_defaults(func=cmd_tasks)
-    for name, func in (("given", cmd_given), ("show", cmd_show), ("fault", cmd_fault)):
+    for name, func in (("given", cmd_given), ("show", cmd_show), ("fault", cmd_fault), ("probe", cmd_probe)):
         p = sub.add_parser(name); p.add_argument("--session", required=True)
         p.add_argument("--lang", required=True, choices=["lova", "python"])
         p.add_argument("--task", required=True, choices=list(BY_ID)); p.set_defaults(func=func)

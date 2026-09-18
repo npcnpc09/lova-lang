@@ -225,8 +225,19 @@ an edit class), Q120 (pairs split, fixes not in the prompt), Q121
 the run, fixed four locator faults these programs exposed: the frame
 (a def taking a prelude name splits the letrec), runaway probes (73 s
 of 74), the probe order (spectrum suspicion over `reaches`, exact
-spellings before additions), and traps never located. Tests 966 ->
-970. `journal/experiment_29.md`.
+spellings before additions), and traps never located. **Run 2, the
+same night (Q118, Q120):** Python with a test run that is not an
+attempt reads 10 922 in all -- below LOVA's 14 244, the fault report's
+reprinted examples being the cost -- but 7 679 of program text against
+3 882 and a def before every patch against none on nine of twelve;
+LOVA on split pairs and two helper-constant faults 6/6, five blind by
+span, the cold repairs identical to the warm. The locator gained
+constants (a value computed from a probed def is recomputed; a
+constant's own value is probed) and the report groups identical
+failures (ttt-b 1 257 -> 604 characters), names the def and the
+enclosing expression, and prints the reach-set suspects on a lead.
+Q122 (a constant the prompt cannot vouch for), Q123 (the report's
+size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
 **M30** (2026-09-18) gave a located edit a second oracle (Q115):
 candidate constants come from the examples' own data, every edit that
@@ -1021,7 +1032,7 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-970 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+972 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 24 first-class apps (the last Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

@@ -378,6 +378,95 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
     nearby = nearby[:48]
     baseline: List[Any] = []
 
+    # A zero-parameter def is a value computed once, with the defs as
+    # they were: g2048's `all-cells` holds the keys `ckey` made before
+    # the probe changed `ckey`, so a probe that fixes `ckey` still fails
+    # (Exp 29, Q120).  The constants of the let chain that reference
+    # the probed def, directly or through another constant, are
+    # recomputed while the probe is installed and restored after.
+    constants: Dict[int, Node] = {}
+    node = compiled
+    while node.op == LET and len(node.args) == 3 and node.args[0].op == LIT_INT:
+        cname, cvalue = int(node.args[0].args[0]), node.args[1]
+        if isinstance(cvalue, Node) and cvalue.op != LAMBDA:
+            constants[cname] = cvalue
+        node = node.args[2]
+    refs_of: Dict[int, set] = {}
+
+    def refs(n: Node, out: set) -> None:
+        if n.op == REF and n.args and isinstance(n.args[0], Node) and n.args[0].op == LIT_INT:
+            out.add(int(n.args[0].args[0]))
+        for a in n.args:
+            if isinstance(a, Node):
+                refs(a, out)
+
+    for cname, cvalue in constants.items():
+        acc: set = set()
+        refs(cvalue, acc)
+        refs_of[cname] = acc
+
+    def dependents(name_id: int) -> List[int]:
+        """The constants that reach `name_id`, in let order."""
+        hit = {name_id}
+        changed = True
+        while changed:
+            changed = False
+            for cname in constants:
+                if cname not in hit and refs_of[cname] & hit:
+                    hit.add(cname)
+                    changed = True
+        return [c for c in constants if c in hit and c != name_id]
+
+    def frame_of(name_id: int) -> Any:
+        env = frame
+        while env is not None:
+            if name_id in env.keys():
+                return env
+            env = getattr(env, "parent", None)
+        return None
+
+    def install(closure: Any, body: Node):
+        """Install a rebuilt closure -- or, for a ("const", name) target,
+        the constant recomputed from its edited value -- and recompute the
+        constants that depend on it; the returned function undoes all."""
+        saved: List[Tuple[Any, int, Any]] = []
+        if isinstance(closure, Closure):
+            rebuilt = Closure(param=closure.param, body=body, env=closure.env,
+                              caps=closure.caps, enclosed=closure.enclosed, owner=closure.owner)
+            rebuilt.name = closure.name
+            name_id = closure.name
+            closure.env[name_id] = rebuilt
+
+            def restore() -> None:
+                closure.env[name_id] = closure
+        else:
+            name_id = closure[1]
+            env = frame_of(name_id)
+            old_value = env[name_id]
+            try:
+                env[name_id] = run(body, max_steps)
+            except Exception:  # noqa: BLE001 -- the edited constant does not evaluate: no fix
+                env[name_id] = old_value
+                return lambda: None
+
+            def restore() -> None:
+                env[name_id] = old_value
+        try:
+            for cname in dependents(name_id):
+                cenv = frame_of(cname)
+                if cenv is None:
+                    continue
+                saved.append((cenv, cname, cenv[cname]))
+                cenv[cname] = run(constants[cname], max_steps)
+        except Exception:      # noqa: BLE001 -- a constant the probe breaks: the probe is no fix
+            pass
+
+        def undo() -> None:
+            for cenv, cname, was in reversed(saved):
+                cenv[cname] = was
+            restore()
+        return undo
+
     # Targets: each called user def's body (in the order given: the most
     # suspect first), then the expression itself.  Within a def the edits
     # go by kind, the kinds with the fewest candidates first -- operands
@@ -389,14 +478,30 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
     # this is the order that finds a fault of any kind soonest when a
     # probe is dear (Exp 29: a probe of the noughts-and-crosses search
     # is a second, and the budget went on refs before the comparison).
-    targets: List[Tuple[Optional[Closure], Node, Any]] = [(c, c.body, c.env) for c in closures if c.name is not None]
+    targets: List[Tuple[Any, Node, Any]] = [(c, c.body, c.env) for c in closures if c.name is not None]
+    # A zero-parameter def is a constant, not a closure, and its fault
+    # is in the value it was computed from -- ttt's `powers` with one
+    # power of three off by one (Exp 29, Q120).  Its value node is a
+    # target like a def's body: edited, re-evaluated in its frame, the
+    # constants that depend on it recomputed, and the example run.
+    # Constants come first: their edits are few and cheap to try.
+    targets = ([(("const", cname), cvalue, frame_of(cname)) for cname, cvalue in constants.items()
+                if text(cvalue) is not None and frame_of(cname) is not None] + targets)
     if not targets:
         targets.append((None, expr, frame))
     _ORDER = {"swap-operands": 0, "swap-branches": 0, "drop-minus": 0, "drop-not": 0,
               "compare": 1, "operator": 2, "literal": 3, "ref": 4, "add-minus": 9, "add-not": 9}
+
+    def order(edit) -> float:
+        kind, key = edit[0], edit[4]
+        rank = _ORDER.get(kind, 5)
+        if kind == "literal" and isinstance(key, tuple) and key[1] != "neg" and abs(key[1]) > 1:
+            rank += 0.5                        # a constant from the examples' data: after the nudges
+        return rank
+
     plans: List[List[Any]] = []
     for closure, body, scope_frame in targets:
-        params = [closure.param] if closure is not None else []
+        params = [closure.param] if isinstance(closure, Closure) else []
         nodes: List[Any] = []
         _walk(body, (), 0, nodes)
         nodes.sort(key=lambda c: (-c[2], c[0]))
@@ -406,7 +511,7 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
             if anchor is None:
                 continue
             for edit in _edits(node, scopes.get(id(node), []), params, name_of, text, literals):
-                items.append((_ORDER.get(edit[0], 5), closure, body, scope_frame, params, path, node, anchor, edit))
+                items.append((order(edit), closure, body, scope_frame, params, path, node, anchor, edit))
         items.sort(key=lambda it: it[0])       # stable: depth order kept within a kind
         plans.append(items)
 
@@ -418,6 +523,7 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
                         yield it[1:]
 
     deferred: List[Any] = []     # probes the step cap cut off: inconclusive, retried larger
+
 
     def roomy(cap: int) -> int:
         # A probe that passed the failing example is rare, so its other
@@ -440,16 +546,13 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
         fixed_others = 0
         edited_body = None
         if closure is not None:
-            name = closure.name
-            if name not in scope_frame:
+            name = closure.name if isinstance(closure, Closure) else closure[1]
+            if scope_frame is None or name not in scope_frame:
                 return None
             edited_body = _replace(body, path, new)
             if kind == "ref" and _degenerate(edited_body, path):
                 return None
-            rebuilt = Closure(param=closure.param, body=edited_body, env=closure.env,
-                              caps=closure.caps, enclosed=closure.enclosed, owner=closure.owner)
-            rebuilt.name = name
-            scope_frame[name] = rebuilt
+            undo = install(closure, edited_body)
             try:
                 try:
                     value = run(expr, cap)
@@ -468,7 +571,7 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
                     except Exception:  # noqa: BLE001
                         pass
             finally:
-                scope_frame[name] = closure
+                undo()
         else:
             edited = _replace(body, path, new)
             try:
@@ -494,9 +597,24 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
                         fixed_others += 1
                 except Exception:      # noqa: BLE001
                     pass
+        # The enclosing expression (Exp 29, L4 and L6: "ten characters of
+        # context around the span would turn a confident guess into a
+        # check"): the nearest ancestor with a span whose text is short.
+        context = None
+        for up in range(1, len(path) + 1):
+            parent = _at(body, path[:-up])
+            if parent is None:
+                break
+            ptext = text(parent)
+            if ptext is not None:
+                if len(ptext) <= 100:
+                    context = ptext
+                break
         return {
-            "kind": kind, "edit": why, "replacement": replacement,
-            "def": name_of(closure.name) if closure is not None else None,
+            "kind": kind, "edit": why, "replacement": replacement, "context": context,
+            "def": (name_of(closure.name) if isinstance(closure, Closure)
+                    else name_of(closure[1]) if closure is not None else None),
+            "constant": closure is not None and not isinstance(closure, Closure),
             "span": list(_span(anchor)),
             "excerpt": text(anchor),
             "within": _span(node) is None,
@@ -563,10 +681,7 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
             closure, edited = found["_closure"], found["_body"]
             if closure is None or edited is None:
                 continue
-            probe = Closure(param=closure.param, body=edited, env=closure.env,
-                            caps=closure.caps, enclosed=closure.enclosed, owner=closure.owner)
-            probe.name = closure.name
-            closure.env[closure.name] = probe
+            undo = install(closure, edited)
             changed = 0
             try:
                 for p, before in zip(nearby, baseline):
@@ -577,7 +692,7 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
                     if not _same_value(before, after):
                         changed += 1
             finally:
-                closure.env[closure.name] = closure
+                undo()
             found["impact"] = changed
             found["nearby"] = len(nearby)
         best = max(full, key=rank)
@@ -590,7 +705,8 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
             best["tied_with"] = [{"excerpt": f.get("excerpt"), "span": f.get("span"), "def": f.get("def")}
                                  for f in tied[:6]]
         best["also"] = [{"edit": f["edit"], "replacement": f.get("replacement"), "impact": f.get("impact"),
-                         "kind": f["kind"], "excerpt": f.get("excerpt")}
+                         "kind": f["kind"], "excerpt": f.get("excerpt"), "def": f.get("def"),
+                         "span": f.get("span"), "context": f.get("context")}
                         for f in ranked[1:4] if f not in tied]
     if best is not None:
         best.pop("_closure", None); best.pop("_body", None)

@@ -229,3 +229,33 @@ class AtSize(unittest.TestCase):
         self.assertEqual(failed[1]["fault"]["replacement"], "(ge (lines n) 10)")
         self.assertEqual(failed[0]["fault"]["probes"], failed[1]["fault"]["probes"])
         self.assertIn("the same as at", summary(results))
+
+    def test_a_constant_computed_from_the_probed_def_is_recomputed(self):
+        # `keys` is a value built with `key` before any probe; a probe that
+        # fixes `key` must see `keys` rebuilt, or every probe fails (g2048's
+        # `all-cells`, Exp 29 Q120).
+        fault, results = _fault(
+            "(def key [x y] (merge (mul x 3) y))" + NL +          # 3 should be 4
+            "(def keys [] (map (lambda x (key x 3)) (range 0 4)))" + NL +
+            "(def look [x y] (nth keys x))" + NL +
+            "(example (look 1 0) 7)" + NL +
+            "(example (look 3 0) 15)" + NL +
+            "(example (key 2 1) 9)" + NL +
+            "(look 0 0)")
+        self.assertEqual(fault["def"], "key")
+        self.assertEqual(fault["replacement"], "4")
+        self.assertEqual((fault["others_passing"], fault["others"]), (2, 2))
+
+    def test_a_fault_in_a_constant_is_located(self):
+        fault, results = _fault(
+            "(def powers [] (list 1 3 9 28 81))" + NL +            # 28 should be 27
+            "(def digit [n k] (mod (div n (nth powers k)) 3))" + NL +
+            "(example (digit 54 3) 2)" + NL +
+            "(example (digit 54 2) 0)" + NL +
+            "(example (digit 5 1) 1)" + NL +
+            "(digit 1 0)")
+        self.assertEqual(fault["def"], "powers")
+        self.assertTrue(fault["constant"])
+        self.assertEqual(fault["replacement"], "27")
+        self.assertEqual((fault["others_passing"], fault["others"]), (2, 2))
+        self.assertNotIn("is reached by", summary(results))

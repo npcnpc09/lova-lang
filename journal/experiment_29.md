@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-18
 **Script:** `experiments/experiment_29_repair_size.py`; the pairs, tests and session briefs in `experiments/exp29/`; the logs and every session's own report in `experiments/results_29/`
-**Status:** Done. Three fresh Opus sessions a language, L1-L3 and P1-P3, four tasks each. **WIN on reading and writing at parity on attempts: 12/12 first-try on both sides; LOVA read 14 244 characters against Python's 27 259, of which program text 3 882 against 27 259; nine of twelve LOVA repairs applied without reading a line of the program.**
+**Status:** Done, two runs. Run 1: three fresh Opus sessions a language, L1-L3 and P1-P3, four tasks each. **WIN on reading and writing at parity on attempts: 12/12 first-try on both sides; LOVA read 14 244 characters against Python's 27 259, of which program text 3 882 against 27 259; nine of twelve LOVA repairs applied without reading a line of the program.** Run 2, the same night: Q118 (P4-P6, Python with a test run that is not an attempt) and Q120 (L4-L6, split pairs and two helper-constant faults) -- **the free test run is most of the total-read difference (Python 10 922, below LOVA's 14 244, the fault report's own size the cost); program text stays 7 679 against 3 882 and Python read a def before every patch where LOVA read none on nine of twelve and five of six; the cold LOVA repairs match the warm ones.**
 
 ## Hypothesis
 
@@ -291,3 +291,195 @@ named functions, seven times the program text. The fourth number's
 repair half is won at this size, on faults the locator can express;
 the control arm (Q118) and the edit class it cannot (Q119) are what
 the win still owes.
+
+## Run 2 (the same night): Q118 and Q120
+
+### Method
+
+**Q118, the control arm.** Three fresh Python sessions, P4-P6, the
+same four tasks in the same order as P1-P3, with one command added:
+`probe`, which runs the hidden tests on the current program and
+prints every failing one -- inputs, expected, got or the traceback --
+counted as read, not as an attempt. Nothing else changed
+(`experiments/exp29/BRIEF_python_probe.md`). If P4-P6 read what P1-P3
+read, the free test run is not what made the difference in run 1; if
+they read what L1-L3 read, it is.
+
+**Q120, split pairs and a fault the prompt does not name.** Two
+faults added, one a program, each a wrong constant in a helper that
+no sentence of the task prompt states: `g2048-c`, the cell key's row
+stride (`(mul x SIZE)` -> `(mul x 3)`, so two cells share a key); and
+`ttt-c`, one power of three in the board's base off by one (`729` ->
+`728`, so squares 6-8 misread). Three fresh LOVA sessions, L4-L6,
+two tasks each and never the same program twice: L4 `g2048-c` then
+`ttt-b`, L5 `ttt-c` then `g2048-a`, L6 `g2048-c` then `ttt-c`. So
+`ttt-b` and `g2048-a` are repaired cold, by a session that has not
+seen the program, and the two new faults are seen twice each.
+
+**Before the run, the locator again.** Both new faults were put to it
+first and it found neither, for two reasons that are now closed in
+`core/locate.py` (and two tests): a zero-parameter def is a value
+computed once, so `all-cells` still held the keys the faulty `ckey`
+made after a probe had fixed `ckey`, and every probe failed --
+constants that reference a probed def are recomputed while the probe
+is installed; and a constant is not a closure, so `powers` was never a
+target -- the value node of a constant is now probed like a def's
+body, first, since its edits are few. After: `g2048-c` `3` -> `4` and
+`ttt-c` `728` -> `729`, both exact, both "fixes all 8". The `fault`
+budget stayed at 90 s; `ttt-c` takes 112 s to locate, most of it the
+impact score.
+
+### Results
+
+| arm | sessions | tasks green | first-try | attempts | written | read | of which program text | probe / report | def reads | blind |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Python, program alone (run 1) | P1-P3 | 12/12 | 12/12 | 12 | 318 | 27 259 | 27 259 | -- | 106 | 0 / 12 |
+| **Python with `probe` (Q118)** | P4-P6 | 12/12 | 12/12 | 12 | 389 | 3 984 / 3 489 / 3 449 = **10 922** | 2 903 / 2 408 / 2 368 = **7 679** | 1 081 a session = 3 243 | 7 / 7 / 6 = 20 | 0 / 12 |
+| LOVA, examples and `fault` (run 1) | L1-L3 | 12/12 | 12/12 | 12 | 167 | 14 244 | 3 882 | 3 454 a session = 10 362 | 7 | 9 / 12 |
+| **LOVA, split pairs, new faults (Q120)** | L4-L6 | 6/6 | 6/6 | 6 | 35 | 2 967 / 2 243 / 2 204 = **7 414** | 0 / 1 300 / 0 = **1 300** | 6 114 | 2 | 5 / 6 |
+
+Per task, Q118 (read characters, defs read):
+
+| task | P4 | P5 | P6 | probe output |
+|---|---|---|---|---|
+| g2048-a | 1 204 (`move_cell`) | 1 204 (`move_cell`) | 1 204 (`move_cell`) | 156 |
+| g2048-b | 1 608 (`vy`, `sweep`, `dir_of`) | 1 113 (`vy`, `vx`, `dir_of`) | 1 073 (`vy`, `dir_of`) | 525 |
+| ttt-a | 641 (`choose`) | 641 (`choose`) | 641 (`choose`) | 55 |
+| ttt-b | 531 (`empties`, `cell`) | 531 | 531 | 345 |
+
+Per task, Q120:
+
+| task | session | read | program text | how |
+|---|---|---|---|---|
+| g2048-c | L4, L6 | 1 710 each | 0 | blind, by span, "fixes all 8"; both note the prompt's sixteen cells make a stride of 3 wrong on its face |
+| ttt-c | L5, L6 | 494 each | 0 | blind, by span, "fixes all 8"; both read 729 as 3^6 from the value itself |
+| ttt-b (cold) | L4 | 1 257 | 0 | blind, as the warm sessions were |
+| g2048-a (cold) | L5 | 1 749 | 1 300 (`farthest`, `move-cell`) | the lead distrusted, the fault read from the failing value, exactly as L2 and L3 did warm |
+
+### What the sessions said
+
+Q118, the three Python sessions, independently:
+
+- "Every one was found from `probe`, not by reading the program; the
+  reads were only to confirm and get the exact text to patch." (P5)
+  "In all four, `probe`'s output narrowed the search to one or two
+  defs before I read any program text." (P4)
+- The two traps: "the traceback *was* the address" (P5); "it pointed
+  at the *victim* (`vy`), and I walked the call chain backwards
+  myself" (P4). The two wrong values: "the arithmetic of the
+  expected-vs-got pair named the rule that was broken, which named
+  the function, in each case a rule stated in the one-line prompt"
+  (P5).
+- "A locator would have saved nothing here -- the failure already was
+  the locator." (P5) "I did not need `fault`/locate-style help at all
+  at this size: a traceback plus one def is enough." (P4) "Nothing
+  else, honestly." (P6)
+- Asked for: the board's cell order stated in the prompt (P5, P6);
+  callers of a def (P4); a grep (P4).
+
+Q120, the three LOVA sessions:
+
+- All five blind repairs by `patch --span`, the span the line prints;
+  no session read a def to build a find string, which two of run 1's
+  did.
+- The rule again, and its limit named by the sessions themselves:
+  "the replacement was a number the task prompt already tells me must
+  be there" (L6); "this pair of tasks did not test the locator's
+  weakness, because both planted faults were constants whose correct
+  value is stated by the task prompt. A fault at a place the prompt
+  does not pin down would not have gone this way." (L4) "Had the line
+  proposed ... a constant with no arithmetic story (say `46` in a
+  comparison), I would have read the def first." (L6)
+- The perturbation score: "actively uninformative: the proposed fix
+  and all three runners-up scored 13" (L6); "I do not know whether
+  high or low is the good sign" (L4).
+- Asked for: the runners-up to say where (L4, L6); the enclosing
+  expression on the line (L4, L6); a def name on every line -- the
+  constant's had none (L6); the defs the failing example reaches that
+  the passing ones do not (L5, as L2 before); a name-use index (L5); a
+  named wrong def to be an honest null instead (L5, as L1 and L3).
+
+### Findings of run 2
+
+**F7. The free test run is most of run 1's reading difference, and
+the located fault is the rest.** With `probe`, the Python sessions
+read 10 922 characters against 27 259 without it and against LOVA's
+14 244 -- less in all than LOVA, because the fault report reprints
+every failing example (3 454 a session against 1 081 of probe
+output). In program text the order stands: Python 7 679, LOVA 3 882,
+and the kind differs: Python read a def before every patch, twelve
+of twelve; LOVA patched nine of twelve without one. F1 is restated:
+at this size a test run that is not an attempt, with the traceback
+or the expected/got pair and a free def list, brings Python to one
+attempt and one to three defs a fault; the located fault removes the
+defs.
+
+**F8. The report's size is the instrument's cost, again.** Exp 28's
+"two thirds instrument" returns in a smaller form: the failing
+examples printed one by one. After the run the summary groups
+identical failures -- one in full, the rest by their lines -- and the
+five located reports are 496-917 characters where they were 570-1 710
+(ttt-b 1 257 -> 604); a LOVA session's four reports would be 2 547
+against the 3 454 measured, which brings the total to parity with
+the probe arm and leaves the program-text and blind-repair margins
+where they are.
+
+**F9. Split pairs change nothing on the LOVA side.** The cold ttt-b
+was blind, as the warm ones were; the cold g2048-a was read the same
+way, the same two defs, 1 300 characters, as by L2 and L3 warm. The
+pair confound of F5 was Python's, where run 1's sessions diffed the
+second program against the first in their heads; the LOVA sessions
+never held the program.
+
+**F10. "Fixes all N" was trusted on its own four times of four -- and
+the sessions say the prompt still vouched.** Both new faults were
+applied blind by both sessions that met them, with no reading, on
+the score. But L4 and L6 both name the reason: a stride of 3 on a
+board the prompt says has sixteen cells, and 728 beside 729 = 3^6,
+are constants a reader can check against the task without the code.
+The fault the design was after -- a constant with no arithmetic
+story, where the score is the only oracle -- has still not been
+planted (Q120 stays open on that half, Q122).
+
+**F11. Constants were outside the locator.** Two of the four locator
+faults found today were about zero-parameter defs: a value computed
+from a probed def is stale under the probe, and a constant's own
+value node was never a target. Both are the single-node hypothesis
+applied to the whole program rather than to closures, and both are
+closed; the fault class the locator cannot express is now only the
+node added or dropped (Q119).
+
+### After run 2, at the sessions' asking
+
+The `fault:` line names its def on every line (`in powers, a
+constant`), prints the enclosing expression (`within (range 0 10)`),
+and the runners-up say where (`32 for 3 [1195, 1196) in ckey (13)`).
+A lead or a miss prints the defs the failing examples reach that
+fewer passing ones do, or says that every def reached is reached by
+every passing example too -- which is g2048-a's case, so L5's wish
+would not have pointed at `move-cell` there; the reach sets do not
+separate it. The attempt label counts attempts only.
+
+## Next questions raised by run 2
+
+- **Q122**: a constant with no arithmetic story -- a threshold, a
+  weight -- planted where the prompt says nothing, so that "fixes all
+  N examples" is the only oracle a session has; the confident-mislead
+  rate (Q116) at that place.
+- **Q123**: the report's characters as a number in the yardstick: the
+  instrument's cost beside the program's, per task, so that a change
+  to the summary is measured and not argued.
+
+## Status (after run 2)
+
+At 110-160 lines, with a test run that is not an attempt, both
+languages repair every planted fault in one attempt; the Python
+session reads one to three named defs a fault from the traceback or
+the expected/got pair, the LOVA session reads none on the faults its
+locator can express, and the pair ordering does not move the LOVA
+numbers. The repair half of the fourth number stands as won on
+program text read and on attempts at parity; on total characters the
+fault report's own size costs the margin, and it was cut after the
+run. What the win still owes is a fault the prompt cannot vouch for
+(Q122), the node added or dropped (Q119), and the report's cost as a
+measured number (Q123).
