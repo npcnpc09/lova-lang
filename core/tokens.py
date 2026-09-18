@@ -119,6 +119,8 @@ TEXT_INT        = 0x4A   # (text-int t) -- decimal text to integer, or signal 16
 INT_TEXT        = 0x4B   # (int-text n)
 IS_TEXT         = 0x4C   # (text? v)
 TEXT_TRIM       = 0x4D   # (text-trim t)
+TEXT_MATCH      = 0x4E   # (text-match t pattern) -- M32: the first match as (list whole group...), or nil
+TEXT_MATCH_ALL  = 0x4F   # (text-match-all t pattern) -- every match, each as text-match gives it
 
 # Family 0x50-0x57  List (M27, Q94).  The walkers the prelude wrote over
 # `loop-until` cost 20-40 steps an element, and were the budget of every
@@ -168,6 +170,8 @@ SIGNATURES = {
     INT_TEXT:     {"name": "int-text",      "arity": 1, "family": "text"},
     IS_TEXT:      {"name": "text?",         "arity": 1, "family": "text"},
     TEXT_TRIM:    {"name": "text-trim",     "arity": 1, "family": "text"},
+    TEXT_MATCH:   {"name": "text-match",    "arity": 2, "family": "text"},
+    TEXT_MATCH_ALL: {"name": "text-match-all", "arity": 2, "family": "text"},
     # List (M27)
     LIST_MAP:     {"name": "map",           "arity": 2, "family": "list"},
     LIST_FILTER:  {"name": "filter",        "arity": 2, "family": "list"},
@@ -243,7 +247,7 @@ SIGNATURES = {
 }
 
 CORE_TOKENS = 64          # the original table, 0x00-0x3F
-TEXT_TOKENS = 14          # the Text family, 0x40-0x4D (M25)
+TEXT_TOKENS = 16          # the Text family, 0x40-0x4F (M25; full at M32)
 LIST_TOKENS = 8           # the List family, 0x50-0x57 (M27)
 assert len(SIGNATURES) == CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS,     f"Token table must have exactly {CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS} entries, found {len(SIGNATURES)}"
 
@@ -425,7 +429,7 @@ _TYPE_INFO = {
     # integers or lists.  `map-get`'s result is whatever was stored, so
     # it follows its operands.
     MAP_PUT:        {"in_types": [VALUE, VALUE, VALUE], "out_type": MAP},
-    MAP_GET:        {"in_types": [MAP, VALUE, VALUE], "out_type": VALUE},
+    MAP_GET:        {"in_types": [VALUE, VALUE, VALUE], "out_type": VALUE},   # M32 (Q114): `(nil)` is the empty map here too
     MAP_PAIRS:      {"in_types": [MAP], "out_type": LIST},
     # signal (M22): raise a structured anomaly from inside a program --
     # the half of Axiom 7 that `when-anomaly` (M13) left open.  A library
@@ -476,6 +480,10 @@ _TEXT_TYPE_INFO = {
     INT_TEXT:      {"in_types": [INT], "out_type": TEXT},
     IS_TEXT:       {"in_types": [VALUE], "out_type": INT},
     TEXT_TRIM:     {"in_types": [VALUE], "out_type": TEXT},
+    # M32 (Q112): a pattern over a text.  Exp 25 found four of four
+    # defects in forty lines of hand-written matching.
+    TEXT_MATCH:    {"in_types": [VALUE, VALUE], "out_type": LIST},
+    TEXT_MATCH_ALL: {"in_types": [VALUE, VALUE], "out_type": LIST},
 }
 for _tok, _extra in _TEXT_TYPE_INFO.items():
     SIGNATURES[_tok].update(_extra)

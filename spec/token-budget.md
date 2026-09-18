@@ -524,3 +524,15 @@ have been unmistakable.  That is what Experiment 23 (Q104) watches for.
 - [ ] **Approve, amend or reject the Axiom 8 revision** (not applied)
 - [ ] **Decide on `quote` / `eval`** — 2 slots, and the only route to
       Axiom 1's programs-as-data and Stage 3's `(explain program)`
+
+## M32 filled the text family (2026-09-18)
+
+`text-match` (0x4E) and `text-match-all` (0x4F): a pattern in a fixed
+subset of the usual notation over a text, the first match with its
+groups or every match. The number that called for it is Exp 25's F6:
+four of four defects in a 3 000-line port were in forty lines of
+hand-written matching, in exactly the operation the language could not
+express. The subset is closed by name -- back-references, look-around
+and named groups are refused -- so the operator's meaning does not
+depend on the host's engine. The text family is 16/16; 88 tokens in
+all. The core table is unchanged.

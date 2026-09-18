@@ -127,12 +127,14 @@ SYMBOLS: Dict[int, str] = {
     0x40: "'", 0x41: "[", 0x42: "]", 0x43: "{", 0x44: "}", 0x45: "`",
     0x46: "~", 0x47: "(", 0x48: ")", 0x49: "|", 0x4A: "<", 0x4B: ">",
     0x4C: "?", 0x4D: "!",
+    0x4E: "@", 0x4F: "$",      # text-match / text-match-all (M32); replaced below like the rest
 }
 
 # The text family (M25) takes one Greek capital per byte: printable ASCII
 # has eight characters left after the core table, the reference digram
-# and the literal characters, and the family needs fourteen.
-for _tok, _sym in zip(sorted(t for t in SYMBOLS if t >= 0x40), "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞ"):
+# and the literal characters, and the family needs sixteen (M32 filled
+# it: the last two are Omega, capital and small, for the two matchers).
+for _tok, _sym in zip(sorted(t for t in SYMBOLS if t >= 0x40), "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΩω"):
     SYMBOLS[_tok] = _sym
 # The list family (M27) continues the Greek capitals (Ο is skipped: it
 # is not Latin O, and a reader should not have to check).

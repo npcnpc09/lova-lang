@@ -80,6 +80,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import socket
 import sys
 import threading
@@ -104,6 +105,7 @@ from core.tokens import (
     CLOCK, EXTERNAL_BOUNDARY, FS_READ, FS_WRITE, CAPABILITY_OF,
     capability_names, NET_RECV, NET_SEND, SIGNAL, MAP_GET, MAP_PAIRS, MAP_PUT,
     LIT_TEXT, TEXT_LEN, TEXT_CAT, TEXT_SLICE, TEXT_FIND, TEXT_SPLIT, TEXT_JOIN, TEXT_CHARS, TEXT_OF_CHARS, TEXT_CMP, TEXT_INT, INT_TEXT, IS_TEXT, TEXT_TRIM,
+    TEXT_MATCH, TEXT_MATCH_ALL,
     LIST_MAP, LIST_FILTER, LIST_FOLD, LIST_REVERSE, LIST_RANGE, LIST_ANY, LIST_SORT_BY, LIST_ZIP,
 )
 from core.lineage import LineageStore, _deep_copy_node
@@ -779,6 +781,26 @@ def format_repr(v: Any) -> str:
     return text if len(text) <= 40 else text[:37] + "..."
 
 
+class TailCall:
+    """A call in tail position, handed back to `_call` instead of made (M32).
+
+    A lambda body whose last act is a call -- directly, or through the
+    branches of an `if`, the last form of a `seq`, or the body of a
+    `let` -- returns this marker with the function and its argument
+    evaluated; the `_call` that is running the body pops its frame and
+    makes the call in its place.  A recursion that ends in the call is
+    therefore a loop: constant call depth, and the depth ceiling counts
+    only the frames a program actually keeps -- the ones with work left
+    to do after the call returns.
+    """
+
+    __slots__ = ("fn", "arg")
+
+    def __init__(self, fn: Any, arg: Any) -> None:
+        self.fn = fn
+        self.arg = arg
+
+
 @dataclass
 class LoopFn:
     """The function produced by ``(loop-until pred step)``.
@@ -876,6 +898,13 @@ class Runtime:
     # node path of a trap is read off the Python stack at trap time
     # (`_node_path`) instead of being maintained per node.
     code_cache: Dict[int, Any] = field(default_factory=dict)
+    # M32 -- the same nodes compiled for tail position (a lambda body,
+    # and what `if` / `seq` / `let` pass tail position on to), where a
+    # call is handed back to `_call` as a `TailCall`.  A node has one
+    # parent, so it is one or the other; the second cache keeps a probe
+    # or a `trace` sandbox that evaluates a sub-tree on its own from
+    # meeting a tail closure outside a call frame.
+    tail_cache: Dict[int, Any] = field(default_factory=dict)
     # M9 — abstraction ceilings.  ``call_depth`` counts LOVA-level
     # function applications currently on the stack; ``steps`` counts
     # every evaluated node in the run.  Both ceilings are always on,
@@ -1018,6 +1047,7 @@ def evaluate(node: Node, rt: Optional[Runtime] = None) -> Any:
     # place since the last run must not meet its old closures, so the
     # cache is a run's, not the runtime's.
     rt.code_cache.clear()
+    rt.tail_cache.clear()
     needed = rt.max_call_depth * _PY_FRAMES_PER_CALL + _PY_RECURSION_HEADROOM
     previous = sys.getrecursionlimit()
     if needed > previous:
@@ -1376,6 +1406,16 @@ def _cost_by_function(rt: Runtime) -> List[List[int]]:
     return [[name_id, n, calls[name_id]] for name_id, n in hot if n > 0]
 
 
+def _not_callable(fn: Any) -> DomainTrap:
+    return DomainTrap(
+        "type-violation",
+        f"apply: head slot is not a function (got {fn!r}); only "
+        "`lambda` and `loop-until` produce callable values",
+        {"operator": "apply", "expected": "Fn"},
+        "apply a `lambda` or a `loop-until`, or a name bound to one",
+    )
+
+
 def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
     """Apply a LOVA function value to one argument.
 
@@ -1383,78 +1423,82 @@ def _call(fn: Any, argument: Any, rt: Runtime) -> Any:
     ``max_call_depth``); ``LoopFn`` iterates in Python and consumes
     none, which is what makes an unbounded loop expressible without an
     unbounded stack.
+
+    M32: a body that ends in a call returns a `TailCall` instead of
+    making it; the loop below pops this frame and makes the call in its
+    place, so a recursion whose last act is the recursive call runs in
+    constant depth.  Every `_call` still returns a value: the marker
+    never escapes.
     """
-    if fn.__class__ is LoopFn:
-        value = argument
-        pred, step = fn.pred, fn.step
-        while True:
-            rt.steps += 1
-            if rt.steps > rt.max_steps:
-                raise StepTrap(steps=rt.steps, limit=rt.max_steps)
-            verdict = _call(pred, value, rt)
-            if verdict.__class__ is not int:
-                verdict = _as_int(verdict, "loop-until predicate")
-            if verdict != 0:
-                return value
-            value = _call(step, value, rt)
+    while True:
+        if fn.__class__ is LoopFn:
+            value = argument
+            pred, step = fn.pred, fn.step
+            while True:
+                rt.steps += 1
+                if rt.steps > rt.max_steps:
+                    raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+                verdict = _call(pred, value, rt)
+                if verdict.__class__ is not int:
+                    verdict = _as_int(verdict, "loop-until predicate")
+                if verdict != 0:
+                    return value
+                value = _call(step, value, rt)
 
-    if fn.__class__ is not Closure:
-        raise DomainTrap(
-            "type-violation",
-            f"apply: head slot is not a function (got {fn!r}); only "
-            "`lambda` and `loop-until` produce callable values",
-            {"operator": "apply", "expected": "Fn"},
-            "apply a `lambda` or a `loop-until`, or a name bound to one",
-        )
+        if fn.__class__ is not Closure:
+            raise _not_callable(fn)
 
-    if fn.name is not None:
-        fn.calls += 1
-        me = fn
-    else:
-        me = fn.owner
-    outer = rt.current
-    if me is not outer:
-        # Exp 20: the steps since the last boundary were the outer
-        # function's own; settle them and start the inner's interval.
-        steps = rt.steps
-        if outer is not None:
-            outer.own += steps - rt.mark
-        rt.mark = steps
-        rt.current = me
-    rt.call_depth += 1
-    if rt.call_depth > rt.max_call_depth:
-        depth = rt.call_depth
-        rt.call_depth -= 1
-        raise DepthTrap(depth=depth, limit=rt.max_call_depth)
-    # A call frame extends the closure's environment by one binding.
-    # A LET directly in the body opens its own frame rather than
-    # extending this one: `let_chain` names the body of a LET, and a
-    # lambda body is not one.
-    scope = Scope()
-    scope.parent = fn.env
-    scope[fn.param] = argument
-    saved_env = rt.env
-    saved_caps = rt.caps
-    saved_enclosed = rt.enclosed
-    rt.env = scope
-    rt.caps = fn.caps
-    rt.enclosed = fn.enclosed
-    try:
-        code = fn.code
-        if code is None:
-            code = fn.code = _code(fn.body, rt)
-        return code(rt)
-    finally:
-        rt.env = saved_env
-        rt.caps = saved_caps
-        rt.enclosed = saved_enclosed
-        rt.call_depth -= 1
+        if fn.name is not None:
+            fn.calls += 1
+            me = fn
+        else:
+            me = fn.owner
+        outer = rt.current
         if me is not outer:
+            # Exp 20: the steps since the last boundary were the outer
+            # function's own; settle them and start the inner's interval.
             steps = rt.steps
-            if me is not None:
-                me.own += steps - rt.mark
+            if outer is not None:
+                outer.own += steps - rt.mark
             rt.mark = steps
-            rt.current = outer
+            rt.current = me
+        rt.call_depth += 1
+        if rt.call_depth > rt.max_call_depth:
+            depth = rt.call_depth
+            rt.call_depth -= 1
+            raise DepthTrap(depth=depth, limit=rt.max_call_depth)
+        # A call frame extends the closure's environment by one binding.
+        # A LET directly in the body opens its own frame rather than
+        # extending this one: `let_chain` names the body of a LET, and a
+        # lambda body is not one.
+        scope = Scope()
+        scope.parent = fn.env
+        scope[fn.param] = argument
+        saved_env = rt.env
+        saved_caps = rt.caps
+        saved_enclosed = rt.enclosed
+        rt.env = scope
+        rt.caps = fn.caps
+        rt.enclosed = fn.enclosed
+        try:
+            code = fn.code
+            if code is None:
+                code = fn.code = _code_tail(fn.body, rt)
+            result = code(rt)
+        finally:
+            rt.env = saved_env
+            rt.caps = saved_caps
+            rt.enclosed = saved_enclosed
+            rt.call_depth -= 1
+            if me is not outer:
+                steps = rt.steps
+                if me is not None:
+                    me.own += steps - rt.mark
+                rt.mark = steps
+                rt.current = outer
+        if result.__class__ is not TailCall:
+            return result
+        fn, argument = result.fn, result.arg
 
 
 def _eval(node: Node, rt: Runtime) -> Any:
@@ -1488,6 +1532,29 @@ def _code(node: Node, rt: Runtime) -> Any:
     if entry is not None and entry[0] is node:
         return entry[1]
     fn = _COMPILERS.get(node.op, _compile_generic)(node, rt)
+    cache[id(node)] = (node, fn)
+    return fn
+
+
+def _code_tail(node: Node, rt: Runtime) -> Any:
+    """The compiled closure for ``node`` in tail position (M32).
+
+    Tail position is a lambda's body, and what `if` (both branches),
+    `seq` (its last form) and `let` (its body) pass on; an `apply`
+    there hands its call back to `_call` as a `TailCall`.  Any other
+    node, and any of these four in a shape its template does not
+    cover, compiles as it would anywhere: a call inside `conserve`,
+    `when-anomaly`, a boundary or an operand is not a tail call,
+    because there is work left when it returns.
+    """
+    compiler = _TAIL_COMPILERS.get(node.op)
+    if compiler is None:
+        return _code(node, rt)
+    cache = rt.tail_cache
+    entry = cache.get(id(node))
+    if entry is not None and entry[0] is node:
+        return entry[1]
+    fn = compiler(node, rt, True)
     cache[id(node)] = (node, fn)
     return fn
 
@@ -1841,7 +1908,8 @@ def _compile_HEAD(node: Node, rt: Runtime) -> Any:
                     "head: the list is empty; guard with `nil?` before "
                     "taking a head",
                     {"operator": "head"},
-                    "guard with `(if (nil? xs) fallback (head xs))`",
+                    "guard with `(if (nil? xs) fallback (head xs))`; reached "
+                    "through `nth` or `last`, the index is past the end",
                 )
             return target.head
         except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
@@ -1960,8 +2028,10 @@ def _compile_MAP_GET(node: Node, rt: Runtime) -> Any:
     return _n_map_get
 
 
-def _compile_SEQ(node: Node, rt: Runtime) -> Any:
+def _compile_SEQ(node: Node, rt: Runtime, tail: bool = False) -> Any:
     codes = tuple(_code(child, rt) for child in node.args)
+    if tail and codes:
+        codes = codes[:-1] + (_code_tail(node.args[-1], rt),)
 
     def _n_seq(rt: Runtime) -> Any:
         try:
@@ -1980,10 +2050,12 @@ def _compile_SEQ(node: Node, rt: Runtime) -> Any:
     return _n_seq
 
 
-def _compile_IF_SURPRISE(node: Node, rt: Runtime) -> Any:
+def _compile_IF_SURPRISE(node: Node, rt: Runtime, tail: bool = False) -> Any:
     if len(node.args) != 3:
         return _compile_generic(node, rt)
-    test, then, otherwise = (_code(a, rt) for a in node.args)
+    branch = _code_tail if tail else _code
+    test = _code(node.args[0], rt)
+    then, otherwise = branch(node.args[1], rt), branch(node.args[2], rt)
 
     def _n_if(rt: Runtime) -> Any:
         try:
@@ -2002,12 +2074,13 @@ def _compile_IF_SURPRISE(node: Node, rt: Runtime) -> Any:
     return _n_if
 
 
-def _compile_LET(node: Node, rt: Runtime) -> Any:
+def _compile_LET(node: Node, rt: Runtime, tail: bool = False) -> Any:
     # The semantics are the LET handler's, inlined; read it first.
     if len(node.args) != 3 or node.args[0].op != LIT_INT:
         return _compile_generic(node, rt)
     name_id = int(node.args[0].args[0])
-    value_code, body_code = _code(node.args[1], rt), _code(node.args[2], rt)
+    value_code = _code(node.args[1], rt)
+    body_code = (_code_tail if tail else _code)(node.args[2], rt)
 
     def _n_let(rt: Runtime) -> Any:
         try:
@@ -2049,7 +2122,7 @@ def _compile_LAMBDA(node: Node, rt: Runtime) -> Any:
         return _compile_generic(node, rt)
     param = int(node.args[0].args[0])
     body = node.args[1]
-    body_code = _code(body, rt)
+    body_code = _code_tail(body, rt)          # M32: the body is tail position
 
     def _n_lambda(rt: Runtime) -> Any:
         try:
@@ -2067,11 +2140,32 @@ def _compile_LAMBDA(node: Node, rt: Runtime) -> Any:
     return _n_lambda
 
 
-def _compile_APPLY(node: Node, rt: Runtime) -> Any:
+def _compile_APPLY(node: Node, rt: Runtime, tail: bool = False) -> Any:
     if not node.args:
         return _compile_generic(node, rt)
     codes = tuple(_code(child, rt) for child in node.args)
     head, arguments = codes[0], codes[1:]
+
+    if tail and arguments:
+        leading, last = arguments[:-1], arguments[-1]
+
+        def _n_apply_tail(rt: Runtime) -> Any:
+            try:
+                if rt.budget_stack:
+                    rt.budget_stack[-1].charge(1)
+                rt.steps += 1
+                if rt.steps > rt.max_steps:
+                    raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+                fn = head(rt)
+                for code in leading:
+                    fn = _call(fn, code(rt), rt)
+                if fn.__class__ is not Closure and fn.__class__ is not LoopFn:
+                    raise _not_callable(fn)
+                return TailCall(fn, last(rt))
+            except (BudgetTrap, DeltaTrap, DomainTrap) as trap:
+                _trapped(trap, rt, node)
+                raise
+        return _n_apply_tail
 
     def _n_apply(rt: Runtime) -> Any:
         try:
@@ -2143,6 +2237,14 @@ _COMPILERS = {
     LAMBDA: _compile_LAMBDA,
     APPLY: _compile_APPLY,
     LOOP_UNTIL: _compile_LOOP_UNTIL,
+}
+
+# M32 -- the four forms that pass tail position on, compiled for it.
+_TAIL_COMPILERS = {
+    SEQ: _compile_SEQ,
+    IF_SURPRISE: _compile_IF_SURPRISE,
+    LET: _compile_LET,
+    APPLY: _compile_APPLY,
 }
 
 
@@ -2310,6 +2412,78 @@ def _op_TEXT_JOIN(node: Node, rt: Runtime, chained: bool) -> Any:
     if isinstance(parts, str):
         parts = _text_chars(parts, "text-join")
     return sep.join(_as_text(p, "text-join") for p in list_to_python(_as_list(parts, "text-join")))
+
+
+# --- patterns (M32, Q112) ---------------------------------------------------
+#
+# A pattern is a text in a fixed subset of the usual notation: literal
+# characters, `.`, a class `[a-z]` / `[^0-9]`, the escapes `\d \w \s`
+# (and their capitals, and `\n` `\t`) and a backslash before any
+# punctuation, the repeats `* + ? {m,n}` with a `?` after one for the
+# shortest match, a group `( )`, an alternative `|`, and the anchors
+# `^ $`.  Nothing that refers back to the text (`\1`), looks around
+# (`(?=`), or names a group: those are refused by name, so a program
+# cannot depend on the host's engine beyond the subset.  The reference
+# runtime hands the subset to Python's `re`; another runtime implements
+# the subset.
+
+_PATTERN_CACHE: Dict[str, Any] = {}
+_PATTERN_SCAN = re.compile(r"\\\\|\(\?|\\[0-9A-Za-z]")
+_PATTERN_ESCAPES = frozenset("dDwWsSnt")
+
+
+def _pattern(v: Any, ctx: str) -> Any:
+    text = _as_text(v, ctx)
+    compiled = _PATTERN_CACHE.get(text)
+    if compiled is not None:
+        return compiled
+    for m in _PATTERN_SCAN.finditer(text):
+        tok = m.group(0)
+        if tok == "\\\\":
+            continue
+        if tok == "(?" or tok[1] not in _PATTERN_ESCAPES:
+            raise DomainTrap(
+                "domain-error",
+                f"{ctx}: `{tok}` is outside the pattern subset (literals, `.`, "
+                "`[...]`, `\\d \\w \\s`, `* + ? {m,n}`, `( )`, `|`, `^ $`)",
+                {"operator": ctx, "pattern": text, "at": m.start()},
+                "rewrite the pattern in the subset; match twice rather than refer back",
+            )
+    try:
+        compiled = re.compile(text)
+    except re.error as exc:
+        raise DomainTrap(
+            "domain-error", f"{ctx}: the pattern does not parse: {exc}",
+            {"operator": ctx, "pattern": text, "at": getattr(exc, "pos", None)},
+            "fix the pattern; a literal `(`, `[`, `.` or `*` needs a backslash",
+        ) from None
+    if len(_PATTERN_CACHE) > 256:
+        _PATTERN_CACHE.clear()
+    _PATTERN_CACHE[text] = compiled
+    return compiled
+
+
+def _match_value(m: Any) -> Any:
+    return list_from([m.group(0)] + [g if g is not None else "" for g in m.groups()])
+
+
+def _op_TEXT_MATCH(node: Node, rt: Runtime, chained: bool) -> Any:
+    t = _as_text(_eval(node.args[0], rt), "text-match")
+    pat = _pattern(_eval(node.args[1], rt), "text-match")
+    m = pat.search(t)
+    return NIL_VALUE if m is None else _match_value(m)
+
+
+def _op_TEXT_MATCH_ALL(node: Node, rt: Runtime, chained: bool) -> Any:
+    t = _as_text(_eval(node.args[0], rt), "text-match-all")
+    pat = _pattern(_eval(node.args[1], rt), "text-match-all")
+    out = []
+    for m in pat.finditer(t):
+        rt.steps += 1                       # one step a match, like a walker
+        if rt.steps > rt.max_steps:
+            raise StepTrap(steps=rt.steps, limit=rt.max_steps)
+        out.append(_match_value(m))
+    return list_from(out)
 
 
 # --- the list family (M27, Q94) ---------------------------------------------
@@ -3334,6 +3508,7 @@ _HANDLERS = {
     TEXT_FIND: _op_TEXT_FIND, TEXT_SPLIT: _op_TEXT_SPLIT, TEXT_JOIN: _op_TEXT_JOIN,
     TEXT_CHARS: _op_TEXT_CHARS, TEXT_OF_CHARS: _op_TEXT_OF_CHARS, TEXT_CMP: _op_TEXT_CMP,
     TEXT_INT: _op_TEXT_INT, INT_TEXT: _op_INT_TEXT, IS_TEXT: _op_IS_TEXT, TEXT_TRIM: _op_TEXT_TRIM,
+    TEXT_MATCH: _op_TEXT_MATCH, TEXT_MATCH_ALL: _op_TEXT_MATCH_ALL,
     LIT_INT: _op_LIT_INT,
     IDENTITY: _op_IDENTITY,
     MERGE: _op_MERGE,

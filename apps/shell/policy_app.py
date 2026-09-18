@@ -48,7 +48,7 @@ DEFAULT_RULE = """\
 
 SABOTAGE = {
     "divide": "(div {amount} (sub {tier} {tier}))",
-    "loop": "(def spin [n] (spin (inc n)))(spin {amount})",
+    "loop": "(def spin [n] (inc (spin n)))(spin {amount})",   # keeps a frame a level; a tail call would loop (M32)
     "file": '(boundary "fs-read" (len (fs-read "/etc/passwd")))',
     "unbound": "(merge {amount} (undefined-name {items}))",
 }

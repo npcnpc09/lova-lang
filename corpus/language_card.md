@@ -62,8 +62,8 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 
 ```
 ; lists
-(len xs) (sum xs) (product xs) (append xs ys) (nth xs k) (last xs)
-(take n xs) (drop n xs) (contains xs v) (same a b)
+(len xs) (sum xs) (product xs) (append xs ys) (replace t old new) (nth xs k)
+(last xs) (take n xs) (drop n xs) (contains xs v) (same a b)
 ; higher order
 (all f xs)
 ; sorting
@@ -83,7 +83,7 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 (println v)
 ```
 
-Notes: `(nth xs k)` The element of `xs` at 0-based index `k`; a fault past the end.  `(words text)` The words of `text`: runs of non-space characters.  `(join parts sep)` Join `parts` with `sep` between them; `sep` a codepoint or a text.  `(text-of n)` An integer as decimal text.  `(text-lt a b)` Lexicographic order on texts or codepoint lists, so `(sort-by text-lt words)`.  `(map-count m k)` `m` with the count under `k` one higher: the word-count step.
+Notes: `(replace t old new)` Every `old` in `t` replaced by `new` (M32).  `(nth xs k)` The element of `xs` at 0-based index `k`; a fault past the end.  `(words text)` The words of `text`: runs of non-space characters.  `(join parts sep)` Join `parts` with `sep` between them; `sep` a codepoint or a text.  `(text-of n)` An integer as decimal text.  `(text-lt a b)` Lexicographic order on texts or codepoint lists, so `(sort-by text-lt words)`.  `(map-count m k)` `m` with the count under `k` one higher: the word-count step.
 
 List operators: `map` `filter` `fold` `reverse` `range` `any` `sort-by` `zip`. `(map f xs)`, `(filter f xs)` (keeps x where `(f x)` is
 non-zero), `(fold f acc xs)` (calls `(f acc x)`), `(reverse xs)`,
@@ -92,15 +92,20 @@ hit), `(sort-by less xs)` (stable; `(less a b)` non-zero puts a first),
 `(zip xs ys)` (two-element lists, to the shorter). One step an element,
 plus the function called.
 
-Text operators: `text-len` `text-cat` `text-slice` `text-find` `text-split` `text-join` `text-chars` `text-of-chars` `text-cmp` `text-int` `int-text` `text?` `text-trim`. `(text-slice t start end)`, `(text-find t needle)` (-1 if
+Text operators: `text-len` `text-cat` `text-slice` `text-find` `text-split` `text-join` `text-chars` `text-of-chars` `text-cmp` `text-int` `int-text` `text?` `text-trim` `text-match` `text-match-all`. `(text-slice t start end)`, `(text-find t needle)` (-1 if
 absent), `(text-split t sep)` (`""` splits on whitespace), `(text-join
-parts sep)`; a separator may be a text or a codepoint. Maps:
+parts sep)`; a separator may be a text or a codepoint. `(text-match t
+pattern)` is the first match as `(whole group ...)` or `()` if none,
+`(text-match-all t pattern)` every match; a pattern is literals, `.`,
+`[a-z]`, `\d \w \s`, `* + ? {m,n}`, `( )`, `|`, `^ $` and nothing
+else (no `\1`, no `(?`): `(text-match "mem 40%" "(\w+) (\d+)%")` is
+`("mem 40%" "mem" "40")`. `(replace t old new)`. The empty map is `()`:
 `(map-put m k v)`, `(map-get m k default)`, `(map-pairs m)`.
 
-`f` in `map`, `filter`, `fold` is a function value: a `lambda`, or the name
-of a `def`. An operator (`merge`, `sub`, `mul`, `text-int`, ...) is not a
-value and cannot be passed by name: wrap it, `(lambda a (lambda b (merge a
-b)))`. `fold` calls `(f acc x)`; write a two-argument fold step as
+`f` in `map`, `filter`, `fold` is a function value: a `lambda`, the name
+of a `def`, or an operator or macro named bare -- `(sort-by lt xs)`,
+`(fold merge 0 xs)`, `(map neg xs)` -- which is the lambda that wraps
+it. `fold` calls `(f acc x)`; write a two-argument fold step as
 `(lambda a (lambda x ...))`.
 
 ## Cost
@@ -183,7 +188,9 @@ one must be written inside the boundary: `(boundary "clock" (def now []
 (let x (tau {n}) (mul x x))
 ```
 
-Rules of thumb: recursion is fine up to 10 000 frames, and LOVA does not
-turn a tail call into a loop, so a loop over more elements than that is
-`fold` / `map` / `range` or `loop-until`, not recursion; there is no
-`return`, `while` or assignment; every `(` has its `)`.
+Rules of thumb: a call in tail position costs no frame, so a recursion
+whose last act is the call (an accumulator recursion) runs in constant
+depth; a recursion that does something with the result afterwards is
+fine up to 10 000 frames, and past that is `fold` / `map` / `range` or
+`loop-until`; there is no `return`, `while` or assignment; every `(`
+has its `)`.

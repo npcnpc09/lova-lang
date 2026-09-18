@@ -209,10 +209,12 @@ class Feedback(unittest.TestCase):
         self.assertNotIn("valid_alternatives", text)
 
     def test_the_depth_hint_names_the_loop_forms(self):
-        a = self._anomaly("(def up [n acc] (if (gt n 20000) acc (up (merge n 1) (merge acc n))))" + NL +
-                          "(up 0 0)")
+        # M32: the accumulator form runs now; the one that keeps a frame is
+        # the one that meets the ceiling, and the hint says why.
+        a = self._anomaly("(def up [n] (if (gt n 20000) 0 (merge n (up (merge n 1)))))" + NL +
+                          "(up 0)")
         self.assertEqual(a["kind"], "recursion-depth-exceeded")
-        self.assertIn("does not turn a tail call into a loop", a["repair_hint"])
+        self.assertIn("tail position costs no frame", a["repair_hint"])
         self.assertIn("`fold`", a["repair_hint"])
         # and the path per frame is elided, as the CLI has done since M23
         self.assertLess(len(a["position_path"]), 12)

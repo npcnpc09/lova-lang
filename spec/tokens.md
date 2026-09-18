@@ -18,7 +18,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  85 of the 86 tokens are implemented.
+  87 of the 88 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -57,7 +57,7 @@ Legend:
 | 0x11 | `conserve` | 2 | Int, Int | Int | {conservation-check} | **impl** |
 | 0x12 | `signal` | 1 | Int | Value | {signal} | **impl** |
 | 0x13 | `map-put` | 3 | Value, Value, Value | Map | - | **impl** |
-| 0x14 | `map-get` | 3 | Map, Value, Value | Value | - | **impl** |
+| 0x14 | `map-get` | 3 | Value, Value, Value | Value | - | **impl** |
 | 0x15 | `nil` | 0 | - | List | - | **impl** |
 | 0x16 | `map-pairs` | 1 | Map | List | - | **impl** |
 | 0x17 | `violate` | 1 | Int | Int | {synthetic-violation} | **impl** |
@@ -282,9 +282,9 @@ the identifier was a convenience for whoever typed it.
 - 2026-04-23 - initial draft (stub).
 - 2026-04-24 - complete, hand-transcribed from SIGNATURES at M5.
   Recorded as 19/64 implemented; `TYPED_TOKENS` in fact held 18.
-- 2026-09-11 - M9.  0x0B / 0x0C reallocated from the
+- 2026-09-18 - M9.  0x0B / 0x0C reallocated from the
   never-implemented mock-theta placeholders `phi3` / `psi7` to `mul`
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  85/86 operators implemented.
+  87/88 operators implemented.

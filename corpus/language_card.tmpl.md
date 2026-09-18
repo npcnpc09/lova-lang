@@ -71,13 +71,18 @@ plus the function called.
 
 {{TEXT_OPS}} `(text-slice t start end)`, `(text-find t needle)` (-1 if
 absent), `(text-split t sep)` (`""` splits on whitespace), `(text-join
-parts sep)`; a separator may be a text or a codepoint. Maps:
+parts sep)`; a separator may be a text or a codepoint. `(text-match t
+pattern)` is the first match as `(whole group ...)` or `()` if none,
+`(text-match-all t pattern)` every match; a pattern is literals, `.`,
+`[a-z]`, `\d \w \s`, `* + ? {m,n}`, `( )`, `|`, `^ $` and nothing
+else (no `\1`, no `(?`): `(text-match "mem 40%" "(\w+) (\d+)%")` is
+`("mem 40%" "mem" "40")`. `(replace t old new)`. The empty map is `()`:
 `(map-put m k v)`, `(map-get m k default)`, `(map-pairs m)`.
 
-`f` in `map`, `filter`, `fold` is a function value: a `lambda`, or the name
-of a `def`. An operator (`merge`, `sub`, `mul`, `text-int`, ...) is not a
-value and cannot be passed by name: wrap it, `(lambda a (lambda b (merge a
-b)))`. `fold` calls `(f acc x)`; write a two-argument fold step as
+`f` in `map`, `filter`, `fold` is a function value: a `lambda`, the name
+of a `def`, or an operator or macro named bare -- `(sort-by lt xs)`,
+`(fold merge 0 xs)`, `(map neg xs)` -- which is the lambda that wraps
+it. `fold` calls `(f acc x)`; write a two-argument fold step as
 `(lambda a (lambda x ...))`.
 
 ## Cost
@@ -121,7 +126,9 @@ one must be written inside the boundary: `(boundary "clock" (def now []
 (let x (tau {n}) (mul x x))
 ```
 
-Rules of thumb: recursion is fine up to 10 000 frames, and LOVA does not
-turn a tail call into a loop, so a loop over more elements than that is
-`fold` / `map` / `range` or `loop-until`, not recursion; there is no
-`return`, `while` or assignment; every `(` has its `)`.
+Rules of thumb: a call in tail position costs no frame, so a recursion
+whose last act is the call (an accumulator recursion) runs in constant
+depth; a recursion that does something with the result afterwards is
+fine up to 10 000 frames, and past that is `fold` / `map` / `range` or
+`loop-until`; there is no `return`, `while` or assignment; every `(`
+has its `)`.

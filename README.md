@@ -728,8 +728,8 @@ Stated plainly, because the list is short and the omissions are large:
   datagram: there are no handles and no streams (Q72). The terminal is
   ambient rather than declared (Q68).
 - **The core table is full, and the language grows past it.** 63 core
-  operators and `END`; the text family (0x40-0x4D, M25) was the first
-  addition beyond 64, and the next
+  operators and `END`; the text family (0x40-0x4F, M25, full at M32)
+  was the first addition beyond 64, and the next
   operator has to displace one of the number-theory family (Q74).
 - **Modules are textual.** `(use "name")` includes `lib/name.lova`
   once and transitively, and `drop-unused` makes it free — but two

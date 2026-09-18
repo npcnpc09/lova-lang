@@ -666,6 +666,89 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 32 (2026-09-18) -- A complete language
+
+The owner's ruling after Exp 29: more experiments of the same shape
+would add decimals to numbers no decision depends on, so the work is
+to close the language's standing defects and make it complete enough
+to use. Seven, each found by a program that was written rather than
+by a design argument:
+
+**Tail calls.** The oldest limit in the language: a recursion whose
+last act is the recursive call kept a frame a level and met the depth
+ceiling at 10 000, so every loop had to be `fold` / `loop-until` or an
+accumulator the card told the model not to write. A lambda body is
+now compiled in *tail position* (`_code_tail`), which `if` (both
+branches), `seq` (its last form) and `let` (its body) pass on; an
+`apply` there returns a `TailCall` marker instead of calling, and
+`_call` -- now a loop -- pops its frame and makes the call in its
+place. An accumulator recursion, a mutual recursion and a tail call
+into a `loop-until` all run in constant depth; a call that keeps work
+for afterwards (`(merge 1 (f n))`, a call under `try`, `conserve` or
+a boundary) still meets the ceiling, and the depth hint now says why
+this one kept its frames. Step counts are unchanged; the `hot`
+attribution is unchanged; a tail call to a non-function is reported
+at its own `apply`. Six tests that pinned a runaway *tail* recursion
+as a depth trap were rewritten to keep a frame: a runaway tail
+recursion is a loop now and meets the step ceiling instead.
+
+**Operators and macros as values.** `(sort-by lt xs)`, `(fold merge 0
+xs)`, `(map neg xs)` were unbound-ref errors with a hint spelling out
+the lambda; the parser now does what the hint said. A bare identifier
+that spells an operator of fixed arity or a fixed-arity macro, and
+that nothing in the source binds (`_bound_spellings` pre-scans every
+def, parameter, let and lambda name, the prelude's names included),
+reads as the curried lambda that wraps it. A binding of the spelling
+wins, so `[text]` is still a parameter; a record field named `min` is
+still the name; a variadic (`seq`, `apply`) has no arity to wrap and
+keeps the hint. The expansion is plain core: the substrate form is
+untouched.
+
+**`text-match` / `text-match-all` (0x4E / 0x4F, Q112 of Exp 25).**
+Exp 25 found four of four defects in forty lines of hand-written
+matching and asked what the smallest thing was that would have made
+them impossible. A pattern in a fixed subset of the usual notation --
+literals, `.`, `[...]`, `\d \w \s`, `* + ? {m,n}`, `( )`, `|`, `^ $`
+-- and nothing that refers back (`\1`), looks around (`(?=`) or names
+a group: those are refused by name, so a program cannot depend on the
+host's engine beyond the subset. `text-match` gives `(whole group...)`
+or `nil`; `text-match-all` every match, one step each. The text family
+is full at 16. Two things it exposed: a text literal used to drop the
+backslash of an escape the language does not define (`"\d+"` read as
+`d+`), and the command line read `{4}` in `\d{4}` as a placeholder the
+program expects; both fixed, a placeholder is now an identifier in
+braces. `replace` joined the prelude.
+
+**`map-get` on `(nil)` (Q114).** The card says the empty map is
+`(nil)`; `map-put` took it and `map-get` was a type error. Widened.
+
+**A lint pass (Q106).** The one mistake Axiom 3 cannot catch is a
+reference that is well-typed and wrong. The compiler now reports what
+such a mistake leaves behind: a parameter nothing reads, a local
+binding nothing reads, a parameter that hides one already in scope --
+as warnings on the compile report, spelled by `lova analyze`, `lova
+check` and `lova_static_analyze`, the program's own names only (a
+macro's temporaries and anything inside a prelude def are silent; a
+top-level def nothing calls is a library's normal state and is not
+one).
+
+**The locator's edit classes.** A literal where a name in scope was
+meant (`(merge a 1)` for `(merge a x)`), which Exp 28's own test
+recorded as the edit not tried; and Q119's node put back -- a unary
+operator, a binary one with a name or small literal beside, `map-put`
+with a key in scope, the program's own defs of arity one and two --
+tried last, bounded.
+
+**Two messages.** `(nth xs 5)` past the end said `head` and nothing
+else; the hint now says that reached through `nth` or `last` the
+index is past the end. And the operator-as-value hint for a variadic
+says so.
+
+Not changed, still: the interpreter's speed, floating point (the
+language is integers and `lib/fixed.lova`; the owner's call), and
+`eval`'s dynamic scope (Q59). Tests 972 -> 1009; 88 tokens;
+`spec/tokens.md` and the card regenerated.
+
 ### Milestone 31 (2026-09-18) -- The locator at the size of Exp 29
 
 Exp 29's four planted faults were put to the locator before any
@@ -2243,7 +2326,7 @@ the corpus grows again.
   thirty-odd operator examples whose values the runtime computes when
   the card is generated. The scratch evaluation of a fragment is what
   `lova_execute` on a fragment already is.
-- **Q114**: `(map-get (nil) k d)` is a type error (`nil` produces
+- ~~**Q114**~~ *(closed by M32)*: `(map-get (nil) k d)` is a type error (`nil` produces
   List, slot expects Map) where `(map-put (nil) k v)` is accepted and
   the card says the empty map is `(nil)`. Widen `map-get`'s first
   slot, or make the card say `(map-of (nil))`.
@@ -2273,7 +2356,7 @@ the corpus grows again.
   text against LOVA's 3 882, a def before every patch against none on
   nine of twelve. The free tests are most of the total; the located
   fault is the program text and the blind repairs.
-- **Q119** *(Exp 29)*: the dropped and added node as an edit class --
+- ~~**Q119**~~ *(built at M32, unmeasured)*: the dropped and added node as an edit class --
   g2048-a's fault wraps an argument in a call with in-scope arguments;
   the examples' data and the def's own sub-expressions bound the
   candidates.
@@ -2304,7 +2387,7 @@ the corpus grows again.
 - **Q111**: allow one retraction. Exp 24's F7 says the write-once rule
   is what forced the tree-holding; letting a session un-emit the last
   token is the control that would test it.
-- **Q106**: a diagnostic for the silent reference error -- can the
+- ~~**Q106**~~ *(answered in part by M32's lint pass: unread parameters and locals, shadowing parameters)*: a diagnostic for the silent reference error -- can the
   compiler flag a reference whose binder is plausibly wrong (a shadow,
   an out-of-scope number, a binding never used)? It is the one mistake
   the substrate form invites and the one Axiom 3 cannot catch.

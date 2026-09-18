@@ -36,10 +36,12 @@ class Harness(unittest.TestCase):
         self.assertIn("FAIL", e18.feedback_text("lova", r))
 
     def test_a_compile_fault_is_the_feedback(self):
-        r = e18.run_lova("(map text-int (words {s}))", e18.BY_ID["t03"])
+        # `text-int` named bare is a function since M32; a misspelling is
+        # still the compile fault the loop feeds back.
+        r = e18.run_lova("(map parse-in (words {s}))", e18.BY_ID["t03"])
         a = r["failures"][0]["anomaly"]
-        self.assertEqual((a["kind"], a["stage"], a["excerpt"]), ("unbound-ref", "compile", "text-int"))
-        self.assertIn("(lambda x0 (text-int x0))", a["repair_hint"])
+        self.assertEqual((a["kind"], a["stage"], a["excerpt"]), ("unbound-ref", "compile", "parse-in"))
+        self.assertIn("parse-int", a["repair_hint"])
 
     def test_a_python_traceback_is_the_feedback(self):
         r = e18.run_python("def solve(s):\n    return 1 // 0", e18.BY_ID["t01"])

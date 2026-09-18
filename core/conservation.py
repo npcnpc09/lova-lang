@@ -125,12 +125,14 @@ class DepthTrap(BudgetTrap):
             "offending_op_name": "",
             "valid_alternatives": (),
             "repair_hint": (
-                "the recursion has no reachable base case, or needs more "
+                "the recursion has no reachable base case, or keeps more "
                 f"than {limit} frames; add or fix the `if` that terminates "
-                "it.  LOVA does not turn a tail call into a loop, so a "
-                "recursion over more elements than that -- accumulator or "
-                "not -- must be `fold` / `map` / `range`, `loop-until`, or "
-                "the prelude's `iterate`"
+                "it.  A call in tail position costs no frame (M32), so a "
+                "recursion whose last act is the call runs in constant "
+                "depth; this one does something with the result after the "
+                "call returns, so every level keeps a frame -- carry the "
+                "result in an accumulator argument, or use `fold` / `map` / "
+                "`range` or `loop-until`"
             ),
         }
 

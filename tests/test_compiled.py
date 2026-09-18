@@ -39,11 +39,13 @@ class TrapPositions(unittest.TestCase):
                          ("step-limit-exceeded", (3, 3), 3, None))
 
     def test_depth_trap_path_is_one_apply_per_frame(self):
+        # M32: the call has to keep its frame -- `merge` waits on it --
+        # or it is a loop and never reaches the ceiling.
         kind, path, op, _ = _run(
-            "(let 0 (lambda 1 (apply (ref 0) (ref 1))) (apply (ref 0) 0))",
+            "(let 0 (lambda 1 (merge 1 (apply (ref 0) (ref 1)))) (apply (ref 0) 0))",
             max_call_depth=5)
         self.assertEqual(kind, "recursion-depth-exceeded")
-        self.assertEqual(path, (46, 45, 45, 45, 45, 45, 45))
+        self.assertEqual(path, (46, 45) + (3, 45) * 5)
         self.assertEqual(op, 45)
 
     def test_a_literal_takes_no_position(self):

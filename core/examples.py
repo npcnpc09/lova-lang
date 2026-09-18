@@ -407,7 +407,13 @@ def _failure_lines(r: Dict[str, Any], seen_faults: Dict[str, int]) -> Dict[str, 
             score += f"  [changes the answer on {fault['impact']} of {fault['nearby']} nearby inputs]"
         if fault.get("def") and "reached_by" in fault:
             score += f"  [def {fault['def']} is reached by {fault['reached_by']} of {fault['examples']} examples]"
-        rep = f"  -> {fault['replacement']}" if fault.get("replacement") else ""
+        # A swapped branch's excerpt is the whole form: the first line
+        # of it, and the replacement only when it fits on one.
+        rep = ""
+        if fault.get("replacement"):
+            r_text = fault["replacement"]
+            rep = (f"  -> {r_text}" if chr(10) not in r_text and len(r_text) <= 120
+                   else "  (the replacement is several lines; lova_patch has it)")
         where = ""
         if fault.get("def"):
             where = f"  in {fault['def']}" + (", a constant" if fault.get("constant") else "")
@@ -420,7 +426,8 @@ def _failure_lines(r: Dict[str, Any], seen_faults: Dict[str, int]) -> Dict[str, 
         # of three sessions asked that a partial not wear the same
         # dress as a repair).
         label = "fault" if not m or n == m else "lead "
-        line = (f"        {label}: {fault['line']}:{fault['col']} [{a0}, {b0})  {fault['excerpt']}{where}  "
+        shown = _first_line(fault["excerpt"] or "")
+        line = (f"        {label}: {fault['line']}:{fault['col']} [{a0}, {b0})  {shown}{where}  "
                 f"-- {fault['edit']}{rep}{score}")
         if fault.get("tied_with"):
             places = ", ".join(f"{t['excerpt']} [{t['span'][0]}, {t['span'][1]})" for t in fault["tied_with"])

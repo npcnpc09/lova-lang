@@ -239,6 +239,27 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M32** (2026-09-18) -- **a complete language.** The owner's ruling
+after Exp 29: more experiments of the same shape add decimals to
+numbers no decision depends on; close the standing defects instead.
+Seven closed, each found by a program that was written: **tail
+calls** (a lambda body is compiled in tail position, passed on by
+`if` / `seq` / `let`; an `apply` there returns a `TailCall` that
+`_call`, now a loop, makes in its own frame's place -- accumulator
+and mutual recursion in constant depth, a call that keeps work still
+meets the ceiling, steps and `hot` unchanged); **operators and macros
+as values** (`(sort-by lt xs)`, `(fold merge 0 xs)`: a bare operator
+name nothing in the source binds is its curried lambda, plain core);
+**`text-match` / `text-match-all`** at 0x4E / 0x4F (Exp 25's Q112: a
+fixed pattern subset, what is outside it refused by name; the text
+family is full at 16, 88 tokens); **`map-get` on `(nil)`** (Q114);
+**a lint pass** (Q106: unread parameters and locals, shadowing
+parameters, as warnings under `analyze` / `check` / MCP); the
+locator's **literal-for-name and node-put-back edits** (Q119); and
+two hints. Also: a text literal keeps an escape the language does not
+define (`"\d+"`), and `{4}` in a pattern is not a placeholder. Tests
+972 -> 1009. `journal/README.md`, "Milestone 32".
+
 **M30** (2026-09-18) gave a located edit a second oracle (Q115):
 candidate constants come from the examples' own data, every edit that
 fixes all the examples is scored by how many perturbed inputs it
@@ -280,7 +301,7 @@ every test (three the planted token itself), one partial, two never
 one edit. An example may state any value now (list, text, record), and
 the card carries thirty-odd operator examples computed by the runtime
 when it is generated (Q113); the card's "a loop is an accumulator
-recursion" is gone, since LOVA has no tail calls. **Exp 28 ran Q96
+recursion" is gone, since LOVA had no tail calls (it has since M32). **Exp 28 ran Q96
 the same day:** three sessions with the examples and the `fault:`
 line, first-try 23/24 against Exp 21's 18/24, attempts 27 against 30,
 and three times the reading (two thirds instrument, a third the
@@ -323,9 +344,10 @@ account is in `journal/README.md`, "The audit"; the standing result:
   identity, storage and transport. Stage 2 and 3 are serialisation
   until Q110 says otherwise: Q108 was run the same afternoon (Exp 24,
   run 2) and answered no, eight of eight sessions over three arms.
-- **Not changed:** tail calls (no session has met the depth trap),
-  the interpreter (a native runtime is deferred until the goal is
-  met), the prelude's eight unused definitions (60 card tokens).
+- **Not changed that day:** tail calls (no session had met the depth
+  trap; M32 added them the same week), the interpreter (a native
+  runtime is deferred until the goal is met), the prelude's eight
+  unused definitions (60 card tokens).
 
 ## The goal (owner's ruling, 2026-09-10)
 
@@ -428,9 +450,10 @@ annotations).
 0x30-0x37   Effects / IO          external-boundary / net-send / net-recv
                                   fs-read / fs-write / stdout / stdin / clock
 0x38-0x3F   Meta / lineage        lineage-query / why / trace / explain
-0x40-0x4D   Text (M25)            text literal, text-len / -cat / -slice / -find /
+0x40-0x4F   Text (M25, M32)       text literal, text-len / -cat / -slice / -find /
                                   -split / -join / -chars / -of-chars / -cmp /
-                                  -int, int-text, text?, text-trim
+                                  -int, int-text, text?, text-trim,
+                                  text-match / text-match-all (M32)
 0x50-0x57   List (M27)            map / filter / fold / reverse / range / any /
                                   sort-by / zip -- one step an element
 ```
@@ -1024,15 +1047,15 @@ proved the token table could not beat) and on LOVABench 2.00× →
 density by 70%; node count is a poor proxy in both directions.
 
 **63 / 64 core operators runtime-implemented** (the 64th is `END`),
-plus the text family 0x40-0x4D since M25 and the list family
-0x50-0x57 since M27: 86 tokens in all. The 64-slot ceiling is a design
+plus the text family 0x40-0x4F since M25 (full at M32) and the list
+family 0x50-0x57 since M27: 88 tokens in all. The 64-slot ceiling is a design
 preference since the ruling of 2026-09-10; a new family is added when
 the four numbers call for it, and M27 is the second time they did. See
 `spec/tokens.md` for the complete table (generated) and
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-972 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+1009 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 24 first-class apps (the last Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

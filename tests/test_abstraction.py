@@ -337,7 +337,9 @@ class TestLoopUntil(unittest.TestCase):
 class TestCeilings(unittest.TestCase):
     """Non-termination must be an anomaly, not a traceback or a hang."""
 
-    RUNAWAY = "(defn f [x] (f x))(f 1)"
+    # M32: a call in tail position is a loop, so a runaway that keeps a
+    # frame is one that does something with the result.
+    RUNAWAY = "(defn f [x] (merge 1 (f x)))(f 1)"
     SPINNER = "(apply (loop-until (lambda 0 0) (lambda 0 (ref 0))) 1)"
 
     def test_runaway_recursion_raises_depth_trap(self):

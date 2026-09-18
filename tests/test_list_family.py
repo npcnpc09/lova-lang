@@ -81,8 +81,12 @@ class Semantics(unittest.TestCase):
 
 
 class Faults(unittest.TestCase):
-    def test_an_operator_is_not_a_function_value(self):
-        a = run("(map merge (list 1 2))")["anomaly"]
+    def test_an_operator_named_bare_is_a_function_value(self):
+        # M32: the curried lambda that wraps it; `merge` with one argument
+        # is a partial application, so the elements come back as closures.
+        r = run("(map inc (list 1 2))")
+        self.assertTrue(r.get("ok"), r)
+        a = run("(map seq (list 1 2))")["anomaly"]      # a variadic still is not
         self.assertEqual(a["kind"], "unbound-ref")
         self.assertIn("operator", a["repair_hint"])
 

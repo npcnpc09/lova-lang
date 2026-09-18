@@ -94,13 +94,11 @@ class Located(unittest.TestCase):
             "(example (total (list 5 6 7)) 18)" + NL +
             "(example (total (list 1 1)) 2)" + NL +
             "(total (list 1))")
-        # `1` should be `x`: a literal for a reference is not an edit tried,
-        # so either nothing is found or a partial fix is marked as such.
+        # `1` should be `x`: a literal for a name in scope is an edit
+        # since M32, and it is the one reported.
         text = summary(results)
-        if fault and fault.get("span"):
-            self.assertIn("the fault may be elsewhere", text)
-        else:
-            self.assertIn("no single edit of a def makes this example pass", text)
+        self.assertEqual(fault["replacement"], "x")
+        self.assertIn("fixes all 2 examples", text)
 
     def test_examples_may_state_lists_and_texts(self):
         results = check(

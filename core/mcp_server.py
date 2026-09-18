@@ -435,12 +435,20 @@ def tool_static_analyze(params: Dict[str, Any]) -> Dict[str, Any]:
             "original_nodes": report.original_nodes,
             "compiled_nodes": report.compiled_nodes,
             "dropped_bindings": report.dropped_bindings,
+            "warnings": _warnings(report, tree, params.get("source")),
         },
         "compiled": pretty(tree),
         "stage2": surface2.render(tree),
         "bytes": data.hex(),
         "byte_count": len(data),
     }
+
+
+def _warnings(report: Any, tree: Any, source: Any) -> List[str]:
+    """The lint pass's lines (M32), spelled as the CLI spells them."""
+    from core.cli import name_warnings
+    return name_warnings(getattr(report, "warnings", ()), getattr(tree, "symbols", None),
+                         source if isinstance(source, str) else None)
 
 
 def _walk_prefix(params: Dict[str, Any]) -> GenState:

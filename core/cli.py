@@ -77,7 +77,10 @@ def substitute(source: str, args: List[str]) -> str:
     # `{n}` must not decide the argument order (M22).
     code = re.sub(r";[^\n]*", "", source)
     names: List[str] = []
-    for match in re.finditer(r"\{(\w+)\}", code):
+    # A placeholder is named like an identifier: `{n}`, `{amount}`.  A
+    # brace around digits, `\d{4}` or `{2,3}`, is a pattern's repeat
+    # (M32) and stays.
+    for match in re.finditer(r"\{([A-Za-z_]\w*)\}", code):
         if match.group(1) not in names:
             names.append(match.group(1))
     if not names:
@@ -187,7 +190,15 @@ def name_anomaly(anomaly: Any, symbols: Any) -> None:
         arity = SIGNATURES[NAME_TO_TOKEN[name]]["arity"]
     elif name in MACROS:
         arity = MACROS[name][0]
-    if arity is not None:
+    if arity is not None and not isinstance(arity, int):
+        # M32: a fixed-arity operator spelled bare is its function now;
+        # a variadic has no arity to wrap.
+        anomaly["repair_hint"] = (
+            f"`{name}` is an operator that takes any number of arguments, so "
+            f"it has no function value; write the lambda by hand: "
+            f"(lambda x0 (lambda x1 ({name} x0 x1)))."
+        )
+    elif arity is not None:
         params = " ".join(f"x{i}" for i in range(arity or 1))
         call = " ".join(["(" + name] + params.split()) + ")"
         for p in reversed(params.split()):
@@ -250,6 +261,38 @@ SYNONYMS = {
     "even?": "`(even n)`", "odd?": "`(odd n)`",
     "true": "`1`", "false": "`0`", "none": "`(nil)`", "null": "`(nil)`",
 }
+
+
+_WARNING_TEXT = {
+    "unused-parameter": "parameter `{name}` is never read",
+    "unused-binding": "binding `{name}` is never read",
+    "shadowed-parameter": "parameter `{name}` hides a `{name}` already in scope",
+}
+
+
+def name_warnings(warnings: Any, symbols: Any, source: Optional[str] = None) -> List[str]:
+    """The lint pass's warnings as lines (M32, Q106), the program's own
+    only: a macro's temporaries (spelled with a space) and anything
+    inside a prelude def are dropped, because the reader did not write
+    them and cannot act on them."""
+    if not warnings or symbols is None:
+        return []
+    from core.surface import prelude_names
+    prelude = prelude_names()
+    out: List[str] = []
+    for w in warnings:
+        name = symbols.name_of(w.get("name_id"))
+        if not name or name.startswith(" "):
+            continue
+        owner = symbols.name_of(w["owner"]) if w.get("owner") is not None else None
+        if owner in prelude:
+            continue
+        text = _WARNING_TEXT.get(w["kind"], w["kind"]).format(name=name)
+        where = ""
+        if source is not None and w.get("span"):
+            where = describe_span(source, w["span"]) + "  "
+        out.append(f"  warning: {where}{text}" + (f" (in `{owner}`)" if owner else ""))
+    return out
 
 
 def _similar(a: str, b: str) -> bool:
@@ -480,6 +523,12 @@ def cmd_check(args: argparse.Namespace) -> int:
         print("  no examples: write (example expr expected) beside the defs", file=sys.stderr)
         return EXIT_OK
     print(summary(results))
+    try:
+        tree, report = build(source, prelude=not args.no_prelude)
+        for line in name_warnings(report.warnings, getattr(tree, "symbols", None), source):
+            print(line)
+    except (CompileError, ValueError):
+        pass
     return EXIT_OK if all(r["passed"] for r in results) else EXIT_TRAP
 
 
@@ -547,13 +596,16 @@ def cmd_callers(args: argparse.Namespace) -> int:
 def cmd_analyze(args: argparse.Namespace) -> int:
     source = substitute(read_source(args.file), args.args)
     try:
-        tree, _ = build(source, prelude=not args.no_prelude,
-                        stage2=args.stage2, do_compile=not args.no_compile)
+        tree, report = build(source, prelude=not args.no_prelude,
+                             stage2=args.stage2, do_compile=not args.no_compile)
     except (CompileError, ValueError) as exc:
         return report_error(exc, source)
     print(static_analyze(tree).summary())
     print(f"  bytes:           {len(encode(tree))}")
     print(f"  stage-2:         {surface2.render(tree)[:60]}")
+    if report is not None:
+        for line in name_warnings(report.warnings, getattr(tree, "symbols", None), source):
+            print(line)
     return EXIT_OK
 
 

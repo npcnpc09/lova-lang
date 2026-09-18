@@ -144,7 +144,7 @@ class TestWhenAnomaly(unittest.TestCase):
         # Running out of stack is a condition a program may reasonably
         # expect, like Python's RecursionError.
         rt = Runtime(max_call_depth=20)
-        self.assertEqual(run("(def f [x] (f x))(try (f 1) -1)", rt), -1)
+        self.assertEqual(run("(def f [x] (merge 1 (f x)))(try (f 1) -1)", rt), -1)
         self.assertEqual(rt.caught[0]["kind"], "recursion-depth-exceeded")
 
     def test_the_step_ceiling_cannot_be_masked(self):
@@ -235,12 +235,17 @@ class UnboundNameHint(unittest.TestCase):
         self.assertEqual(r["anomaly"]["kind"], "unbound-ref")
         return r["anomaly"]
 
-    def test_an_operator_used_as_a_value_is_named_and_wrapped(self):
-        a = self._hint('(map text-int (list "1"))')
-        self.assertIn("`text-int` is an operator, not a function value", a["repair_hint"])
-        self.assertIn("(lambda x0 (text-int x0))", a["repair_hint"])
-        a = self._hint("(fold min 0 (list 1 2))")
-        self.assertIn("(lambda x0 (lambda x1 (min x0 x1)))", a["repair_hint"])
+    def test_an_operator_used_as_a_value_is_the_function_that_wraps_it(self):
+        # M32: what the hint used to spell out, the parser now does.
+        from core.mcp_server import tool_execute
+        self.assertEqual(tool_execute({"source": '(map text-int (list "1" "2"))'})["value"], "(1 2)")
+        self.assertEqual(tool_execute({"source": "(fold min 9 (list 4 7))"})["value"], "4")
+        self.assertEqual(tool_execute({"source": "(sort-by gt (list 1 3 2))"})["value"], "(3 2 1)")
+        # A binding of the same spelling still wins.
+        self.assertEqual(tool_execute({"source": "(let min 5 (merge min 1))"})["value"], "6")
+        # A variadic has no arity to wrap, and keeps the hint.
+        a = self._hint("(map seq (list 1))")
+        self.assertIn("`seq` is an operator", a["repair_hint"])
 
     def test_a_misspelt_name_gets_its_neighbours(self):
         a = self._hint('(map parse-in (list "1"))')

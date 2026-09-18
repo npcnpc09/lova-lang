@@ -89,6 +89,11 @@ FAULTS: Dict[str, Any] = {
         "c": ("the cell key folds a row of four into three, so two cells share a key",
               ("(merge (mul x SIZE) y)", "(merge (mul x 3) y)"),
               ("x * SIZE + y", "x * 3 + y")),
+        # Q122: a convention of the program's own -- the merged flag's
+        # default -- that no clause of the prompt gives a value to.
+        "d": ("the merged-flag lookup defaults to 'already merged', so nothing ever merges",
+              ("(get p ny)) 0)))", "(get p ny)) 1)))"),
+              ('get(p, "ny")), 0):', 'get(p, "ny")), 1):')),
     },
     "ttt": {
         "a": ("among equally good squares the last is chosen instead of the first",
@@ -103,6 +108,10 @@ FAULTS: Dict[str, Any] = {
         "c": ("a power of three in the board's base is off by one, so squares 6-8 misread",
               ("243 729 2187", "243 728 2187"),
               ("243, 729, 2187", "243, 728, 2187")),
+        # Q122: the memo's not-found sentinel, a value the prompt says nothing about.
+        "d": ("the memo lookup's not-found value is not the one the test compares with, so every miss reads as a score",
+              ("(memo-key b p) 5)", "(memo-key b p) 4)"),
+              ("memo_key(b, p), 5)", "memo_key(b, p), 4)")),
     },
 }
 

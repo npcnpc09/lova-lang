@@ -774,6 +774,62 @@ def _split_chain(node: Node) -> Tuple[List[Tuple[int, Node]], Node]:
     return bindings, current
 
 
+# --- Pass: lint (M32, Q106) -------------------------------------------------
+#
+# The one mistake the type constraint cannot catch is a reference that
+# is well-typed and wrong: a parameter swapped for its neighbour, a name
+# shadowed by an inner binder and read where the outer was meant.  The
+# compiler cannot know which was meant, but it can say what such a
+# mistake leaves behind: a parameter nothing reads, a local binding
+# nothing reads, a parameter that hides one already in scope.  These
+# are warnings, not errors -- a program with an unused parameter runs.
+
+def _lint(node: Node) -> List[Dict[str, Any]]:
+    found: List[Dict[str, Any]] = []
+    _lint_walk(node, frozenset(), None, 0, found)
+    return found
+
+
+def _lint_walk(node: Node, locals_: FrozenSet[int], owner: Optional[int], depth: int,
+               found: List[Dict[str, Any]]) -> None:
+    if node.op in (LIT_INT, LIT_TEXT, QUOTE):
+        return
+    if node.op == LET and len(node.args) == 3 and node.args[0].op == LIT_INT:
+        bindings, body = _split_chain(node)
+        used: Set[int] = set()
+        for _, value in bindings:
+            _references(value, used)
+        _references(body, used)
+        names = frozenset(n for n, _ in bindings)
+        inner = locals_ | names if depth > 0 else locals_
+        current = node
+        for name_id, value in bindings:
+            if depth > 0 and name_id not in used:
+                found.append({"kind": "unused-binding", "name_id": name_id,
+                              "owner": owner, "span": _span(current)})
+            # A top-level def owns the warnings inside its value.
+            _lint_walk(value, inner, name_id if depth == 0 else owner, depth, found)
+            current = current.args[2]
+        _lint_walk(body, inner, owner, depth, found)
+        return
+    if node.op == LAMBDA and len(node.args) == 2 and node.args[0].op == LIT_INT:
+        param = int(node.args[0].args[0])
+        body = node.args[1]
+        used = set()
+        _references(body, used)
+        if param not in used:
+            found.append({"kind": "unused-parameter", "name_id": param,
+                          "owner": owner, "span": _span(node)})
+        if param in locals_:
+            found.append({"kind": "shadowed-parameter", "name_id": param,
+                          "owner": owner, "span": _span(node)})
+        _lint_walk(body, locals_ | {param}, owner, depth + 1, found)
+        return
+    for child in node.args:
+        if isinstance(child, Node):
+            _lint_walk(child, locals_, owner, depth, found)
+
+
 def _drop_unused(node: Node) -> Tuple[Node, int]:
     rewritten, dropped = _drop_unused_inner(node)
     return _keep_span(node, rewritten), dropped
@@ -859,6 +915,11 @@ class CompileReport:
     folded_subtrees: int
     passes: Tuple[str, ...] = field(default_factory=tuple)
     dropped_bindings: int = 0
+    # M32 (Q106): what the lint pass noticed -- a parameter or a local
+    # binding nothing reads, a parameter that shadows one in scope.
+    # Each is a dict with `kind`, `name_id`, `owner` (the enclosing
+    # def's name id, or None) and `span`; the CLI spells the names.
+    warnings: Tuple[Dict[str, Any], ...] = field(default_factory=tuple)
 
     def compression_ratio(self) -> float:
         if self.original_nodes == 0:
@@ -951,6 +1012,7 @@ def compile(
     drop_unused: bool = True,
     capability_check: bool = True,
     top_type: Type = VALUE,
+    lint: bool = True,
 ) -> Tuple[Node, CompileReport]:
     """Run the static pipeline on ``node``.
 
@@ -979,6 +1041,13 @@ def compile(
         _capability_check(node, caps=0, path=())
         passes.append("capability-check")
 
+    warnings: List[Dict[str, Any]] = []
+    if lint:
+        # Before drop-unused, which would remove the unread bindings
+        # the pass is there to point at.
+        warnings = _lint(node)
+        passes.append("lint")
+
     compiled = node
     dropped = 0
     if drop_unused:
@@ -1001,6 +1070,7 @@ def compile(
         folded_subtrees=folded_subtrees,
         passes=tuple(passes),
         dropped_bindings=dropped,
+        warnings=tuple(warnings),
     )
     return compiled, report
 

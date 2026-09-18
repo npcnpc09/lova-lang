@@ -359,6 +359,9 @@ class TestResultFollowsOperands(unittest.TestCase):
 
 # --- the CLI ----------------------------------------------------------------
 
+DEEP = "(def down [n] (if (eq n 0) 0 (merge 1 (down (sub n 1)))))(down 5000)"
+
+
 class TestCLI(unittest.TestCase):
 
     def _capture(self, argv, stdin_text=""):
@@ -403,13 +406,16 @@ class TestCLI(unittest.TestCase):
         self.assertIn("empty source", err)
 
     def test_a_trap_reports_its_anomaly_and_exits_non_zero(self):
-        code, _out, err = self._capture(["run", "apps/collatz.lova", "2463", "--max-depth", "200"])
+        # M32: collatz's `steps` is a tail call and runs in constant depth
+        # now, so the trap comes from a recursion that keeps its frames.
+        code, _out, err = self._capture(["run", "-", "--max-depth", "200"],
+                                        stdin_text=DEEP)
         self.assertEqual(code, 2)
         self.assertIn("recursion-depth-exceeded", err)
         self.assertIn("repair:", err)
 
     def test_a_long_position_path_is_truncated(self):
-        _code, _out, err = self._capture(["run", "apps/collatz.lova", "2463", "--max-depth", "200"])
+        _code, _out, err = self._capture(["run", "-", "--max-depth", "200"], stdin_text=DEEP)
         self.assertIn("more ...", err)
 
     def test_emit_stage2(self):

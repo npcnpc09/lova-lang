@@ -35,7 +35,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from core.runtime import Closure, Node, Runtime, StepTrap, evaluate
 from core.tokens import (
     DEVIATION, IF_SURPRISE, LAMBDA, LET, LIT_INT, LIT_TEXT, MERGE, MUL, REF,
-    SIGNATURES, THRESHOLD,
+    SIGNATURES, THRESHOLD, APPLY,
 )
 
 from core.surface import _macro_eq, _macro_ge, _macro_gt, _macro_le, _macro_lt, _macro_ne
@@ -155,9 +155,67 @@ def data_literals(exprs: List[Node], limit: int = 24) -> List[int]:
     return [v for v, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]]
 
 
+# Q119 -- a node added.  The wrappers tried around a node: the unary
+# operators that take a value, the binary ones with a name in scope or a
+# small literal beside, `map-put` with a key in scope and a marker, and
+# the program's own defs of arity one and two.  Bounded, and last.
+_WRAP_UNARY = ("head", "tail", "reverse", "text-len", "text-chars", "text-of-chars",
+               "nil?", "text?", "text-int", "int-text", "text-trim", "threshold")
+_WRAP_BINARY = ("merge", "mul", "div", "mod", "cons", "text-cat")
+_WRAP_LITERALS = (1, -1, 2, 0)
+_OP_BY_NAME = {v["name"]: k for k, v in SIGNATURES.items()}
+
+
+def _wrap_edits(node: Node, src: Optional[str], in_scope: List[int], params: List[int],
+                name_of: Callable[[int], Optional[str]], wrappers: Optional[Dict[str, List[int]]]):
+    """`(op node ...)` for each wrapper form: what a dropped call looks
+    like when it is put back (Exp 29, g2048-a: `(get st m)` for
+    `(map-put (get st m) k 1)`)."""
+    if src is None or node.op in (LAMBDA, LET):
+        return []
+    out = []
+    names = [n for n in dict.fromkeys(params + in_scope) if name_of(n)]
+    fillers: List[Tuple[str, Node]] = [(name_of(n), Node(op=REF, args=[_lit(n)])) for n in names]
+    fillers += [(str(v), _lit(v)) for v in _WRAP_LITERALS]
+    for name in _WRAP_UNARY:
+        op = _OP_BY_NAME.get(name)
+        if op is None:
+            continue
+        out.append(("wrap", f"this should be `({name} ...)` of itself", f"({name} {src})",
+                    Node(op=op, args=[node]), ("wrap", name)))
+    for name in _WRAP_BINARY:
+        op = _OP_BY_NAME.get(name)
+        if op is None:
+            continue
+        for ftext, fnode in fillers:
+            out.append(("wrap", f"this should be `({name} ... {ftext})`", f"({name} {src} {ftext})",
+                        Node(op=op, args=[node, fnode]), ("wrap", name, ftext)))
+    put = _OP_BY_NAME.get("map-put")
+    if put is not None:
+        for ktext, knode in fillers[:len(names)]:
+            for vtext, vnode in fillers:
+                out.append(("wrap", f"this should be `(map-put ... {ktext} {vtext})`",
+                            f"(map-put {src} {ktext} {vtext})",
+                            Node(op=put, args=[node, knode, vnode]), ("wrap", "map-put", ktext, vtext)))
+    for arity, defs in ((1, (wrappers or {}).get("unary", [])), (2, (wrappers or {}).get("binary", []))):
+        for d in defs:
+            dname = name_of(d)
+            if not dname:
+                continue
+            ref = Node(op=REF, args=[_lit(d)])
+            if arity == 1:
+                out.append(("wrap", f"this should be `({dname} ...)` of itself", f"({dname} {src})",
+                            Node(op=APPLY, args=[ref, node]), ("wrap", dname)))
+            else:
+                for ftext, fnode in fillers:
+                    out.append(("wrap", f"this should be `({dname} ... {ftext})`", f"({dname} {src} {ftext})",
+                                Node(op=APPLY, args=[ref, node, fnode]), ("wrap", dname, ftext)))
+    return out
+
+
 def _edits(node: Node, in_scope: List[int], params: List[int],
            name_of: Callable[[int], Optional[str]], text: Callable[[Node], Optional[str]],
-           literals: Optional[List[int]] = None):
+           literals: Optional[List[int]] = None, wrappers: Optional[Dict[str, List[int]]] = None):
     """The single-node edits worth trying at `node`, each as
     (kind, description, replacement-source-or-None, new-node, key)."""
     src = text(node)
@@ -194,6 +252,14 @@ def _edits(node: Node, in_scope: List[int], params: List[int],
             if nv != v:
                 edits.append(("literal", why, str(nv) if src is not None else None, _lit(nv),
                               ("literal", "neg" if nv == -v else nv - v)))
+        # M32: a literal where a name was meant -- `(merge a 1)` for
+        # `(merge a x)` -- which the Exp 28 test suite recorded as the
+        # edit the locator did not try.
+        if src is not None:
+            for other in list(dict.fromkeys(params + in_scope)):
+                if name_of(other):
+                    edits.append(("ref", f"{what} should be `{name_of(other)}`", name_of(other),
+                                  Node(op=REF, args=[_lit(other)]), ("lit>ref", other)))
     if node.op == REF and a and a[0].op == LIT_INT:
         here = int(a[0].args[0])
         for other in list(dict.fromkeys(params + in_scope)):
@@ -258,6 +324,8 @@ def _edits(node: Node, in_scope: List[int], params: List[int],
             rep = "(" + alt_name + src[len(mine) + 1:]
         edits.append(("operator", f"`{mine}` should be `{alt_name}`", rep,
                       Node(op=alt, args=list(a)), ("operator", alt)))
+    if wrappers is not None:
+        edits.extend(_wrap_edits(node, src, in_scope, params, name_of, wrappers))
     return edits
 
 
@@ -490,7 +558,21 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
     if not targets:
         targets.append((None, expr, frame))
     _ORDER = {"swap-operands": 0, "swap-branches": 0, "drop-minus": 0, "drop-not": 0,
-              "compare": 1, "operator": 2, "literal": 3, "ref": 4, "add-minus": 9, "add-not": 9}
+              "compare": 1, "operator": 2, "literal": 3, "ref": 4, "add-minus": 9, "add-not": 9,
+              "wrap": 12}
+    # The program's own defs by arity, for the wrapper class.
+    wrappers: Dict[str, List[int]] = {"unary": [], "binary": []}
+    for c in closures:
+        if c.name is None:
+            continue
+        arity, b = 1, c.body
+        while isinstance(b, Node) and b.op == LAMBDA and len(b.args) == 2:
+            arity += 1
+            b = b.args[1]
+        if arity == 1:
+            wrappers["unary"].append(c.name)
+        elif arity == 2:
+            wrappers["binary"].append(c.name)
 
     def order(edit) -> float:
         kind, key = edit[0], edit[4]
@@ -510,17 +592,21 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
         for path, node, depth, anchor in nodes:
             if anchor is None:
                 continue
-            for edit in _edits(node, scopes.get(id(node), []), params, name_of, text, literals):
+            for edit in _edits(node, scopes.get(id(node), []), params, name_of, text, literals,
+                               wrappers if isinstance(closure, Closure) else None):
                 items.append((order(edit), closure, body, scope_frame, params, path, node, anchor, edit))
         items.sort(key=lambda it: it[0])       # stable: depth order kept within a kind
         plans.append(items)
 
     def rounds():
-        for additions in (False, True):
+        # Three passes over the defs: the exact spellings, then a minus
+        # or a `not` added anywhere, then (Q119) a call wrapped around a
+        # node -- the last because it is the widest.
+        for lo, hi in ((0, 9), (9, 12), (12, 99)):
             for items in plans:
                 for it in items:
-                    if (it[0] >= 9) == additions:
-                        yield it[1:]
+                    if lo <= it[0] < hi:
+                        yield it[1:], it[0]
 
     deferred: List[Any] = []     # probes the step cap cut off: inconclusive, retried larger
 
@@ -623,13 +709,20 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
         }
 
     def out_of_time() -> bool:
-        now = time.perf_counter()
-        if first_full is not None and now - first_full > budget_s / 4:
-            return True
-        return now - started > budget_s
+        return time.perf_counter() - started > budget_s
 
+    # Once an edit fixes every example the search finishes the exact
+    # spellings of that def -- the literal beside a swapped branch
+    # (Exp 29, ttt-d: the branches swapped passes all eight by never
+    # reading the memo; the sentinel `4` -> `5` is the fault) -- and
+    # stops there: the rest of the program's edits are not looked at.
     stopped = False
-    for item in rounds():
+    full_def: Any = None
+    for item, order_rank in rounds():
+        if full:
+            if item[0] is not full_def or order_rank >= 4:
+                stopped = True
+                break
         if out_of_time():
             if best is not None:
                 best["budget"] = not full
@@ -642,9 +735,12 @@ def locate(compiled: Node, source: str, expr: Node, passes: Callable[[Any], bool
         if found is StepTrap:
             deferred.append(item)
             continue
-        if found is not None and consider(found):
-            stopped = True
-            break
+        if found is not None:
+            if consider(found):
+                stopped = True
+                break
+            if full and full_def is None:
+                full_def = item[0]
     # The probes the cap cut off, again with more room: a fix for an
     # example that trapped early may run far longer than the trap did
     # (Exp 29, ttt-b: the trap at 5 000 steps, the fixed run at 790 000).

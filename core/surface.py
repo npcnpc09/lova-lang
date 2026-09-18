@@ -91,8 +91,10 @@ def _tokenize(src: str) -> List[str]:
             while j < len(src) and src[j] != '"':
                 if src[j] == "\\" and j + 1 < len(src):
                     escape = src[j + 1]
+                    # An escape the language does not define keeps its
+                    # backslash (M32): `"\d+"` is the pattern `\d+`, not `d+`.
                     buf.append({"n": "\n", "t": "\t", "r": "\r",
-                                '"': '"', "\\": "\\"}.get(escape, escape))
+                                '"': '"', "\\": "\\"}.get(escape, "\\" + escape))
                     j += 2
                     continue
                 buf.append(src[j])
@@ -258,6 +260,10 @@ class SymbolTable:
         self.base = base
         self._ids: Dict[str, int] = {}
         self.examples: List[Dict[str, Any]] = []     # (example ...) forms met (M26)
+        # M32: every spelling the source binds -- a def, a parameter, a
+        # let, a lambda -- so that a bare operator name is read as the
+        # operator only where no binding of that name could reach it.
+        self.binders: frozenset = frozenset()
 
     def intern(self, name: str) -> int:
         if name not in self._ids:
@@ -309,6 +315,35 @@ def _explicit_name_ids(tokens: List[str]) -> List[int]:
     return found
 
 
+def _bound_spellings(tokens: List[str]) -> frozenset:
+    """Every identifier the source binds: the name after a binder head
+    (`def`, `defn`, `let`, `lambda`), and every name inside a `[...]`
+    parameter list.  Over-approximate on purpose -- a name bound in one
+    def is counted as bound everywhere -- because the cost of the
+    mistake is asymmetric: reading a bound `text` as the operator would
+    change a running program, reading an unbound `lt` as a reference
+    only keeps the unbound-ref error it has today.
+    """
+    found = set()
+    in_params = False
+    for i, tok in enumerate(tokens):
+        if tok == "[":
+            in_params = True
+            continue
+        if tok == "]":
+            in_params = False
+            continue
+        if in_params:
+            if _is_identifier(tok):
+                found.add(tok)
+            continue
+        if tok == "(" and i + 2 < len(tokens):
+            head = SURFACE_ALIASES.get(tokens[i + 1], tokens[i + 1])
+            if head in _BINDER_HEADS and _is_identifier(tokens[i + 2]):
+                found.add(tokens[i + 2])
+    return frozenset(found)
+
+
 def _is_identifier(tok: str) -> bool:
     if tok in ("(", ")", "[", "]"):
         return False
@@ -338,6 +373,7 @@ def parse(src: str) -> Node:
         raise ValueError("empty source")
     explicit = _explicit_name_ids(tokens)
     syms = SymbolTable(base=max(explicit) + 1 if explicit else 0)
+    syms.binders = _bound_spellings(tokens)
     try:
         definitions, body = _parse_program(tokens, syms)
     except ParseError as exc:
@@ -680,6 +716,9 @@ def _field_name(node: Node, syms: "SymbolTable", macro: str) -> Node:
         name = syms.name_of(int(node.args[0].args[0]))
         if name is not None:
             return text_literal(name)
+    spelled = getattr(node, "operator_name", None)
+    if spelled is not None:
+        return text_literal(spelled)      # a field named `min` (M32): the name, not the operator
     if node.op in (CONS, NIL, LIT_TEXT):
         return node                       # already text
     raise ValueError(f"{macro}: a field is a bare name or a string, not {node!r}")
@@ -924,14 +963,57 @@ def _parse_expr_inner(
         )
     if t.startswith('"'):
         return _spanned(text_literal(t[1:-1]), tokens, pos, pos + 1), pos + 1
-    # bare atom: an integer literal, or a reference to a bound name.
+    # bare atom: an integer literal, or a reference to a bound name --
+    # or (M32) an operator or a fixed-arity macro named as a value,
+    # `(sort-by lt xs)`, `(fold merge 0 xs)`, which is the lambda that
+    # wraps it, provided nothing in the source binds that spelling.
     try:
         n = int(t, 0)  # accepts decimal, 0x hex, 0b bin
     except ValueError:
         if _is_identifier(t):
+            if t not in syms.binders:
+                wrapped = _operator_as_value(t, syms)
+                if wrapped is not None:
+                    wrapped.operator_name = t
+                    return _spanned(wrapped, tokens, pos, pos + 1), pos + 1
             return _spanned(Node(op=REF, args=[Lit(syms.intern(t))]), tokens, pos, pos + 1), pos + 1
         raise ValueError(f"bare atom must be an integer literal: {t!r}")
     return _spanned(Lit(n), tokens, pos, pos + 1), pos + 1
+
+
+# Operators a bare name does not stand for: binders, the forms whose
+# first slot is a name or a capability mask, the variadics, and the
+# forms that take programs rather than values.
+_NOT_A_VALUE = frozenset({
+    "let", "lambda", "ref", "apply", "seq", "if-surprise", "loop-until",
+    "quote", "eval", "external-boundary", "conserve", "budget", "trace",
+    "trace-surprise", "lit",
+    "defpop", "when-anomaly", "read", "explain", "partition", "end",
+})
+
+
+def _operator_as_value(name: str, syms: "SymbolTable") -> Optional[Node]:
+    """`(lambda a (lambda b (op a b)))` for an operator or macro spelled
+    bare, or None when the spelling is not one or has no fixed arity."""
+    name = SURFACE_ALIASES.get(name, name)
+    if name in MACROS:
+        arity, expand = MACROS[name]
+        if arity is None or arity < 1:
+            return None
+        params = [syms.gensym() for _ in range(arity)]
+        body = expand([Node(op=REF, args=[Lit(p)]) for p in params], syms)
+    elif name in NAME_TO_TOKEN and name not in _NOT_A_VALUE:
+        sig = SIGNATURES[NAME_TO_TOKEN[name]]
+        arity = sig["arity"]
+        if arity == "variadic" or not isinstance(arity, int) or arity < 1:
+            return None
+        params = [syms.gensym() for _ in range(arity)]
+        body = Node(op=NAME_TO_TOKEN[name], args=[Node(op=REF, args=[Lit(p)]) for p in params])
+    else:
+        return None
+    for p in reversed(params):
+        body = Node(op=LAMBDA, args=[Lit(p), body])
+    return body
 
 
 def _parse_args(
@@ -1050,6 +1132,7 @@ def parse_with_prelude(src: str) -> Node:
     definitions, snapshot = _prelude_parsed(prelude, prelude_tokens, base)
     syms = SymbolTable(base=base)
     syms._ids = dict(snapshot)
+    syms.binders = _bound_spellings(body_tokens) | prelude_names()
     try:
         own, body = _parse_program(body_tokens, syms)
     except ParseError as exc:
@@ -1074,6 +1157,7 @@ def _prelude_parsed(prelude: str, tokens: List[str], base: int):
     entry = _PRELUDE_PARSED.get(key)
     if entry is None:
         syms = SymbolTable(base=base)
+        syms.binders = _bound_spellings(tokens)
         definitions, body = _parse_program(tokens, syms)
         if body is not None:
             raise ValueError("the prelude must be definitions only")

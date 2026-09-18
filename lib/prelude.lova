@@ -55,6 +55,9 @@
 
 (def append [xs ys] (text-cat xs ys))
 
+;; Every `old` in `t` replaced by `new` (M32).
+(def replace [t old new] (text-join (text-split t old) new))
+
 ;; Native since Exp 20 (`text-slice` keeps a list's shape): about six
 ;; steps, where the walk cost ~25 an element and was half of a
 ;; game-tree search's budget.
