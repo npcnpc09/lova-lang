@@ -115,9 +115,9 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
             results.append(result)
             continue
         wants[index] = want
+        rt = Runtime(**kwargs)
         try:
             compiled, _ = build(with_body(expr_text), prelude=prelude)
-            rt = Runtime(**kwargs)
             got = evaluate(compiled, rt)
         except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError) as exc:
             anomaly = getattr(exc, "anomaly", None) or {"kind": "error", "message": str(exc)}
@@ -135,6 +135,18 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
                               anomaly={"kind": "conservation-violated",
                                        "detail": {"entry": _shown(want), "exit": _shown(got)},
                                        "span": [a, b]})
+        # Which of the program's own defs this example ran through: the
+        # coverage a located edit is scored against (Exp 28: "fixes all 3
+        # examples" said nothing about how many of them reached the def).
+        symbols = getattr(compiled, "symbols", None) if "compiled" in dir() else None
+        reached = set()
+        for c in getattr(rt, "named", []):
+            s = getattr(c.body, "span", None)
+            if c.calls > 0 and s is not None and s[0] is not None and s[1] is not None and s[1] <= len(source):
+                name = symbols.name_of(c.name) if symbols is not None and c.name is not None else None
+                if name:
+                    reached.add(name)
+        result["reaches"] = sorted(reached)
         results.append(result)
 
     failed = [r for r in results if not r["passed"] and "got" in r]
@@ -198,6 +210,9 @@ def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwarg
             a = found["span"][0]
             found["line"], found["col"] = line_col(source, a)
             found["excerpt"] = source[found["span"][0]:found["span"][1]]
+            if found.get("def"):
+                found["reached_by"] = sum(1 for x in results if found["def"] in x.get("reaches", []))
+                found["examples"] = len(results)
             r["fault"] = found
             if isinstance(r.get("anomaly"), dict):
                 rep = f" -> {found['replacement']}" if found.get("replacement") else ""
@@ -239,6 +254,8 @@ def summary(results: List[Dict[str, Any]]) -> str:
                          f"  [fixes this and {n} of {m} other examples; the fault may be elsewhere]")
                 if fault.get("budget"):
                     score += "  (search cut short by the time budget)"
+                if fault.get("def") and "reached_by" in fault:
+                    score += f"  [def {fault['def']} is reached by {fault['reached_by']} of {fault['examples']} examples]"
                 rep = f"  -> {fault['replacement']}" if fault.get("replacement") else ""
                 a0, b0 = fault["span"]
                 lines.append(f"        fault: {fault['line']}:{fault['col']} [{a0}, {b0})  {fault['excerpt']}  "

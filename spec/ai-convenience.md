@@ -151,7 +151,8 @@ Consequences, each a change the numbers above would reward:
 - **Fewer names, and named fields instead of positions.** A record
   with named access *(M24, done: `rec` / `get` / `put`)*; pipeline
   composition in the library so that intermediate values need no name;
-  a scope the runtime can list on request.
+  a scope the runtime can list on request *(M29, done: `lova_scope`,
+  `lova_show`, `lova_callers`, and a patch addressed by def and text)*.
 - **A program carries its examples.** *(M26, done: `(example expr
   expected)` forms beside the defs, run as conservation contracts by
   `lova check` / `lova_check`, a miss reported with expected, got,

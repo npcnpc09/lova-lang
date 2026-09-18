@@ -121,7 +121,9 @@ TOOLS: List[Dict[str, Any]] = [
             "Replace one span of a LOVA source and report whether the result "
             "compiles. An anomaly from lova_execute carries `span` as [start, "
             "end] character offsets and `excerpt`, the text there: patch that "
-            "span with the fix and run again. Returns the patched source."
+            "span with the fix and run again. Or name a `def` and the `find` "
+            "text to replace inside it, which must occur once in that def "
+            "(it may occur elsewhere). Returns the patched source."
         ),
         "inputSchema": {
             "type": "object",
@@ -129,9 +131,46 @@ TOOLS: List[Dict[str, Any]] = [
                 **_SOURCE_PROPS,
                 "span": {"type": "array", "items": {"type": "integer"},
                          "description": "[start, end] offsets into `source`, as an anomaly reports them"},
+                "def": {"type": "string", "description": "the def to patch inside, with `find`"},
+                "find": {"type": "string", "description": "the text to replace, occurring once in `def`"},
                 "replacement": {"type": "string", "description": "the text to put there"},
             },
-            "required": ["source", "span", "replacement"],
+            "required": ["source", "replacement"],
+        },
+    },
+    {
+        "name": "lova_show",
+        "description": (
+            "The program's own defs -- name, span, parameters, size -- or, with "
+            "`def`, one def's text and span. Read the def you need, not the file."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {**_SOURCE_PROPS,
+                           "def": {"type": "string", "description": "a def's name; omit for the list"}},
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "lova_scope",
+        "description": (
+            "What is bound at a character offset: the program's defs, and the "
+            "parameters and lets of every enclosing form, innermost last, with "
+            "the smallest form containing the offset."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {**_SOURCE_PROPS, "offset": {"type": "integer"}},
+            "required": ["source", "offset"],
+        },
+    },
+    {
+        "name": "lova_callers",
+        "description": "The defs whose bodies mention a name, and the defs that name's body mentions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {**_SOURCE_PROPS, "name": {"type": "string"}},
+            "required": ["source", "name"],
         },
     },
     {
@@ -330,6 +369,15 @@ def tool_patch(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     source = str(params["source"])
     span = params.get("span")
+    if span is None and params.get("def") is not None and params.get("find") is not None:
+        # Exp 28: a correct fault line still cost a whole read when its
+        # excerpt occurred four times in the program and once in the def.
+        from core.query import find_in_def
+        found = find_in_def(_source(params), str(params["def"]), str(params["find"]))
+        if not found["ok"]:
+            return {"ok": False, "stage": "patch", "anomaly": {"kind": "error", "message": found["message"]}}
+        span = found["span"]
+        source = _source(params)
     if span is None:
         span = [params.get("start"), params.get("end")]
     try:
@@ -479,7 +527,45 @@ def tool_emit(params: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "form": form, "text": text, "byte_count": len(data)}
 
 
+def tool_show(params: Dict[str, Any]) -> Dict[str, Any]:
+    from core.query import def_text, defs
+    source = _source(params)
+    try:
+        if params.get("def"):
+            d = def_text(source, str(params["def"]))
+            if d is None:
+                return {"ok": False, "anomaly": {"kind": "error",
+                        "message": f"no def named {params['def']!r}; the defs are "
+                                   + ", ".join(x["name"] for x in defs(source))}}
+            return {"ok": True, **d}
+        return {"ok": True, "defs": defs(source)}
+    except (ValueError, SystemExit) as exc:
+        return _failure("parse", exc, source)
+
+
+def tool_scope(params: Dict[str, Any]) -> Dict[str, Any]:
+    from core.query import scope_at
+    source = _source(params)
+    try:
+        return {"ok": True, **scope_at(source, int(params["offset"]))}
+    except (ValueError, SystemExit) as exc:
+        return _failure("parse", exc, source)
+
+
+def tool_callers(params: Dict[str, Any]) -> Dict[str, Any]:
+    from core.query import callees, callers
+    source = _source(params)
+    try:
+        name = str(params["name"])
+        return {"ok": True, "name": name, "callers": callers(source, name), "callees": callees(source, name)}
+    except (ValueError, SystemExit) as exc:
+        return _failure("parse", exc, source)
+
+
 HANDLERS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
+    "lova_show": tool_show,
+    "lova_scope": tool_scope,
+    "lova_callers": tool_callers,
     "lova_patch": tool_patch,
     "lova_check": tool_check,
     "lova_execute": tool_execute,

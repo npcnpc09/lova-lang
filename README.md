@@ -486,9 +486,14 @@ something and kept as a test. What they demonstrate:
   of 10 000 lines runs in 5.5 s on CPython where it took 28 (M25).
 - **A fault says where, and a fix is a patch.** Every anomaly carries
   the source span of the expression at fault and its text; the MCP
-  server's `lova_patch` replaces that span and checks the result. The
-  loop an agent runs is execute, patch, execute, and a fix costs the
-  size of the fix.
+  server's `lova_patch` replaces that span -- or a text inside a named
+  def -- and checks the result. A failed `example` names the single
+  edit that makes it pass, with the replacement. The loop an agent runs
+  is execute, patch, execute, and a fix costs the size of the fix.
+- **A program answers questions instead of being read.** `lova_show`
+  gives one def by name with its span and parameters, `lova_scope` what
+  is bound at a point, `lova_callers` who calls whom -- so an agent
+  reads the def it asked about, not the file.
 - **What the programs found was fixed the same day.** Writing them
   surfaced four edges -- in input, in self-reference, in program ids,
   in arguments -- and each became a compile-time check, a prelude

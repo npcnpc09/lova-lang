@@ -415,7 +415,13 @@ def cmd_patch(args) -> int:
     submitting.
     """
     base = _current(args.lang, args.task)
-    if args.find is not None:
+    if args.find is not None and getattr(args, "def_name", None):
+        from core.query import find_in_def
+        found = find_in_def(base, args.def_name, args.find)
+        if not found["ok"]:
+            print(found["message"]); return 2
+        start, end = found["span"]
+    elif args.find is not None:
         n = base.count(args.find)
         if n != 1:
             print(f"--find text occurs {n} times in the current program; it must occur exactly once")
@@ -441,7 +447,29 @@ def cmd_patch(args) -> int:
 
 
 def cmd_show(args) -> int:
-    print(_current(args.lang, args.task))
+    """The current program; with --def, one def of it and its span, and
+    the read logged as that def's size (Exp 28: the sessions read the
+    whole program to find one def)."""
+    program = _current(args.lang, args.task)
+    if getattr(args, "def_name", None):
+        if args.lang != "lova":
+            print("--def is for LOVA programs"); return 2
+        from core.query import def_text, defs
+        d = def_text(program, args.def_name)
+        if d is None:
+            print(f"no def named {args.def_name!r}; the defs are " + ", ".join(x["name"] for x in defs(program)))
+            return 2
+        loop._append(args.lang, {"task": args.task, "how": "given", "read_chars": len(d["text"]),
+                                 "def": args.def_name, "time": time.time()})
+        print(f"{d['name']}  [{d['span'][0]}, {d['span'][1]})  {d['line']}:{d['col']}  ({' '.join(d['params'])})")
+        print(d["text"])
+        return 0
+    if getattr(args, "defs", False):
+        from core.query import defs
+        for x in defs(program):
+            print(f"  {x['name']:20s} [{x['span'][0]:5d}, {x['span'][1]:5d})  {x['line']:3d}:{x['col']:<3d} {x['chars']:5d} chars  ({' '.join(x['params'])})")
+        return 0
+    print(program)
     return 0
 
 
@@ -507,6 +535,9 @@ def main(argv=None) -> int:
         p = sub.add_parser(name); p.add_argument("--session", required=True)
         p.add_argument("--lang", required=True, choices=["lova", "python"])
         p.add_argument("--task", required=True, choices=list(BY_ID)); p.set_defaults(func=func)
+        if name == "show":
+            p.add_argument("--def", dest="def_name", help="one def, by name; logged as read")
+            p.add_argument("--defs", action="store_true", help="list the defs with spans and sizes")
     for name, func in (("submit", loop.cmd_submit), ("check", loop.cmd_check)):
         p = sub.add_parser(name); p.add_argument("--session", required=True)
         p.add_argument("--lang", required=True, choices=["lova", "python"])
@@ -516,6 +547,7 @@ def main(argv=None) -> int:
     p.add_argument("--lang", required=True, choices=["lova", "python"])
     p.add_argument("--task", required=True, choices=list(BY_ID))
     p.add_argument("--span", nargs=2, type=int); p.add_argument("--find", help="the text to replace; must occur once")
+    p.add_argument("--def", dest="def_name", help="with --find: the def the text occurs once in")
     p.add_argument("--replacement", required=True)
     p.add_argument("--out", help="also write the patched source to this file")
     p.add_argument("--dry-run", action="store_true", help="print the result; do not submit")

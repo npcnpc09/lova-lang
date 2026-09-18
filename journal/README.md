@@ -666,6 +666,39 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 29 (2026-09-18) -- Questions about a program
+
+The owner asked what an AI's own commonest problems are and how the
+language should meet them. The answer given, from the day's own
+record: guessed names and signatures; well-typed wrong values; exact
+text editing (anchors that do not match, offsets off by one, a text
+that occurs four times); the tables kept in the model's head -- which
+def is which, what it takes, what is bound here, who calls it; the
+verification illusion; cost blindness. The first change is the one
+Exp 28's three sessions asked for in the same words: the machine holds
+the tables, so a model reads the def it asked about, not the file.
+
+`core/query.py`: `defs` (name, span, parameters, size), `def_text`,
+`scope_at` (the defs, and the parameters and lets of every enclosing
+form at an offset, innermost last, with the smallest form containing
+it), `callers` / `callees`, and `find_in_def` (the span of a text that
+occurs once in a def, wherever else it occurs). All on the parsed tree,
+before `drop-unused`. In the CLI: `lova show file [--def name]`, `lova
+scope file offset`, `lova callers file name`, placeholders filled with
+same-length stand-ins so the spans are the file's own. In the MCP
+server: `lova_show`, `lova_scope`, `lova_callers`, and `lova_patch`
+addressed by `def` and `find` instead of a span -- h01's correct fault
+line, whose excerpt occurred four times in the program and once in
+`factor`, is a zero-read patch now. The repair harness has `show
+--defs`, `show --def name` (logged as that def's size) and `patch --def
+name --find text`. Q89 is answered the other way round: the scope is
+not in the anomaly, it is a question.
+
+And the fault line says how many examples reach the def it names:
+`[def punct? is reached by 3 of 3 examples]`, from the per-example
+run's call counters, so "fixes all 3 examples" is read beside how many
+of them the edit could have affected (Exp 28 F3). Tests 957 -> 964.
+
 ### Milestone 28 (2026-09-18) -- The located fault
 
 The audit's first change to the language rather than to its messages.
@@ -2157,9 +2190,11 @@ the corpus grows again.
   attempts than the same program without them?
 - **Q97**: density as a repair cost -- 2.2× read per touch at Stage 1;
   what does the Stage-2 surface do to it?
-- **Q89**: is the list of names in scope worth its place in an
-  unbound-name anomaly, when the card lists them and the hint carries
-  the nearest? It is most of the 823 chars such a fault costs to read.
+- ~~**Q89**~~ *(answered 2026-09-18, M29)*: no, and the other way
+  round -- the audit cut the anomaly's list to the program's own names
+  (660 -> 267 chars), and the scope is a question now: `lova scope
+  file offset` / `lova_scope`, with `lova show` and `lova callers`
+  beside it.
 - ~~**Q81**~~: *closed 2026-09-10.* `name=value` on the command line
   fills the placeholder it names, the rest fill positionally, and a
   missing one is named in the error. The question as raised: a

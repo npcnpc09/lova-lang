@@ -483,6 +483,67 @@ def cmd_check(args: argparse.Namespace) -> int:
     return EXIT_OK if all(r["passed"] for r in results) else EXIT_TRAP
 
 
+def _query_source(args: argparse.Namespace) -> str:
+    """The source for a question about the program: placeholders filled
+    from the arguments if given, else with same-length stand-ins, so the
+    spans reported are the file's own."""
+    import re
+    source = read_source(args.file)
+    if args.args:
+        return substitute(source, args.args)
+    return re.sub(r"\{([A-Za-z_][A-Za-z0-9_-]*)\}", lambda m: '"' + "X" * len(m.group(1)) + '"', source)
+
+
+def cmd_show(args: argparse.Namespace) -> int:
+    """The program's defs, or one def by name (2026-09-18)."""
+    from core.query import def_text, defs
+    source = _query_source(args)
+    try:
+        if getattr(args, "def_name", None):
+            d = def_text(source, args.def_name)
+            if d is None:
+                print(f"no def named {args.def_name!r}; the defs are " +
+                      ", ".join(x["name"] for x in defs(source)), file=sys.stderr)
+                return EXIT_ERROR
+            print(f"{d['name']}  [{d['span'][0]}, {d['span'][1]})  {d['line']}:{d['col']}  "
+                  f"({' '.join(d['params'])})")
+            print(d["text"])
+            return EXIT_OK
+        for d in defs(source):
+            print(f"  {d['name']:20s} [{d['span'][0]:5d}, {d['span'][1]:5d})  {d['line']:3d}:{d['col']:<3d} "
+                  f"{d['chars']:5d} chars  ({' '.join(d['params'])})")
+    except ValueError as exc:
+        return report_error(exc, source)
+    return EXIT_OK
+
+
+def cmd_scope(args: argparse.Namespace) -> int:
+    """What is bound at an offset (2026-09-18)."""
+    from core.query import scope_at
+    source = _query_source(args)
+    try:
+        s = scope_at(source, args.offset)
+    except ValueError as exc:
+        return report_error(exc, source)
+    if s["at"]:
+        print(f"  at [{s['at']['span'][0]}, {s['at']['span'][1]}):  {s['at']['excerpt'][:80]}")
+    print("  defs:   " + " ".join(s["defs"]))
+    print("  local:  " + (" ".join(f"{b['name']} ({b['by']})" for b in s["local"]) or "(none)"))
+    return EXIT_OK
+
+
+def cmd_callers(args: argparse.Namespace) -> int:
+    """Who mentions a def, and whom it mentions (2026-09-18)."""
+    from core.query import callees, callers
+    source = _query_source(args)
+    try:
+        print(f"  callers of {args.name}: " + (" ".join(callers(source, args.name)) or "(none)"))
+        print(f"  {args.name} calls:     " + (" ".join(callees(source, args.name)) or "(none)"))
+    except ValueError as exc:
+        return report_error(exc, source)
+    return EXIT_OK
+
+
 def cmd_analyze(args: argparse.Namespace) -> int:
     source = substitute(read_source(args.file), args.args)
     try:
@@ -576,6 +637,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lova", description="Run and inspect LOVA programs.")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    p = subparsers.add_parser("show", help="the program's defs, or one by name")
+    p.add_argument("file"); p.add_argument("args", nargs="*")
+    p.add_argument("--def", dest="def_name", help="print this def's text and span")
+    p.set_defaults(func=cmd_show)
+    p = subparsers.add_parser("scope", help="what is bound at a character offset")
+    p.add_argument("file"); p.add_argument("offset", type=int); p.set_defaults(args=[], func=cmd_scope)
+    p = subparsers.add_parser("callers", help="who mentions a def, and whom it mentions")
+    p.add_argument("file"); p.add_argument("name"); p.set_defaults(args=[], func=cmd_callers)
 
     def common(sub, with_file=True):
         if with_file:
