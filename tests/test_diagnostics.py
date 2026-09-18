@@ -97,7 +97,18 @@ class Parens(unittest.TestCase):
 
 class Examples(unittest.TestCase):
 
-    def test_an_example_that_states_a_list_says_so(self):
+    def test_an_example_may_state_a_list_a_text_or_a_record(self):
+        from core.examples import check
+        results = check("(def rev [xs] (reverse xs))" + NL +
+                        "(example (rev (list 0 1 2 3)) (list 3 2 1 0))" + NL +
+                        '(example (text-cat "a" "bc") "abc")' + NL +
+                        "(example (put (rec a 0) a 1) (rec a 1))" + NL +
+                        "(example (rev (list 1 2)) (list 1 2))" + NL +
+                        "(rev (list 1))")
+        self.assertEqual([r["passed"] for r in results], [True, True, True, False])
+        self.assertEqual((results[3]["expected"], results[3]["got"]), ("(1 2)", "(2 1)"))
+
+    def _old_refusal(self):
         for stated in ("(list 3 2 1 0)", '"abc"', "(rec a 1)"):
             with self.assertRaises(ValueError) as caught:
                 parse("(def f [] 1)" + NL + f"(example (f) {stated})" + NL + "(f)" + NL)

@@ -143,7 +143,13 @@ Consequences, each a change the numbers above would reward:
 - **A program carries its examples.** *(M26, done: `(example expr
   expected)` forms beside the defs, run as conservation contracts by
   `lova check` / `lova_check`, a miss reported with expected, got,
-  span and offender.)* Recording them in the lineage is still to do.
+  span and offender.)* *(M28, 2026-09-18: an example may state any
+  value, and a miss is located -- the single-node edit inside the def
+  the example ran through, or in its own expression, that makes it
+  pass, with the replacement text for `lova_patch`; on Exp 21's eight
+  planted faults it names five exactly or with a fix that passes every
+  test, one partially, two not at all -- the two that were never one
+  edit.)* Recording them in the lineage is still to do.
 - **The language ships its own card, generated.** *(M26, done:
   `python -m corpus.make_card` renders `corpus/language_card.md` from
   a narrative template plus the prelude's own sections and signatures

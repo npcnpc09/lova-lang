@@ -22,7 +22,13 @@ A program is zero or more `def` forms followed by exactly one expression.
 Inputs are written as `{name}` placeholders and are filled with integers
 or texts before the program runs, e.g. `(fact {n})`, `(words {s})`. `(example expr expected)`
 forms may stand beside the defs: they are not part of the program, they
-are what it says about itself, and `lova check` runs them.
+are what it says about itself, and `lova check` runs them; what they
+state may be a number, a text, a list or a record. A miss reports
+expected and got, and then `fault: line:col excerpt -- edit -> replacement`:
+the one single-node edit, in a def the example ran through or in the
+example's own expression, that makes it pass, scored against the other
+examples ("fixes every example" is a repair; "the fault may be
+elsewhere" is a lead). Patch the span it names.
 
 ## Arithmetic (integers only)
 
@@ -120,6 +126,51 @@ network operators exist under `(boundary "kind" ...)`; a `def` that uses
 one must be written inside the boundary: `(boundary "clock" (def now []
 (clock)) body)`.
 
+## What each operator gives (computed by the runtime when this card is made)
+
+```
+;; integers
+(div 7 2)                                            ; 3
+(div -7 2)                                           ; -4
+(mod -7 3)                                           ; 2
+(sub 3 5)                                            ; -2
+(if 0 1 2)                                           ; 2
+(or 0 5)                                             ; 5
+;; lists (0-based; `range` stops before b)
+(range 1 5)                                          ; (1 2 3 4)
+(nth (list 5 6 7) 1)                                 ; 6
+(take 2 (list 5 6 7))                                ; (5 6)
+(drop 2 (list 5 6 7))                                ; (7)
+(fold (lambda a (lambda x (sub a x))) 10 (list 1 2)) ; 7
+(sort-by (lambda a (lambda b (gt a b))) (list 3 1 2)) ; (3 2 1)
+(zip (list 1 2 3) (list 4 5))                        ; ((1 4) (2 5))
+(digits 1048576)                                     ; (1 0 4 8 5 7 6)
+(head "abc")                                         ; 97
+(text-slice (list 1 2 3 4) 1 3)                      ; (2 3)
+;; texts (half-open slices, clamped; -1 for not found)
+(text-slice "hello" 1 3)                             ; "el"
+(text-slice "hello" 3 99)                            ; "lo"
+(text-find "hello" "ll")                             ; 2
+(text-find "hello" "z")                              ; -1
+(text-split "a,b,,c" ",")                            ; ("a" "b" "" "c")
+(text-split " a  b " "")                             ; ("a" "b")
+(text-join (list "a" "b") ", ")                      ; "a, b"
+(text-trim "  a ")                                   ; "a"
+(text-chars "ab")                                    ; (97 98)  "ab"
+(text-of-chars (list 104 105))                       ; "hi"
+(text-int "-7")                                      ; -7
+(int-text 42)                                        ; "42"
+(text-cmp "a" "b")                                   ; -1
+(words "a b  c")                                     ; ("a" "b" "c")
+(lines "a\nb")                                       ; ("a" "b")
+;; maps and records
+(map-get (map-put (nil) "k" 1) "k" 0)                ; 1
+(map-get (map-of (nil)) "k" 0)                       ; 0
+(map-pairs (map-put (map-put (nil) "a" 1) "b" 2))    ; (("a" 1) ("b" 2))
+(get (rec x 1 y 2) y)                                ; 2
+(get (put (rec x 1) x 9) x)                          ; 9
+```
+
 ## Examples
 
 ```
@@ -132,6 +183,7 @@ one must be written inside the boundary: `(boundary "clock" (def now []
 (let x (tau {n}) (mul x x))
 ```
 
-Rules of thumb: recursion is fine (depth 10 000); a loop is recursion with
-an accumulator parameter; there is no `return`, `while` or assignment;
-every `(` has its `)`.
+Rules of thumb: recursion is fine up to 10 000 frames, and LOVA does not
+turn a tail call into a loop, so a loop over more elements than that is
+`fold` / `map` / `range` or `loop-until`, not recursion; there is no
+`return`, `while` or assignment; every `(` has its `)`.

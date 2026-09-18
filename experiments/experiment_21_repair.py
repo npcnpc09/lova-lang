@@ -6,6 +6,7 @@
     python experiments/experiment_21_repair.py patch  --session r1 --lang lova --task h01 --span 12 30 --replacement "..."
     python experiments/experiment_21_repair.py submit --session r1 --lang lova --task h01 --file h01.lova
     python experiments/experiment_21_repair.py check  --session r1 --lang lova --task h01 --file h01.lova
+    python experiments/experiment_21_repair.py fault  --session e1 --lang lova --task h01      (Exp 28: the examples arm)
     python experiments/experiment_21_repair.py report [--lang lova] [--session r1]
     python experiments/experiment_21_repair.py dry-run
 
@@ -306,12 +307,54 @@ GIVEN = {tid: {"lova": _plant(REFERENCE_LOVA[tid], FAULTS[tid][1]),
          for tid in BY_ID}
 
 
+# --- Exp 28 (Q96): the program carrying its examples ------------------------
+
+def _lit(v) -> str:
+    if isinstance(v, str):
+        return '"' + v.replace(chr(92), chr(92) * 2).replace('"', chr(92) + '"') \
+                      .replace(chr(10), chr(92) + "n").replace(chr(9), chr(92) + "t") + '"'
+    return str(v)
+
+
+def with_examples(program: str, task) -> str:
+    """The LOVA program with every test of the task written beside its
+    defs as `(example <body with the inputs filled> <expected>)`.  The
+    placeholders are replaced by same-length stand-ins to find the
+    body's span, so the examples are copies of the body itself."""
+    from core.surface import parse_with_prelude
+    src = program
+    for k, v in task.tests[0]["inputs"].items():
+        stand = ('"' + "X" * len(k) + '"') if isinstance(v, str) else ("0" * (len(k) + 2))
+        src = src.replace("{" + k + "}", stand)
+    body_span = parse_with_prelude(src).body_span
+    body = program[body_span[0]:body_span[1]]
+    forms = []
+    for t in task.tests:
+        expr = body
+        for k, v in t["inputs"].items():
+            expr = expr.replace("{" + k + "}", _lit(v))
+        forms.append(f"(example {expr} {_lit(t['expected'])})")
+    return program[:body_span[0]] + chr(10).join(forms) + chr(10) + program[body_span[0]:]
+
+
+GIVEN_EXAMPLES = {tid: with_examples(GIVEN[tid]["lova"], BY_ID[tid]) for tid in BY_ID}
+EXAMPLES_ARM = False        # set by _bind from the session name: e1, e2, ...
+
+
+def _given(task_id: str, lang: str) -> str:
+    if lang == "lova" and EXAMPLES_ARM:
+        return GIVEN_EXAMPLES[task_id]
+    return GIVEN[task_id][lang]
+
+
 # --- commands ----------------------------------------------------------------------
 
 def _bind(session: str) -> None:
+    global EXAMPLES_ARM
     loop.TASKS = TASKS
     loop.BY_ID = BY_ID
     loop.RESULTS = RESULTS / session
+    EXAMPLES_ARM = session.startswith("e")
 
 
 def cmd_tasks(args) -> int:
@@ -322,7 +365,7 @@ def cmd_tasks(args) -> int:
 
 
 def cmd_given(args) -> int:
-    program = GIVEN[args.task][args.lang]
+    program = _given(args.task, args.lang)
     loop._append(args.lang, {"task": args.task, "how": "given", "read_chars": len(program),
                              "time": time.time()})
     print(program, end="" if program.endswith("\n") else "\n")
@@ -331,7 +374,29 @@ def cmd_given(args) -> int:
 
 def _current(lang: str, task_id: str) -> str:
     last = loop._last_submission(lang, task_id)
-    return last if last is not None else GIVEN[task_id][lang]
+    return last if last is not None else _given(task_id, lang)
+
+
+def cmd_fault(args) -> int:
+    """Exp 28: `lova check` on the current program -- its examples, and
+    for a miss the located fault -- printed as the report, its size
+    logged as context read.  The examples arm only."""
+    if args.lang != "lova" or not EXAMPLES_ARM:
+        print("fault: only for a LOVA session in the examples arm (session name e1, e2, ...)")
+        return 2
+    from core.examples import check, summary
+    program = _current(args.lang, args.task)
+    try:
+        results = check(program, locate_budget_s=10.0)
+        report = summary(results)
+    except Exception as exc:          # noqa: BLE001 -- a program that does not compile
+        a = getattr(exc, "anomaly", None)
+        report = "does not compile: " + (json.dumps({k: a[k] for k in ("kind", "repair_hint") if k in a})
+                                         if isinstance(a, dict) else str(exc))
+    loop._append(args.lang, {"task": args.task, "how": "fault", "read_chars": len(report),
+                             "time": time.time()})
+    print(report)
+    return 0
 
 
 def cmd_patch(args) -> int:
@@ -383,7 +448,7 @@ def _sessions() -> List[str]:
 def cmd_report(args) -> int:
     sessions = [args.session] if args.session else _sessions()
     langs = [args.lang] if args.lang else ["lova", "python"]
-    cols = ("tasks", "green", "first", "attempts", "patches", "emitted", "read", "fails", "checks")
+    cols = ("tasks", "green", "first", "attempts", "patches", "emitted", "read", "fails", "checks", "faults", "givens")
     print(f"  {'lang':7s} {'session':8s} " + " ".join(f"{c:>8s}" for c in cols))
     grand: Dict[str, Dict[str, int]] = {}
     for lang in langs:
@@ -402,7 +467,9 @@ def cmd_report(args) -> int:
                    "emitted": sum(r["emitted_chars"] for r in recs),
                    "read": sum(r.get("read_chars", 0) for r in allrecs) + sum(r["feedback_chars"] for r in fails),
                    "fails": len(fails),
-                   "checks": sum(1 for r in allrecs if r.get("how") == "check")}
+                   "checks": sum(1 for r in allrecs if r.get("how") == "check"),
+                   "faults": sum(1 for r in allrecs if r.get("how") == "fault"),
+                   "givens": sum(1 for r in allrecs if r.get("how") == "given")}
             print(f"  {lang:7s} {session:8s} " + " ".join(f"{row[c]:8d}" for c in cols))
             g = grand.setdefault(lang, {c: 0 for c in cols})
             for c in cols:
@@ -430,7 +497,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("tasks"); p.add_argument("--lang", default="lova"); p.set_defaults(func=cmd_tasks)
-    for name, func in (("given", cmd_given), ("show", cmd_show)):
+    for name, func in (("given", cmd_given), ("show", cmd_show), ("fault", cmd_fault)):
         p = sub.add_parser(name); p.add_argument("--session", required=True)
         p.add_argument("--lang", required=True, choices=["lova", "python"])
         p.add_argument("--task", required=True, choices=list(BY_ID)); p.set_defaults(func=func)

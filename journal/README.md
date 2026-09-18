@@ -666,6 +666,70 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 28 (2026-09-18) -- The located fault
+
+The audit's first change to the language rather than to its messages.
+Exp 21 had measured the fourth number's repair half as NULL: a
+one-token fault in a program of twenty to forty lines is found by
+reading, and the structured anomaly never got to speak, because an
+`(example ...)` that missed said `offender: apply at depth 0` -- the
+example's own call, never the line inside the def the call reached.
+The M6 body scanner probes the expression it is handed, and a def's
+body is behind a closure.
+
+`core/locate.py`: when an example misses, `check` builds one program
+holding every example's expression, runs it so the letrec frame holds
+the user's defs as closures with their call counts, and then tries
+every single-node edit on every node of every def the example ran
+through and of the example's own expression, deepest first -- swap the
+operands, swap the branches, add or drop a minus, add or drop a `not`,
+nudge a literal, exchange a reference for another name in scope, swap
+an operator within its family, and rewrite a comparison as any of its
+five siblings (the parser's own macros rebuild the sibling from the
+operands, so the replacement text is exact). A probe rebuilds the
+def's closure with the edited body and installs it in the frame under
+its own name, so recursive and sibling calls see the edit, and
+evaluates the example again: one evaluation a probe, tree-level, no
+re-parse. Every edit that makes the example pass is scored against the
+other examples; the search stops at one that fixes them all, or at a
+time budget, and reports the best it found as `fault: line:col
+excerpt -- edit -> replacement [fixes every example]`, or `[fixes this
+and 1 of 3 others; the fault may be elsewhere]`. The replacement is
+what `lova_patch` takes.
+
+On Exp 21's eight planted faults, given the task's tests as examples:
+
+| task | planted | located | as |
+|---|---|---|---|
+| h01 | `neg` dropped | yes, exactly | `(get f v)` -- this should be negated -> `(neg (get f v))`, fixes every example |
+| h02 | `(eq c 46)` written `39` | a different fix that passes every test | `(eq c 58)` -> `(lt c 58)` |
+| h03 | `gt` written `lt` in a sort key | a different fix that passes every test, in the expression | `ra` here should be `rb` |
+| h04 | two cells of a winning line | partial, budget | `(neg b)`, 3 of 4 others, 4 probes in 10 s (each probe a game-tree search) |
+| h05 | a count for a sum | no | the fix is an expression, not an edit |
+| h06 | `lt` for `le` | yes, exactly | `(lt (get iv lo) (get c hi))` -> `(le ...)`, fixes every example |
+| h07 | one relaxation for two | no | the fix is a second call |
+| h08 | `gt` for `ge` | yes, exactly | `(gt (get st bal) n)` -> `(ge ...)`, fixes every example |
+
+Five of eight located with a fix that passes every test, three of them
+the planted token itself; the two misses were never one edit. Half a
+second a task except the search. Whether a session given the `fault:`
+line repairs in fewer attempts and less reading than one given the
+program is Q96, now runnable.
+
+Beside it: an example may state any value -- a list, a text, a record
+-- compared structurally, where a conservation contract took only a
+number and a list stated was refused at parse time; and a miss is an
+anomaly of the same kind as before, so the harnesses read it
+unchanged. **Q113 on the card**: a section of thirty-odd operator
+examples whose values are computed by the runtime when the card is
+generated (`corpus/make_card.py`, `OPERATOR_EXAMPLES`) and re-checked
+by `tests/test_card.py`, so the card cannot state a semantics the
+language does not have; 2 130 -> 2 856 tokens. Writing it found that
+`(map-get (nil) k d)` is a type error where `(map-put (nil) k v)` is
+not (Q114). The card's rule of thumb "a loop is recursion with an
+accumulator" is gone: LOVA has no tail calls, a loop is `fold` /
+`range` / `loop-until`. Tests 949 -> 956.
+
 ### The audit (2026-09-18) -- the design against the goal
 
 The owner opened the city-builder port, found it frozen (a city frame
@@ -2023,11 +2087,18 @@ the corpus grows again.
   s-expression with a hole, plus the binders in scope at the hole, in
   `render_pending`. Asked for by 4 of 4; justified only by a run at
   Q109's size, where the sessions say memory would run out.
-- **Q113**: the semantic bet -- every session's only oracle for an
-  operator's exact semantics was running the program. One worked
-  example per operator on the card, and a scratch evaluation of a
-  fragment in the loop harness. Applies to the text loop as much as
-  to the substrate.
+- ~~**Q113**~~ *(card half done, M28, 2026-09-18)*: the card carries
+  thirty-odd operator examples whose values the runtime computes when
+  the card is generated. The scratch evaluation of a fragment is what
+  `lova_execute` on a fragment already is.
+- **Q114**: `(map-get (nil) k d)` is a type error (`nil` produces
+  List, slot expects Map) where `(map-put (nil) k v)` is accepted and
+  the card says the empty map is `(nil)`. Widen `map-get`'s first
+  slot, or make the card say `(map-of (nil))`.
+- **Q96** *(runnable since M28)*: three sessions given Exp 21's
+  programs with the task's tests as examples and the `fault:` line,
+  against Exp 21's three given the program alone: attempts, characters
+  read, characters written.
 - **Q109**: the size where transcription breaks. These programs fit in
   working memory, which is why nobody composed forward. At what token
   count does a session start discovering at token k that it wanted

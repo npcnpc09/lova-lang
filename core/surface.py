@@ -367,20 +367,9 @@ def _parse_program(tokens: List[str], syms: SymbolTable
             args, cursor = _parse_args(tokens, cursor + 2, syms)
             if len(args) != 2:
                 raise ValueError(f"example: expects (example expr expected), got {len(args)} parts")
-            # An example is run as `(conserve expected expr)`, and a
-            # conservation contract is about a number.  Stating a list or a
-            # text used to compile and then fail as `cons produces List,
-            # slot expects Int` with nothing in the message about examples
-            # (journal Exp 25): two of the first three examples written for
-            # `lib/ray.lova` and `lib/g2048.lova` were that mistake.
-            if args[1].op in (CONS, NIL, LIT_TEXT, MAP_PUT):
-                raise ValueError(
-                    "example: an example is a conservation contract, so what it "
-                    "states has to be a number, and this one states "
-                    + ("a text" if args[1].op == LIT_TEXT else
-                       "a map or a record" if args[1].op == MAP_PUT else "a list")
-                    + ". State it a piece at a time -- `(example (nth xs 0) 3)` -- "
-                      "or compare with `text-cmp`, which gives a number")
+            # An example may state any value: a number, a text, a list, a
+            # record (audit, 2026-09-18; before it, a conservation contract
+            # about a number, and a list stated was refused here).
             first, last = tokens[start], tokens[cursor - 1]
             span = (getattr(first, "start", None), getattr(last, "end", None))
             syms.examples.append({"expr": args[0], "expected": args[1],

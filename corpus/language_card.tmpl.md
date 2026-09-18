@@ -22,7 +22,13 @@ A program is zero or more `def` forms followed by exactly one expression.
 Inputs are written as `{name}` placeholders and are filled with integers
 or texts before the program runs, e.g. `(fact {n})`, `(words {s})`. `(example expr expected)`
 forms may stand beside the defs: they are not part of the program, they
-are what it says about itself, and `lova check` runs them.
+are what it says about itself, and `lova check` runs them; what they
+state may be a number, a text, a list or a record. A miss reports
+expected and got, and then `fault: line:col excerpt -- edit -> replacement`:
+the one single-node edit, in a def the example ran through or in the
+example's own expression, that makes it pass, scored against the other
+examples ("fixes every example" is a repair; "the fault may be
+elsewhere" is a lead). Patch the span it names.
 
 ## Arithmetic (integers only)
 
@@ -97,6 +103,12 @@ network operators exist under `(boundary "kind" ...)`; a `def` that uses
 one must be written inside the boundary: `(boundary "clock" (def now []
 (clock)) body)`.
 
+## What each operator gives (computed by the runtime when this card is made)
+
+```
+{{OPERATOR_EXAMPLES}}
+```
+
 ## Examples
 
 ```
@@ -109,6 +121,7 @@ one must be written inside the boundary: `(boundary "clock" (def now []
 (let x (tau {n}) (mul x x))
 ```
 
-Rules of thumb: recursion is fine (depth 10 000); a loop is recursion with
-an accumulator parameter; there is no `return`, `while` or assignment;
-every `(` has its `)`.
+Rules of thumb: recursion is fine up to 10 000 frames, and LOVA does not
+turn a tail call into a loop, so a loop over more elements than that is
+`fold` / `map` / `range` or `loop-until`, not recursion; there is no
+`return`, `while` or assignment; every `(` has its `)`.

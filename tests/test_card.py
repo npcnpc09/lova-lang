@@ -76,3 +76,24 @@ class Card(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OperatorExamples(unittest.TestCase):
+    """Q113: the card's operator examples are computed by the runtime
+    when the card is generated; here each is computed again and must
+    read as the card says."""
+
+    def test_every_operator_line_is_true(self):
+        from core.cli import build, format_value
+        from core.runtime import Runtime, evaluate
+        card = CARD.read_text(encoding="utf-8")
+        block = card.split("## What each operator gives")[1].split("```")[1]
+        checked = 0
+        for line in block.splitlines():
+            if not line.strip() or line.startswith(";;"):
+                continue
+            expr, _, stated = line.rpartition(" ; ")
+            tree, _ = build(expr.strip())
+            self.assertEqual(format_value(evaluate(tree, Runtime(max_steps=200_000))), stated.strip(), line)
+            checked += 1
+        self.assertGreaterEqual(checked, 30)

@@ -98,11 +98,60 @@ def list_ops_line() -> str:
     return "List operators: " + " ".join(f"`{n}`" for n in names) + "."
 
 
+# Q113 (Exp 24 run 2, 2026-09-18): every session's one real uncertainty
+# was an operator's exact semantics -- is `text-slice` half-open, what
+# is `(mod -7 3)`, which way round does `text-join` go -- and a wrong
+# guess is a well-typed wrong value with no diagnostic.  The card now
+# carries one worked example per operator whose semantics can be bet
+# on, and the VALUE IS COMPUTED HERE, by the runtime, when the card is
+# generated: the card cannot state a semantics the language does not
+# have, and `tests/test_card.py` re-evaluates every line.
+OPERATOR_EXAMPLES = [
+    ";; integers",
+    "(div 7 2)", "(div -7 2)", "(mod -7 3)", "(sub 3 5)", "(if 0 1 2)", "(or 0 5)",
+    ";; lists (0-based; `range` stops before b)",
+    "(range 1 5)", "(nth (list 5 6 7) 1)", "(take 2 (list 5 6 7))", "(drop 2 (list 5 6 7))",
+    "(fold (lambda a (lambda x (sub a x))) 10 (list 1 2))",
+    "(sort-by (lambda a (lambda b (gt a b))) (list 3 1 2))",
+    "(zip (list 1 2 3) (list 4 5))", "(digits 1048576)", "(head \"abc\")",
+    "(text-slice (list 1 2 3 4) 1 3)",
+    ";; texts (half-open slices, clamped; -1 for not found)",
+    "(text-slice \"hello\" 1 3)", "(text-slice \"hello\" 3 99)",
+    "(text-find \"hello\" \"ll\")", "(text-find \"hello\" \"z\")",
+    "(text-split \"a,b,,c\" \",\")", "(text-split \" a  b \" \"\")",
+    "(text-join (list \"a\" \"b\") \", \")", "(text-trim \"  a \")",
+    "(text-chars \"ab\")", "(text-of-chars (list 104 105))", "(text-int \"-7\")", "(int-text 42)",
+    "(text-cmp \"a\" \"b\")", "(words \"a b  c\")", "(lines \"a\\nb\")",
+    ";; maps and records",
+    "(map-get (map-put (nil) \"k\" 1) \"k\" 0)", "(map-get (map-of (nil)) \"k\" 0)",
+    "(map-pairs (map-put (map-put (nil) \"a\" 1) \"b\" 2))",
+    "(get (rec x 1 y 2) y)", "(get (put (rec x 1) x 9) x)",
+]
+
+
+def operator_examples_block() -> str:
+    """Each example with the value the runtime gives it, `expr ; value`."""
+    import sys
+    sys.path.insert(0, str(ROOT))
+    from core.cli import build, format_value
+    from core.runtime import Runtime, evaluate
+    lines = []
+    for expr in OPERATOR_EXAMPLES:
+        if expr.startswith(";;"):
+            lines.append(expr)
+            continue
+        tree, _ = build(expr)
+        value = format_value(evaluate(tree, Runtime(max_steps=200_000)))
+        lines.append(f"{expr:52s} ; {value}")
+    return chr(10).join(lines)
+
+
 def render() -> str:
     template = TEMPLATE.read_text(encoding="utf-8")
     return (template.replace("{{LIBRARY}}", library_block())
                     .replace("{{TEXT_OPS}}", text_ops_line())
-                    .replace("{{LIST_OPS}}", list_ops_line()))
+                    .replace("{{LIST_OPS}}", list_ops_line())
+                    .replace("{{OPERATOR_EXAMPLES}}", operator_examples_block()))
 
 
 def main(argv=None) -> int:
