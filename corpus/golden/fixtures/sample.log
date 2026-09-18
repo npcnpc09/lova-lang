@@ -1,0 +1,10 @@
+api 200 100
+api 500 300
+web 200 50
+not a record
+api 200 200
+web 404 150
+api 200 120
+db 200 15
+db 503 400
+web 200 60

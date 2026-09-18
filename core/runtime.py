@@ -2566,21 +2566,49 @@ def _op_LIST_ANY(node: Node, rt: Runtime, chained: bool) -> Any:
     return 0
 
 
+def _merge_sort(xs: List[Any], before: Any) -> List[Any]:
+    """The sort `sort-by` is specified as (spec/runtime-semantics.md, D1):
+    top-down, split at len // 2, merge taking the right element only
+    when it is strictly before the left, so ties keep their order.
+    Written out rather than `sorted` because the number of comparator
+    invocations is a step count, and a step count is language
+    semantics: every runtime must make the same comparisons in the
+    same order."""
+    n = len(xs)
+    if n <= 1:
+        return list(xs)
+    mid = n // 2
+    left = _merge_sort(xs[:mid], before)
+    right = _merge_sort(xs[mid:], before)
+    out: List[Any] = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        if before(right[j], left[i]):
+            out.append(right[j])
+            j += 1
+        else:
+            out.append(left[i])
+            i += 1
+    out.extend(left[i:])
+    out.extend(right[j:])
+    return out
+
+
 def _op_LIST_SORT_BY(node: Node, rt: Runtime, chained: bool) -> Any:
-    import functools
     less = _as_fn(_eval(node.args[0], rt), "sort-by")
     xs = list_to_python(_as_list(_eval(node.args[1], rt), "sort-by"))
 
     # `a` before `b` when (less a b) and not (less b a): so a `le`
     # comparator sorts as `lt` does, and both are stable -- the prelude's
     # merge sort kept equal keys in order under `le` (tests/test_library)
-    # and the sort must not depend on which the author wrote.
-    def compare(a: Any, b: Any) -> int:
+    # and the sort must not depend on which the author wrote.  One step
+    # a comparison, the two applications' own nodes ticking as usual.
+    def before(a: Any, b: Any) -> bool:
         _tick(rt)
         ab = _as_int(_call(_call(less, a, rt), b, rt), "sort-by") != 0
         ba = _as_int(_call(_call(less, b, rt), a, rt), "sort-by") != 0
-        return -1 if ab and not ba else (1 if ba and not ab else 0)
-    return list_from(sorted(xs, key=functools.cmp_to_key(compare)))
+        return ab and not ba
+    return list_from(_merge_sort(xs, before))
 
 
 def _op_LIST_ZIP(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -2609,13 +2637,27 @@ def _op_TEXT_CMP(node: Node, rt: Runtime, chained: bool) -> Any:
     # too, whatever the integers are.
     xs = list_to_python(a) if not isinstance(a, str) else [ord(c) for c in a]
     ys = list_to_python(b) if not isinstance(b, str) else [ord(c) for c in b]
-    return (xs > ys) - (xs < ys)
+    try:
+        return (xs > ys) - (xs < ys)
+    except TypeError:
+        # D3: an integer against a text or a list inside the elements
+        # used to escape as a bare TypeError, outside the error model.
+        raise DomainTrap(
+            "type-violation",
+            "text-cmp: the elements are not comparable (an integer against a text or a list)",
+            {"operator": "text-cmp", "expected": "two texts, or two lists of integers"},
+            "compare two texts, or two lists whose elements are integers",
+        ) from None
 
 
 def _op_TEXT_INT(node: Node, rt: Runtime, chained: bool) -> Any:
     t = _as_text(_eval(node.args[0], rt), "text-int").strip()
     body = t[1:] if t.startswith("-") else t
-    if not body or not body.isdigit():
+    # D2: ASCII digits only.  `str.isdigit` admits `"\u00b2"` (which
+    # `int` then refuses, escaping the error model) and other scripts'
+    # digits; a language defined on one host's Unicode tables is not
+    # portable.
+    if not body or not body.isascii() or not body.isdigit():
         # The prelude's `parse-int` has signalled 16 for this since M22;
         # the operator keeps the contract so `try` and `when-anomaly`
         # handlers written against it keep working.
