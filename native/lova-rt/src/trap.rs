@@ -58,7 +58,9 @@ pub enum Fault {
     Trap(Box<Trap>),
     /// `END` has no handler: a plain `NotImplementedError`, which is
     /// not a LOVA anomaly and `when-anomaly` does not catch (quirk 31).
-    NotImplemented(String),
+    /// Boxed so that a `Result<Value, Fault>` -- returned from every
+    /// node -- stays sixteen bytes wide (Q124).
+    NotImplemented(Box<str>),
 }
 
 pub type R<T> = Result<T, Fault>;

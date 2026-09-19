@@ -291,10 +291,17 @@ def _failure(stage: str, exc: Exception, source: Optional[str] = None) -> Dict[s
     # M24: the span as offsets into the source the caller sent, and the
     # text there, so the caller can patch that expression and nothing else.
     if source is not None and isinstance(anomaly, dict) and anomaly.get("span"):
+        # Q127: the span indexes the expanded text; `line` and `col`
+        # are in the file the offset came from, and `file` names it
+        # when that is an included library (absent for the program's
+        # own text, where `span` is also a patchable offset).
+        from core.surface import expansion
+        exp = expansion(source)
         start, end = anomaly["span"]
-        anomaly["excerpt"] = source[start:end]
-        from core.surface import line_col
-        anomaly["line"], anomaly["col"] = line_col(source, start)
+        anomaly["excerpt"] = exp.text[start:end]
+        origin, anomaly["line"], anomaly["col"] = exp.where(start)
+        if origin is not None:
+            anomaly["file"] = origin
     return {"ok": False, "stage": stage, "anomaly": anomaly}
 
 
@@ -501,6 +508,20 @@ def tool_patch(params: Dict[str, Any]) -> Dict[str, Any]:
     except (TypeError, ValueError, IndexError):
         return {"ok": False, "stage": "patch",
                 "anomaly": {"kind": "error", "message": "span must be [start, end] offsets"}}
+    # Q127: a span is an offset into the expanded text.  In the
+    # program's own text it maps back to the source the caller sent;
+    # inside an included library there is nothing here to patch.
+    from core.surface import expansion
+    exp = expansion(source)
+    if not exp.plain:
+        a, b = exp.to_original(start), exp.to_original(max(start, end - 1))
+        if a is None or b is None:
+            origin = exp.where(start)[0] or exp.where(max(start, end - 1))[0]
+            return {"ok": False, "stage": "patch",
+                    "anomaly": {"kind": "error",
+                                "message": f"span [{start}, {end}] is inside the included "
+                                           f"library {origin}; patch that file, not this source"}}
+        start, end = a, b + 1 if end > start else a
     if not 0 <= start <= end <= len(source):
         return {"ok": False, "stage": "patch",
                 "anomaly": {"kind": "error",

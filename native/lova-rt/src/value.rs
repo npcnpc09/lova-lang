@@ -1,5 +1,6 @@
 //! The value model (spec §2) and how values print (`core.cli.format_value`).
 
+use crate::fx::FxMap;
 use crate::int::Int;
 use crate::tokens::{pretty, Arena};
 use std::cell::{Cell, RefCell};
@@ -73,8 +74,68 @@ pub struct PopulationData {
 
 // --- environment (spec §4.2) ------------------------------------------------
 
+/// One frame's bindings.  A call frame binds exactly one name, and a
+/// call frame is most of what a program makes, so the first binding
+/// lives in the frame itself and costs no allocation and no hash; a
+/// `let` chain's further names go in the table beside it, which stays
+/// unallocated until there are two (Q124).
+#[derive(Default)]
+pub struct Vars {
+    one: Option<(i64, Value)>,
+    rest: FxMap<i64, Value>,
+}
+
+impl Vars {
+    #[inline]
+    pub fn get(&self, key: i64) -> Option<&Value> {
+        if let Some((k, v)) = &self.one {
+            if *k == key {
+                return Some(v);
+            }
+        }
+        if self.rest.is_empty() {
+            return None;
+        }
+        self.rest.get(&key)
+    }
+
+    #[inline]
+    pub fn contains(&self, key: i64) -> bool {
+        if let Some((k, _)) = &self.one {
+            if *k == key {
+                return true;
+            }
+        }
+        !self.rest.is_empty() && self.rest.contains_key(&key)
+    }
+
+    pub fn insert(&mut self, key: i64, value: Value) {
+        match &mut self.one {
+            None => self.one = Some((key, value)),
+            Some((k, v)) if *k == key => *v = value,
+            _ => {
+                self.rest.insert(key, value);
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.one = None;
+        if !self.rest.is_empty() {
+            self.rest.clear();
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (i64, &Value)> {
+        self.one
+            .iter()
+            .map(|(k, v)| (*k, v))
+            .chain(self.rest.iter().map(|(k, v)| (*k, v)))
+    }
+}
+
 pub struct Scope {
-    pub vars: RefCell<HashMap<i64, Value>>,
+    pub vars: RefCell<Vars>,
     pub parent: Option<Rc<Scope>>,
     /// The root environment is a plain dict in the reference, not a
     /// `Scope`; the `let` chain rule tests exactly that (spec §4.3).
@@ -83,24 +144,26 @@ pub struct Scope {
 
 impl Scope {
     pub fn root() -> Rc<Scope> {
-        Rc::new(Scope { vars: RefCell::new(HashMap::new()), parent: None, root: true })
+        Rc::new(Scope { vars: RefCell::new(Vars::default()), parent: None, root: true })
     }
 
     pub fn open(parent: &Rc<Scope>) -> Rc<Scope> {
         Rc::new(Scope {
-            vars: RefCell::new(HashMap::new()),
+            vars: RefCell::new(Vars::default()),
             parent: Some(parent.clone()),
             root: false,
         })
     }
 
     pub fn lookup(&self, key: i64) -> Option<Value> {
-        if let Some(v) = self.vars.borrow().get(&key) {
+        #[cfg(feature = "prof")]
+        crate::prof::mark(crate::prof::R_LOOKUP);
+        if let Some(v) = self.vars.borrow().get(key) {
             return Some(v.clone());
         }
         let mut env = self.parent.as_ref();
         while let Some(s) = env {
-            if let Some(v) = s.vars.borrow().get(&key) {
+            if let Some(v) = s.vars.borrow().get(key) {
                 return Some(v.clone());
             }
             env = s.parent.as_ref();
@@ -110,12 +173,12 @@ impl Scope {
 
     /// `Scope.bound`: this frame or any it extends.
     pub fn bound(&self, key: i64) -> bool {
-        if self.vars.borrow().contains_key(&key) {
+        if self.vars.borrow().contains(key) {
             return true;
         }
         let mut env = self.parent.as_ref();
         while let Some(s) = env {
-            if s.vars.borrow().contains_key(&key) {
+            if s.vars.borrow().contains(key) {
                 return true;
             }
             env = s.parent.as_ref();
@@ -138,7 +201,7 @@ impl Scope {
         let mut out = HashMap::new();
         for frame in frames.iter().rev() {
             for (k, v) in frame.vars.borrow().iter() {
-                out.insert(*k, v.clone());
+                out.insert(k, v.clone());
             }
         }
         out
@@ -147,10 +210,75 @@ impl Scope {
 
 // --- map keys (spec §2.7) ---------------------------------------------------
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+/// A hashable stand-in for a key (`core.runtime._map_key`): an integer,
+/// or a list as a tuple, a text being its codepoint list.
+///
+/// `T` is that codepoint list without building it (Q124).  A record
+/// field is a text key, and `(get r x)` was allocating a vector of
+/// boxed codepoints on every read -- a seventh of the city builder's
+/// frame.  `T(s)` hashes and compares exactly as `L` of its
+/// codepoints does, so the two spellings are one key.
+#[derive(Clone)]
 pub enum MapKey {
     I(Int),
     L(Vec<MapKey>),
+    T(Rc<String>),
+}
+
+fn text_is_list(s: &str, v: &[MapKey]) -> bool {
+    let mut chars = s.chars();
+    for k in v {
+        match (chars.next(), k) {
+            (Some(c), MapKey::I(i)) if *i == Int::from_i64(c as i64) => {}
+            _ => return false,
+        }
+    }
+    chars.next().is_none()
+}
+
+impl PartialEq for MapKey {
+    fn eq(&self, other: &MapKey) -> bool {
+        match (self, other) {
+            (MapKey::I(a), MapKey::I(b)) => a == b,
+            (MapKey::L(a), MapKey::L(b)) => a == b,
+            (MapKey::T(a), MapKey::T(b)) => Rc::ptr_eq(a, b) || a == b,
+            (MapKey::T(s), MapKey::L(v)) | (MapKey::L(v), MapKey::T(s)) => text_is_list(s, v),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for MapKey {}
+
+impl std::hash::Hash for MapKey {
+    /// One write per element, and the length after them, so that a text
+    /// hashes in a single pass over its characters and still makes the
+    /// stream its codepoint list makes.
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            MapKey::I(Int::S(v)) => state.write_i64(*v),
+            MapKey::I(big) => {
+                state.write_u8(2);
+                std::hash::Hash::hash(big, state);
+            }
+            MapKey::L(v) => {
+                for k in v {
+                    std::hash::Hash::hash(k, state);
+                }
+                state.write_usize(v.len());
+                state.write_u8(1);
+            }
+            MapKey::T(s) => {
+                let mut n = 0usize;
+                for c in s.chars() {
+                    state.write_i64(c as i64);
+                    n += 1;
+                }
+                state.write_usize(n);
+                state.write_u8(1);
+            }
+        }
+    }
 }
 
 // --- the persistent map (spec §2.8) -----------------------------------------
@@ -166,7 +294,7 @@ pub struct Entry {
 #[derive(Default)]
 pub struct OrderedMap {
     slots: Vec<Option<(MapKey, Entry)>>,
-    index: HashMap<MapKey, usize>,
+    index: FxMap<MapKey, usize>,
     live: usize,
 }
 
@@ -242,6 +370,8 @@ impl MapValue {
         if self.is_owner() {
             return;
         }
+        #[cfg(feature = "prof")]
+        crate::prof::mark(crate::prof::R_REROOT);
         let mut path: Vec<MapValue> = Vec::new();
         let mut version = self.clone();
         loop {

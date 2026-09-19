@@ -33,6 +33,7 @@ busy while you pan.
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
@@ -42,10 +43,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from core.cli import build
 from core.conservation import BudgetTrap, DeltaTrap
-from core.runtime import Runtime, _call, _map_key, evaluate, list_to_python
+from core.native import Ref, open_session
+from core.runtime import Runtime, _call, _map_key, evaluate
+from core.runtime import list_to_python as _list_to_python
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "platformer"))
 from platformer import rasterise, write_png  # noqa: E402
+
+
+def list_to_python(value):
+    """A LOVA list as a Python one, whichever runtime produced it.
+
+    A native session hands a list over as a Python list already (and
+    `nil` -- the empty list -- as `None`); the Python runtime hands over
+    a cons chain.  Both arrive here.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return _list_to_python(value)
 
 SOURCE = """\
 (use "citybuilder")
@@ -78,18 +95,36 @@ def lit(k, l):
 
 
 class Rules:
-    def __init__(self) -> None:
+    NAMES = ("new", "sample", "tick", "input", "frame", "city", "cursor",
+             "ckey", "ukey", "cells", "key", "cash", "index", "name",
+             "price", "load")
+
+    def __init__(self, native: str = "auto") -> None:
         tree, _report = build(SOURCE)
-        self.rt = Runtime(max_steps=BUDGET, max_call_depth=10_000)
-        api = evaluate(tree, self.rt)
-        self.fn = {n: api.entries[_map_key(n, "rec")][1]
-                   for n in ("new", "sample", "tick", "input", "frame", "city", "cursor",
-                             "ckey", "ukey", "cells", "key", "cash", "index", "name",
-                             "price", "load")}
+        self.session = open_session(tree, native, max_steps=BUDGET,
+                                    max_depth=10_000)
+        if self.session is not None:
+            # A session in a native runtime: the city is a handle and
+            # the session carries `steps` of the last call, which is
+            # what the window reads off `rt`.
+            self.rt = self.session
+            self.fn = {n: self.session.get(n) for n in self.NAMES}
+        else:
+            self.rt = Runtime(max_steps=BUDGET, max_call_depth=10_000)
+            api = evaluate(tree, self.rt)
+            self.fn = {n: api.entries[_map_key(n, "rec")][1] for n in self.NAMES}
         sys.setrecursionlimit(max(sys.getrecursionlimit(), 20_000))
 
     def call(self, name, *args):
+        if self.session is not None:
+            return self.session.call(self.fn[name], *args)
+        # Steps start at zero for every call, and so does the `hot`
+        # interval (`mark` / `current`), as the session protocol's
+        # `call` does: with `mark` left at its post-load value a step
+        # trap's attribution went negative (found at Q126).
         self.rt.steps = 0
+        self.rt.mark = 0
+        self.rt.current = None
         fn = self.fn[name]
         for arg in args:
             fn = _call(fn, arg, self.rt)
@@ -106,7 +141,13 @@ class Rules:
                          ev.get("build", 0), ev.get("demolish", 0), ev.get("rotate", 0),
                          ev.get("next", 0), ev.get("prev", 0),
                          ev.get("mu", -1), ev.get("mv", -1))
-        return self.call("tick", world, held, FOCAL, VIEW_W, VIEW_H)
+        world = self.call("tick", world, held, FOCAL, VIEW_W, VIEW_H)
+        if isinstance(held, Ref):
+            # The input record never leaves this method, and a handle
+            # the driver does not release is kept for the life of the
+            # session -- this one would be sixty a second.
+            self.session.release(held)
+        return world
 
     def frame(self, world, which="frame"):
         return [list_to_python(f) for f in
@@ -290,11 +331,23 @@ def shot(rules: Rules, path: str) -> None:
 
 
 def main() -> int:
-    rules = Rules()
-    if len(sys.argv) > 2 and sys.argv[1] == "--shot":
-        shot(rules, sys.argv[2])
+    parser = argparse.ArgumentParser(
+        description="Kenney's city builder: the window is Python, the city "
+                    "is LOVA")
+    parser.add_argument("--shot", metavar="file.png",
+                        help="no window: settle the camera and write one frame")
+    parser.add_argument("--empty", action="store_true",
+                        help="a clean grid and 10 000, not the kit's sample city")
+    parser.add_argument("--native", choices=("auto", "on", "off"),
+                        default="auto",
+                        help="run the city in a native runtime (auto: if "
+                             "there is one and it takes this program)")
+    args = parser.parse_args()
+    rules = Rules(native=args.native)
+    if args.shot:
+        shot(rules, args.shot)
         return 0
-    world = rules.fn["new"] if "--empty" in sys.argv else rules.fn["sample"]
+    world = rules.fn["new"] if args.empty else rules.fn["sample"]
     import tkinter as tk
     root = tk.Tk()
     root.title("city builder -- the window is Python, the city is LOVA")

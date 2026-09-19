@@ -40,9 +40,9 @@ from core import native as native_mod                          # noqa: E402
 from core.cli import build, format_value, main as cli_main     # noqa: E402
 from core.conservation import DomainTrap                       # noqa: E402
 from core.native import (                                      # noqa: E402
-    UNSUPPORTED_OPS, NativeResult, NativeRuntime, NativeUnavailable,
-    NativeUnsupported, ops_named, span_for_nodes, span_for_path, supports,
-    unsupported_in,
+    UNSUPPORTED_OPS, NativeResult, NativeRuntime, NativeSession,
+    NativeUnavailable, NativeUnsupported, Ref, ops_named, span_for_nodes,
+    span_for_path, supports, unsupported_in,
 )
 from core.runtime import Runtime, evaluate                     # noqa: E402
 
@@ -560,6 +560,295 @@ class Wiring(unittest.TestCase):
         answer = tool_execute({"source": "(merge 1 2)", "native": "on"})
         self.assertFalse(answer["ok"])
         self.assertIn("no native runtime", answer["anomaly"]["message"])
+
+
+SESSION_SOURCE = """\
+(def add2 [a b] (merge a b))
+(def shout [t] (seq (println t) (text-len t)))
+(def total [xs] (fold (lambda a (lambda x (merge a x))) 0 xs))
+(def grow [n] (mul n 1000000000000))
+(def xof [r] (get r x))
+(def isnil [xs] (if (nil? xs) 1 0))
+(def first [xs] (head xs))
+(def boom [n] (div 10 n))
+(rec add2 add2 shout shout total total grow grow xof xof isnil isnil
+     first first boom boom empty (nil) point (rec x 5 y 6))
+"""
+
+
+@unittest.skipUnless(MOCK.is_file(), f"no reference server at {MOCK}")
+class Sessions(unittest.TestCase):
+    """`NativeSession` against the reference server (the protocol's 0.3.0).
+
+    A session is what the three drivers need and `run` cannot give: the
+    program evaluated once, its record of closures kept, and a call into
+    it per tick with the world -- a value the runtime holds -- going
+    back in as a handle.  Every claim below is checked against the same
+    program run in this process with `core.runtime._call`, which is what
+    the drivers do when there is no native runtime.
+    """
+
+    def setUp(self) -> None:
+        self.runtime = NativeRuntime(COMMAND, timeout_s=60.0)
+        self.addCleanup(self.runtime.close)
+        self.runtime.ping()
+        self.tree, _ = build(SESSION_SOURCE)
+        self.session = NativeSession.open(self.runtime, self.tree,
+                                          max_steps=1_000_000)
+        self.addCleanup(self.session.close)
+        # The same program in this process, for the comparison.
+        self.rt = Runtime(max_steps=1_000_000)
+        self.api = evaluate(self.tree, self.rt)
+
+    @staticmethod
+    def lova(value):
+        """A Python argument as the Python runtime wants it."""
+        from core.runtime import NIL_VALUE, list_from
+        if value is None:
+            return NIL_VALUE
+        if isinstance(value, list):
+            return list_from([Sessions.lova(item) for item in value])
+        return value
+
+    def python(self, name, *args):
+        """`Rules.call` as the drivers spell it, in Python."""
+        from core.runtime import _call, _map_key
+        fn = self.api.entries[_map_key(name, "rec")][1]
+        self.rt.steps = 0
+        for arg in args:
+            fn = _call(fn, self.lova(arg), self.rt)
+        return fn
+
+    def test_the_program_value_is_a_handle_and_its_fields_are_its_own(self):
+        self.assertIsInstance(self.session.api, Ref)
+        self.assertIsInstance(self.session.get("add2"), Ref)
+        self.assertIsNone(self.session.get("no-such-field"))
+        self.assertGreater(self.session.steps, 0, "the open cost steps")
+
+    def test_a_call_with_integers_is_the_python_call(self):
+        self.assertEqual(self.session.call(self.session.get("add2"), 3, 4), 7)
+        self.assertEqual(self.python("add2", 3, 4), 7)
+
+    def test_a_list_goes_in_as_a_list(self):
+        self.assertEqual(self.session.call(self.session.get("total"),
+                                           [1, 2, 3, 4]), 10)
+        # nested, and back out again: a list of encoded elements,
+        # recursively, and never a string
+        self.assertEqual(self.session.call(self.session.get("first"),
+                                           [[1, 2], 3]), [1, 2])
+        self.assertEqual(self.session.call(self.session.get("first"),
+                                           [[65, 66], 3]), [65, 66])
+
+    def test_a_text_goes_in_as_a_text(self):
+        self.assertEqual(self.session.call(self.session.get("shout"), "hello"),
+                         5)
+
+    def test_a_handle_goes_back_in(self):
+        point = self.session.get("point")
+        self.assertIsInstance(point, Ref)
+        self.assertEqual(self.session.call(self.session.get("xof"), point), 5)
+        self.assertEqual(self.session.get("x", point), 5)
+        self.assertEqual(self.session.get("y", point), 6)
+
+    def test_fewer_arguments_curry_and_more_apply_through(self):
+        add2 = self.session.get("add2")
+        half = self.session.call(add2, 3)
+        self.assertIsInstance(half, Ref)
+        self.assertEqual(self.session.call(half, 4), 7)
+        self.assertEqual(self.session.call(add2, 3, 4), 7)
+
+    def test_the_steps_of_a_call_start_at_zero_and_are_the_python_ones(self):
+        for name, args in (("add2", (3, 4)), ("total", ([1, 2, 3],)),
+                           ("shout", ("hi",)), ("grow", (7,))):
+            with self.subTest(name=name):
+                self.session.call(self.session.get(name), *args)
+                first = self.session.steps
+                self.session.call(self.session.get(name), *args)
+                self.assertEqual(self.session.steps, first,
+                                 "a call's steps are its own")
+                self.python(name, *args)
+                self.assertEqual(self.session.steps, self.rt.steps)
+
+    def test_a_get_charges_nothing_and_leaves_the_last_call_standing(self):
+        self.session.call(self.session.get("add2"), 3, 4)
+        spent = self.session.steps
+        self.session.get("point")
+        self.assertEqual(self.session.steps, spent)
+
+    def test_what_a_call_wrote_is_that_calls_own(self):
+        shout = self.session.get("shout")
+        self.session.call(shout, "one")
+        self.assertEqual(self.session.stdout, "one\n")
+        self.session.call(shout, "two")
+        self.assertEqual(self.session.stdout, "two\n")
+        self.session.call(self.session.get("add2"), 1, 2)
+        self.assertEqual(self.session.stdout, "")
+
+    def test_a_trap_is_the_python_trap_and_the_session_answers_after_it(self):
+        with self.assertRaises(DomainTrap) as native:
+            self.session.call(self.session.get("boom"), 0)
+        with self.assertRaises(DomainTrap) as python:
+            self.python("boom", 0)
+        a, b = native.exception.anomaly, python.exception.anomaly
+        self.assertEqual(a["kind"], b["kind"])
+        self.assertEqual(a["offending_op"], b["offending_op"])
+        self.assertEqual(tuple(a["position_path"]), tuple(b["position_path"]))
+        self.assertEqual(tuple(a["span"]), tuple(b["span"]))
+        self.assertEqual(self.session.call(self.session.get("add2"), 1, 2), 3)
+
+    def test_a_big_integer_crosses_both_ways(self):
+        big = self.session.call(self.session.get("grow"), 99_999_999)
+        self.assertEqual(big, 99_999_999 * 1_000_000_000_000)
+        self.assertGreater(big, 1 << 53)
+        self.assertEqual(self.session.call(self.session.get("add2"), big, 1),
+                         big + 1)
+
+    def test_nil_crosses_both_ways(self):
+        self.assertIsNone(self.session.get("empty"))
+        isnil = self.session.get("isnil")
+        self.assertEqual(self.session.call(isnil, None), 1)
+        self.assertEqual(self.session.call(isnil, []), 1)
+        self.assertEqual(self.session.call(isnil, [1]), 0)
+
+    def test_a_released_handle_is_gone(self):
+        add2 = self.session.get("add2")
+        self.session.release(add2)
+        with self.assertRaises(native_mod.NativeSessionError):
+            self.session.call(add2, 1, 2)
+        # the session itself is untouched
+        self.assertEqual(self.session.call(self.session.get("add2"), 1, 2), 3)
+
+    def test_close_ends_the_session_and_the_runtime_serves_another(self):
+        self.session.close()
+        with self.assertRaises(native_mod.NativeSessionError):
+            self.session.get("add2")
+        with NativeSession(self.runtime, self.tree, max_steps=1_000_000) as s:
+            self.assertEqual(s.call(s.get("add2"), 20, 22), 42)
+
+    def test_a_program_that_traps_opens_no_session(self):
+        tree, _ = build("(def f [n] (div 10 n))\n(f 0)\n")
+        with self.assertRaises(DomainTrap):
+            NativeSession(self.runtime, tree, max_steps=1_000_000)
+        # the runtime is still there, and the session that was open
+        # before it is untouched
+        self.assertEqual(self.session.call(self.session.get("add2"), 1, 2), 3)
+
+    def test_open_session_off_never_opens_one(self):
+        self.assertIsNone(native_mod.open_session(self.tree, "off"))
+
+    def test_a_runtime_that_does_not_speak_sessions_stays_in_python(self):
+        """A binary older than 0.3.0 answers `unknown op`, and that is a
+        fall-back under `auto` and an error under `on` -- never a hang."""
+        holder = tempfile.TemporaryDirectory(prefix="lova-fake-rt-")
+        self.addCleanup(holder.cleanup)
+        command = write_fake_runtime(holder.name, [], "no_sessions.py")
+        previous = os.environ.get("LOVA_NATIVE")
+        os.environ["LOVA_NATIVE"] = " ".join(f'"{w}"' for w in command)
+        native_mod.forget_default()
+
+        def restore():
+            if previous is None:
+                os.environ.pop("LOVA_NATIVE", None)
+            else:
+                os.environ["LOVA_NATIVE"] = previous
+            native_mod.forget_default()
+
+        self.addCleanup(restore)
+        self.assertIsNone(native_mod.open_session(self.tree, "auto"))
+        with self.assertRaises(NativeUnavailable):
+            native_mod.open_session(self.tree, "on")
+
+
+@unittest.skipUnless(MOCK.is_file(), f"no reference server at {MOCK}")
+class Drivers(unittest.TestCase):
+    """The three drivers' `Rules`, native and Python, side by side.
+
+    `apps/war`, `apps/platformer` and `apps/citybuilder` evaluate their
+    program once and call into it per tick.  `Rules(native=...)` chooses
+    the runtime and nothing else in a driver knows which one it got, so
+    the check is that the numbers are the same ones.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        for app in ("war", "platformer", "citybuilder"):
+            path = str(ROOT / "apps" / app)
+            if path not in sys.path:
+                sys.path.insert(0, path)
+
+    def setUp(self) -> None:
+        self._env = os.environ.get("LOVA_NATIVE")
+        os.environ["LOVA_NATIVE"] = f'"{sys.executable}" "{MOCK}"'
+        native_mod.forget_default()
+        self.addCleanup(native_mod.forget_default)
+        self.addCleanup(self._restore)
+
+    def _restore(self) -> None:
+        if self._env is None:
+            os.environ.pop("LOVA_NATIVE", None)
+        else:
+            os.environ["LOVA_NATIVE"] = self._env
+
+    def _rules(self, module, native):
+        rules = module.Rules(native=native)
+        self.addCleanup(lambda: rules.session and rules.session.close())
+        if native == "on":
+            self.assertIsNotNone(rules.session, "no session was opened")
+        else:
+            self.assertIsNone(rules.session)
+        return rules
+
+    def test_the_battlefield_is_the_same_battle(self):
+        import war
+        answers = []
+        for native in ("off", "on"):
+            rules = self._rules(war, native)
+            world = rules.call("new", 1)
+            run = []
+            for _ in range(3):
+                world = rules.call("tick", world)
+                run.append(rules.rt.steps)
+                run.append([rules.fields(s, "u", "v", "t", "hp", "s", "f")
+                            for s in war.list_to_python(rules.call("spr", world))])
+                run.append(rules.field(world, "turn"))
+                run.append((rules.call("left", world, 0),
+                            rules.call("left", world, 1)))
+            answers.append(run)
+        self.assertEqual(answers[0], answers[1])
+
+    def test_the_platformer_plays_the_same_frame(self):
+        import platformer
+        answers = []
+        for native in ("off", "on"):
+            rules = self._rules(platformer, native)
+            world = rules.new_game()
+            for keys in ({"d"}, {"d"}, set(), {"jump"}, set()):
+                world = rules.tick(world, keys)
+            # `Rules.frame` unpacks the list of faces; each face is
+            # unpacked by the caller, as `Game.paint` and `shot` do.
+            answers.append([[platformer.list_to_python(f)
+                             for f in rules.frame(world)], rules.rt.steps,
+                            rules.call("coins", world),
+                            rules.call("resets", world),
+                            platformer.list_to_python(rules.call("where", world))])
+        self.assertEqual(answers[0], answers[1])
+        self.assertTrue(answers[0][0], "the frame has faces")
+
+    def test_the_city_is_the_same_city(self):
+        import citybuilder
+        answers = []
+        for native in ("off", "on"):
+            rules = self._rules(citybuilder, native)
+            world = rules.fn["new"]
+            ev = {"keys": set(), "mu": 480, "mv": 300}
+            for extra in ({"next": 1}, {}, {"build": 1}):
+                world = rules.tick(world, dict(ev, **extra))
+            answers.append([rules.frame(world), rules.rt.steps,
+                            rules.call("cash", world), rules.text(world),
+                            rules.cells(world), rules.view_key(world),
+                            rules.keys_of(world)])
+        self.assertEqual(answers[0], answers[1])
+        self.assertTrue(answers[0][4], "a cell was built")
 
 
 if __name__ == "__main__":

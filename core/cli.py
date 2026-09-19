@@ -22,9 +22,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from typing import Dict, Any, List, Optional
 
-from core import surface2
+from core import cache, surface2
 from core.compiler import CompileError, compile as lova_compile
 from core.conservation import BudgetTrap, DeltaTrap
 from core.observability import static_analyze
@@ -124,7 +125,35 @@ def argument_literal(value: str) -> str:
 
 def build(source: str, *, prelude: bool = True, stage2: bool = False,
           do_compile: bool = True):
-    """Source text -> (tree, report or None)."""
+    """Source text -> (tree, report or None).
+
+    The result is cached on disk (`core/cache.py`, Q125), keyed by the
+    source *after* ``(use ...)`` expansion, these flags, and a hash of
+    every ``core/*.py`` and of ``lib/prelude.lova`` -- so a changed
+    library, a changed compiler or a changed prelude all invalidate it.
+    A hit returns a freshly unpickled tree with its spans and its
+    symbol table, which is the same object graph a parse would have
+    produced; nothing else about a build changes.  The cache lives in
+    ``$LOVA_CACHE`` or the platform's user cache directory,
+    ``LOVA_CACHE=off`` turns it off, and any failure inside it means
+    "no cache" and never a failed build.
+    """
+    key = cache.key_for(source, prelude=prelude, stage2=stage2,
+                        do_compile=do_compile)
+    if key is not None:
+        hit = cache.load(key)
+        if hit is not None:
+            return hit
+    started = time.perf_counter()
+    built = _build_uncached(source, prelude=prelude, stage2=stage2,
+                            do_compile=do_compile)
+    if key is not None:
+        cache.store(key, built, time.perf_counter() - started)
+    return built
+
+
+def _build_uncached(source: str, *, prelude: bool, stage2: bool,
+                    do_compile: bool):
     if stage2:
         tree = surface2.parse(source.strip())
     elif prelude:
@@ -397,15 +426,28 @@ def parse_net_allow(values: Optional[List[str]]):
 
 
 def describe_span(source: str, span) -> str:
-    """``line:col-line:col`` and the text of the span (M24)."""
-    from core.surface import line_col
+    """``line:col-line:col`` and the text of the span (M24).
+
+    A span is an offset into the text that was parsed, which for a
+    program with `(use ...)` is the expanded one (Q127); the line and
+    column are given in the file the offset came from, the program's
+    own or `lib/x.lova:line:col`, and the excerpt is the text there.
+    """
+    from core.surface import expansion
+    exp = expansion(source)
     start, end = span
-    l1, c1 = line_col(source, start)
-    l2, c2 = line_col(source, max(start, end - 1))
-    excerpt = source[start:end]
+    excerpt = exp.text[start:end]
     if len(excerpt) > 80:
         excerpt = excerpt[:77] + "..."
-    where = f"{l1}:{c1}" if l1 == l2 else f"{l1}:{c1}-{l2}:{c2}"
+    o1, l1, c1 = exp.where(start)
+    o2, l2, c2 = exp.where(max(start, end - 1))
+    head = f"{o1}:" if o1 is not None else ""
+    if (o1, l1) == (o2, l2):
+        where = f"{head}{l1}:{c1}"
+    elif o1 == o2:
+        where = f"{head}{l1}:{c1}-{l2}:{c2}"
+    else:
+        where = f"{head}{l1}:{c1}-{exp.describe(max(start, end - 1))}"
     return f"{where}  {excerpt}"
 
 

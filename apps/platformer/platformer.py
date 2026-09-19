@@ -30,6 +30,7 @@ screenshot was made.
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 import zlib
@@ -39,7 +40,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from core.cli import build
 from core.conservation import BudgetTrap, DeltaTrap
-from core.runtime import Runtime, _call, _map_key, evaluate, list_to_python
+from core.native import Ref, open_session
+from core.runtime import Runtime, _call, _map_key, evaluate
+from core.runtime import list_to_python as _list_to_python
+
+
+def list_to_python(value):
+    """A LOVA list as a Python one, whichever runtime produced it.
+
+    A native session hands a list over as a Python list already (and
+    `nil` -- the empty list -- as `None`); the Python runtime hands over
+    a cons chain.  Both arrive here.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return _list_to_python(value)
 
 SOURCE = """\
 (use "platformer")
@@ -69,16 +86,34 @@ def lit(k, l):
 class Rules:
     """The LOVA program, loaded once; every tick and frame is one call into it."""
 
-    def __init__(self) -> None:
+    NAMES = ("new", "tick", "input", "frame", "coins", "resets", "where")
+
+    def __init__(self, native: str = "auto") -> None:
         tree, _report = build(SOURCE)
-        self.rt = Runtime(max_steps=BUDGET, max_call_depth=10_000)
-        api = evaluate(tree, self.rt)
-        self.fn = {n: api.entries[_map_key(n, "rec")][1]
-                   for n in ("new", "tick", "input", "frame", "coins", "resets", "where")}
+        self.session = open_session(tree, native, max_steps=BUDGET,
+                                    max_depth=10_000)
+        if self.session is not None:
+            # A session in a native runtime: the world is a handle and
+            # the session carries `steps` of the last call, which is
+            # what the window reads off `rt`.
+            self.rt = self.session
+            self.fn = {n: self.session.get(n) for n in self.NAMES}
+        else:
+            self.rt = Runtime(max_steps=BUDGET, max_call_depth=10_000)
+            api = evaluate(tree, self.rt)
+            self.fn = {n: api.entries[_map_key(n, "rec")][1] for n in self.NAMES}
         sys.setrecursionlimit(max(sys.getrecursionlimit(), 20_000))
 
     def call(self, name, *args):
+        if self.session is not None:
+            return self.session.call(self.fn[name], *args)
+        # Steps start at zero for every call, and so does the `hot`
+        # interval (`mark` / `current`), as the session protocol's
+        # `call` does: with `mark` left at its post-load value a step
+        # trap's attribution went negative (found at Q126).
         self.rt.steps = 0
+        self.rt.mark = 0
+        self.rt.current = None
         fn = self.fn[name]
         for arg in args:
             fn = _call(fn, arg, self.rt)
@@ -97,7 +132,13 @@ class Rules:
                          (1 if "Right" in keys else 0) - (1 if "Left" in keys else 0),
                          (1 if "Down" in keys else 0) - (1 if "Up" in keys else 0),
                          (1 if "minus" in keys else 0) - (1 if "plus" in keys else 0))
-        return self.call("tick", world, held)
+        world = self.call("tick", world, held)
+        if isinstance(held, Ref):
+            # The input record never leaves this method: a handle the
+            # driver does not release is kept for the life of the
+            # session, and this one is sixty a second.
+            self.session.release(held)
+        return world
 
     def frame(self, world):
         return list_to_python(self.call("frame", world, FOCAL, VIEW_W, VIEW_H, FAR))
@@ -280,9 +321,19 @@ def shot(rules: Rules, path: str, script=None) -> None:
 
 
 def main() -> int:
-    rules = Rules()
-    if len(sys.argv) > 2 and sys.argv[1] == "--shot":
-        shot(rules, sys.argv[2])
+    parser = argparse.ArgumentParser(
+        description="Kenney's 3D platformer: the window is Python, the game "
+                    "is LOVA")
+    parser.add_argument("--shot", metavar="file.png",
+                        help="no window: play the script and write one frame")
+    parser.add_argument("--native", choices=("auto", "on", "off"),
+                        default="auto",
+                        help="run the game in a native runtime (auto: if "
+                             "there is one and it takes this program)")
+    args = parser.parse_args()
+    rules = Rules(native=args.native)
+    if args.shot:
+        shot(rules, args.shot)
         return 0
     import tkinter as tk
     root = tk.Tk()

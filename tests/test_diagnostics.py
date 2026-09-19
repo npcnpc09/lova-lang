@@ -218,3 +218,70 @@ class Feedback(unittest.TestCase):
         self.assertIn("`fold`", a["repair_hint"])
         # and the path per frame is elided, as the CLI has done since M23
         self.assertLess(len(a["position_path"]), 12)
+
+
+class Uses(unittest.TestCase):
+    """Q127: a program with `(use ...)` is parsed expanded, so its spans
+    index a text the author never saw.  The map gives the author's own
+    line and column, or the library's file and line."""
+
+    SRC = '(use "assoc")' + NL + '(seq 1' + NL + '  (div 7 0))' + NL
+
+    def test_the_expansion_maps_own_text_and_library_text(self):
+        from core.surface import expansion
+        exp = expansion(self.SRC)
+        self.assertFalse(exp.plain)
+        own = exp.text.index("(div 7 0)")
+        self.assertEqual(exp.where(own), (None, 3, 3))
+        self.assertEqual(exp.to_original(own), self.SRC.index("(div 7 0)"))
+        origin, line, col = exp.where(0)
+        self.assertEqual(origin, "lib/assoc.lova")
+        self.assertEqual((line, col), (1, 1))
+        self.assertIsNone(exp.to_original(0))
+        self.assertTrue(expansion("(merge 1 2)").plain)
+
+    def test_the_cli_reports_the_authors_line(self):
+        import io as _io
+        import sys as _sys
+        from contextlib import redirect_stderr
+        from core.cli import build, report_error
+        tree, _ = build(self.SRC)
+        err = _io.StringIO()
+        try:
+            evaluate(tree, Runtime(max_steps=10_000))
+            self.fail("did not trap")
+        except Exception as exc:                        # noqa: BLE001
+            with redirect_stderr(err):
+                report_error(exc, self.SRC)
+        self.assertIn("at: 3:3  (div 7 0)", err.getvalue())
+
+    def test_the_server_names_the_library_when_the_span_is_there(self):
+        from core.mcp_server import _failure
+        from core.surface import expansion
+        exp = expansion(self.SRC)
+        class Fake(Exception):
+            pass
+        exc = Fake("x")
+        exc.anomaly = {"kind": "domain-error", "span": (0, 4)}
+        out = _failure("run", exc, self.SRC)
+        self.assertEqual(out["anomaly"]["file"], "lib/assoc.lova")
+        self.assertEqual(out["anomaly"]["excerpt"], exp.text[0:4])
+        own = exp.text.index("(div 7 0)")
+        exc.anomaly = {"kind": "domain-error", "span": (own, own + 9)}
+        out = _failure("run", exc, self.SRC)
+        self.assertNotIn("file", out["anomaly"])
+        self.assertEqual((out["anomaly"]["line"], out["anomaly"]["col"]), (3, 3))
+
+    def test_a_patch_by_expanded_span_lands_in_the_source(self):
+        from core.mcp_server import tool_patch
+        from core.surface import expansion
+        exp = expansion(self.SRC)
+        own = exp.text.index("(div 7 0)")
+        out = tool_patch({"source": self.SRC, "span": [own, own + 9], "replacement": "(div 7 1)"})
+        self.assertTrue(out.get("ok"), out)
+        self.assertIn("(div 7 1)", out["source"])
+        self.assertTrue(out["source"].startswith('(use "assoc")'))
+        out = tool_patch({"source": self.SRC, "span": [0, 4], "replacement": "x"})
+        self.assertFalse(out.get("ok"))
+        self.assertIn("lib/assoc.lova", out["anomaly"]["message"])
+

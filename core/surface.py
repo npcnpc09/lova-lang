@@ -1062,6 +1062,116 @@ def resolve_library(name: str) -> str:
 _USE_FORM = re.compile(r'\(\s*use\s+"([^"]*)"\s*\)')
 
 
+class Expansion:
+    """The text `expand_uses` makes, and where each part of it came from.
+
+    Every span a parse, a compile pass or a trap reports is an offset
+    into the *expanded* text, because that is what was parsed; the
+    program's author wrote the unexpanded one.  Q127 (2026-09-19): a
+    fault in a program that said `(use "citybuilder")` was reported at
+    `5:75674`, a line and column of a text nobody had seen.  The map
+    here turns an expanded offset back into a place a person can open:
+    the program's own line and column when the offset falls in its own
+    text, or the library's file, line and column when it falls in an
+    included one.
+
+    ``segments`` is a list of ``(start, end, origin, base)``: the
+    expanded text from `start` to `end` came from `origin` (``None``
+    for the program's own text, else the library path relative to the
+    repository) starting at offset `base` of that origin's text.
+    """
+
+    __slots__ = ("text", "segments", "_origins")
+
+    def __init__(self, text: str, segments: List[Tuple[int, int, Optional[str], int]],
+                 origins: Dict[Optional[str], str]) -> None:
+        self.text = text
+        self.segments = segments
+        self._origins = origins           # origin -> its full text
+
+    @property
+    def plain(self) -> bool:
+        """No `(use ...)`: the expanded text is the source, unshifted."""
+        return all(origin is None for _, _, origin, _ in self.segments)
+
+    def segment_of(self, offset: int):
+        for seg in self.segments:
+            if seg[0] <= offset < seg[1]:
+                return seg
+        return self.segments[-1] if self.segments else (0, 0, None, 0)
+
+    def where(self, offset: int) -> Tuple[Optional[str], int, int]:
+        """``(origin, line, col)`` of an expanded offset, 1-based, in the
+        origin's own text."""
+        start, _end, origin, base = self.segment_of(offset)
+        local = base + (offset - start)
+        line, col = line_col(self._origins.get(origin, self.text), local)
+        return origin, line, col
+
+    def to_original(self, offset: int) -> Optional[int]:
+        """The offset in the program's own text, or ``None`` when the
+        expanded offset lies inside an included library."""
+        start, end, origin, base = self.segment_of(offset)
+        if origin is not None:
+            return None
+        return base + (offset - start)
+
+    def describe(self, offset: int) -> str:
+        """``line:col``, or ``lib/x.lova:line:col`` inside a library."""
+        origin, line, col = self.where(offset)
+        return f"{line}:{col}" if origin is None else f"{origin}:{line}:{col}"
+
+
+def _relative_library(path: str) -> str:
+    try:
+        rel = os.path.relpath(path, os.path.dirname(LIB_DIR))
+    except ValueError:                    # another drive on Windows
+        return path
+    return rel.replace(os.sep, "/")
+
+
+def expansion(src: str, _seen: Optional[set] = None,
+              _origin: Optional[str] = None) -> Expansion:
+    """`expand_uses` with the map back (see `Expansion`)."""
+    seen = _seen if _seen is not None else set()
+    parts: List[str] = []
+    segments: List[Tuple[int, int, Optional[str], int]] = []
+    origins: Dict[Optional[str], str] = {_origin: src}
+    pos = 0          # in src
+    out = 0          # in the expanded text
+
+    def own(a: int, b: int) -> None:
+        nonlocal out
+        if b > a:
+            parts.append(src[a:b])
+            segments.append((out, out + (b - a), _origin, a))
+            out += b - a
+
+    for match in _USE_FORM.finditer(src):
+        own(pos, match.start())
+        pos = match.end()
+        path = resolve_library(match.group(1))
+        if path in seen:
+            continue                        # already included
+        seen.add(path)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        inner = expansion(text, seen, _relative_library(path))
+        parts.append(inner.text + "\n")
+        for a, b, origin, base in inner.segments:
+            segments.append((out + a, out + b, origin, base))
+        origins.update(inner._origins)
+        out += len(inner.text)
+        # the newline appended after an inclusion belongs to nobody;
+        # charge it to the library's last segment so every offset maps
+        segments.append((out, out + 1, inner.segments[-1][2] if inner.segments else _origin,
+                         inner.segments[-1][3] + (inner.segments[-1][1] - inner.segments[-1][0])
+                         if inner.segments else 0))
+        out += 1
+    own(pos, len(src))
+    return Expansion("".join(parts), segments, origins)
+
+
 def expand_uses(src: str, _seen: Optional[set] = None) -> str:
     """Replace every ``(use "name")`` with the text of that library (M18).
 
@@ -1070,19 +1180,9 @@ def expand_uses(src: str, _seen: Optional[set] = None) -> str:
     program that uses it sees those definitions as if written above.
     Included once per program however many times it is named, and a
     cycle is an error rather than a loop.  `drop-unused` keeps it free.
+    `expansion` is the same text with the map back to the files.
     """
-    seen = _seen if _seen is not None else set()
-
-    def include(match: "re.Match[str]") -> str:
-        path = resolve_library(match.group(1))
-        if path in seen:
-            return ""                       # already included
-        seen.add(path)
-        with open(path, encoding="utf-8") as handle:
-            text = handle.read()
-        return expand_uses(text, seen) + "\n"
-
-    return _USE_FORM.sub(include, src)
+    return expansion(src, _seen).text
 
 
 _PRELUDE_DEF = re.compile(r"^\(def(?:n)?\s+([^\s\[\]()]+)", re.M)

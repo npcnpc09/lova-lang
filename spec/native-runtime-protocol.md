@@ -106,6 +106,135 @@ net 8); `max_steps` / `max_depth` are the ceilings for this run.
   requirement.  It is never an anomaly: an anomaly is the *language's*
   answer to a fault, and an undecodable byte stream is not a program.
 
+## Sessions (since 0.3.0, Q126)
+
+`run` evaluates one program and forgets it.  The apps that most need
+the speed do not work that way: `apps/war/war.py`,
+`apps/platformer/platformer.py` and `apps/citybuilder/citybuilder.py`
+evaluate a program once, take the record of closures it returns, and
+call into it sixty times a second with the world as an argument,
+keeping the world -- a LOVA value -- between calls.  A **session** is
+that shape over the wire: the runtime keeps values it has produced and
+hands out handles to them; the driver calls closures by handle with
+arguments that are data or handles; whatever a call returns comes back
+as data where it is data and as a handle where it is not.
+
+### Requests
+
+```json
+{"id": 1, "op": "session", "bytes": "<hex>", "allow": 0,
+ "max_steps": 200000000, "max_depth": 10000}
+{"id": 2, "op": "get",  "session": 7, "ref": 1, "key": "tick"}
+{"id": 3, "op": "call", "session": 7, "fn": {"ref": 2},
+ "args": [{"ref": 1}, 3, [1, 2, 3], "text"], "max_steps": 200000000}
+{"id": 4, "op": "release", "session": 7, "refs": [2, 5, 9]}
+{"id": 5, "op": "close",   "session": 7}
+```
+
+* **`session`** decodes and evaluates the program exactly as `run`
+  does -- same ceilings, same capability grant, same step accounting,
+  same anomaly on a fault -- and, when it completes, keeps the
+  program's value and its environment alive.  The reply is a `run`
+  reply plus **`session`**, the session's id, and the program's value
+  is *encoded* (below), not printed: `{"id": 1, "ok": true, "session":
+  7, "value": {"ref": 1}, "steps": 1234, "stdout": ""}`.  A trap during
+  evaluation is a `run` failure, and no session is opened.  The
+  program's `stdin` is the request's `stdin`, as for `run`; calls read
+  the rest of it.
+* **`get`** is `map-get` on a held map: `key` is an encoded value (a
+  text for a `rec` field, which the drivers use; an integer or a list
+  are keys too), the reply's `value` is the entry encoded, or `null`
+  for an absent key.  It charges no steps.  On something that is not a
+  map the reply is the `type-violation` anomaly `map-get` would raise.
+* **`call`** applies a closure to its arguments one at a time, exactly
+  as `core.runtime._call` does from Python (`Rules.call` in the three
+  drivers: `fn = _call(fn, arg, rt)` per argument -- so a curried
+  closure given fewer arguments returns a closure, and given more
+  applies the result to the rest).  **Steps start at zero for every
+  call**, as the drivers set `rt.steps = 0` before each; the reply's
+  `steps` is this call's own, and `max_steps` (default: the session's)
+  is this call's ceiling.  The budget stack, the call depth, `hot`
+  attribution and the surprise trace behave as in a fresh `run` that
+  made this call at the top level.  `stdout` in the reply is what this
+  call wrote.  A trap is reported as in `run` (`anomaly` with
+  `position_path` and `position_nodes`; frames inside a closure from
+  the session's program have their ordinals in that program), and the
+  session stays open: the drivers catch a trap per tick and go on.
+* **`release`** forgets the named handles; **`close`** ends the
+  session and forgets everything in it.  A handle is valid until
+  released or the session closes; using one after that is `{"ok":
+  false, "error": "no such ref: 5"}`.  A session id is valid until
+  closed; a runtime may hold several.  Closing the process closes
+  every session.
+
+### Rulings on what the first two implementations asked
+
+Settled when `tools/mock_runtime.py` and the crate were written against
+this section, so that a third implementation does not have to ask:
+
+* **A handle names a value, not an occurrence.** The same held value
+  gets the same id every time it crosses; an id is never reused after
+  `release`.  `release` of an id that is not held is not an error;
+  *using* one is `no such ref: n`.  `close` of an unknown session is
+  `no such session: n`.
+* **`get` of an absent key and of a field holding `nil` both answer
+  `null`.** The table has one encoding for nil, and a driver that must
+  tell them apart asks a closure.
+* **What a `call` resets is what `Rules.call` resets:** `steps`, the
+  `hot` interval (`mark` / `current`) and the output buffer.  The
+  surprise trace and the budget stack are not cleared -- a handler
+  unwinds the stack, and `trace-surprise` across ticks needs the trace.
+  Step counts do not depend on this either way.
+* **A call runs outside `evaluate`,** which is what makes room for
+  `max_depth` in the Python runtime: a session makes that room once,
+  at open, and a recursion overflow inside a call is the same
+  `recursion-depth-exceeded` trap `evaluate` would give.
+* **`get` charges nothing and leaves `steps` / `stdout` at the last
+  `call`'s.**  The session's `steps` right after `session` is the
+  evaluation's own, which is what `apps/war/war.py` prints as
+  `build_steps`.
+* **A JSON number with a fraction is refused** (`LOVA has no floating
+  point`); an integral one, `3.0`, is an integer.
+* **A pre-0.3.0 runtime** answers `session` with `{"ok": false,
+  "error": "unknown op 'session'"}`; the client takes any `error` reply
+  that is not `no such ...` as "no native runtime" and, under `auto`,
+  runs the driver's Python path.
+* The client's `get(key, ref=None)` defaults to the program's value and
+  takes any held map, because the war driver reads fields off records
+  it holds.
+
+### Encoded values
+
+Data crosses as JSON; anything else crosses as a handle.
+
+| LOVA value | encoded |
+|---|---|
+| integer with \|n\| < 2^53 | a JSON number |
+| any other integer | `{"int": "<decimal>"}` |
+| nil | `null` |
+| text | a JSON string |
+| list | a JSON array of encoded elements, recursively (`(1 (2 3))` → `[1, [2, 3]]`; a list of codepoints is still an array, never a string -- the driver knows which it wants) |
+| map, closure, program, population, `LoopFn` | `{"ref": <id>}`, an id the runtime chose, unique within the session |
+
+An argument may be any of these; a `{"ref": n}` argument is the held
+value itself (the world going back in), an array is built into a fresh
+list, a string into a text.  A handle the driver did not release is
+kept for the life of the session, so a driver that keeps the world
+from every tick should release the old one when it takes the new.
+The reference server (`tools/mock_runtime.py`) implements sessions
+over the Python runtime the same way, which is what the client's tests
+run against.
+
+### What the Python side does with it
+
+`core.native.NativeSession` opens one (`open(tree, allow=, max_steps=,
+max_depth=)`), holds the api handle, and offers `get(key)`, `call(fn,
+*args)` and `close()`, with `Ref` as the handle type; the three
+drivers' `Rules` classes choose it under `--native` (auto: when there
+is a runtime and the program is inside its scope) and keep the Python
+path otherwise, with the same `call(name, *args)` surface, so the rest
+of each driver does not know which is running.
+
 ## Which fields the native side owes
 
 It must produce: `value` (or `anomaly`), `steps`, `stdout`, and inside

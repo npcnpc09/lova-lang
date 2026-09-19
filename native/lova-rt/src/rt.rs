@@ -36,9 +36,10 @@ pub struct Rt {
     pub max_steps: u64,
     pub call_depth: u32,
     pub max_call_depth: u32,
-    pub path: Vec<u8>,
-    /// The same frames as `path`, by arena node id.
-    pub path_ids: Vec<u32>,
+    /// D8's explicit path stack: the operator of every frame from the
+    /// root to the node in hand, and the arena node it came from.  One
+    /// vector, because it is pushed and popped on every node (Q124).
+    pub path: Vec<(u8, u32)>,
     /// `ordinals[node id]` is the node's preorder place in the decoded
     /// program; ids past its end were made during the run.
     pub ordinals: Rc<Vec<u32>>,
@@ -53,6 +54,8 @@ pub struct Rt {
     pub caps: u32,
     pub enclosed: bool,
     pub patterns: HashMap<String, regex::Regex>,
+    /// Call frames nothing closed over, kept for the next call (Q124).
+    pub scope_pool: Vec<Rc<Scope>>,
     /// The provenance store, shared with a `trace` sandbox.
     pub lineage: Rc<RefCell<Lineage>>,
     /// The deviations `trace` reports, in emission order.
@@ -69,7 +72,6 @@ impl Rt {
             call_depth: 0,
             max_call_depth: max_depth,
             path: Vec::new(),
-            path_ids: Vec::new(),
             ordinals: Rc::new(Vec::new()),
             let_chain: None,
             current: None,
@@ -82,6 +84,7 @@ impl Rt {
             caps: 0,
             enclosed: false,
             patterns: HashMap::new(),
+            scope_pool: Vec::new(),
             lineage: Rc::new(RefCell::new(Lineage::new())),
             surprise: Vec::new(),
         }
@@ -373,15 +376,19 @@ pub fn as_program(a: &Arena, v: &Value, ctx: &str) -> R<u32> {
 }
 
 pub fn map_key(a: &Arena, v: &Value, ctx: &str) -> R<MapKey> {
+    #[cfg(feature = "prof")]
+    crate::prof::mark(crate::prof::R_MAPKEY);
     match v {
         Value::Int(i) => Ok(MapKey::I(i.clone())),
-        Value::Text(s) => {
-            Ok(MapKey::L(s.chars().map(|c| MapKey::I(Int::from_i64(c as i64))).collect()))
-        }
+        Value::Text(s) => Ok(MapKey::T(s.clone())),
+        // The chain is walked where it lies: a key was costing a vector
+        // of cloned values and then a vector of keys (Q124).
         Value::Nil | Value::Cons(_) => {
             let mut out = Vec::new();
-            for item in list_walk(v) {
-                out.push(map_key(a, &item, ctx)?);
+            let mut rest = v;
+            while let Value::Cons(cell) = rest {
+                out.push(map_key(a, &cell.head, ctx)?);
+                rest = &cell.tail;
             }
             Ok(MapKey::L(out))
         }
@@ -562,10 +569,10 @@ fn cost_by_function(rt: &Rt) -> J {
 }
 
 fn enrich(rt: &Rt, t: &mut Trap) {
-    let op = rt.path.last().copied();
+    let op = rt.path.last().map(|f| f.0);
     let alts = op.map(suggest_alternatives).unwrap_or_default();
-    t.anomaly.position_path = rt.path.clone();
-    t.anomaly.position_nodes = rt.path_ids.iter().map(|id| rt.ordinal(*id)).collect();
+    t.anomaly.position_path = rt.path.iter().map(|f| f.0).collect();
+    t.anomaly.position_nodes = rt.path.iter().map(|f| rt.ordinal(f.1)).collect();
     t.anomaly.offending_op = op;
     t.anomaly.offending_op_name = op.map(op_name).unwrap_or("").to_string();
     t.anomaly.valid_alternatives = alts.clone();
@@ -608,8 +615,9 @@ pub fn eval(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
         charge_tick(rt)?;
         return Ok(Value::Text(a.get(id).sval.clone().unwrap()));
     }
-    rt.path.push(op);
-    rt.path_ids.push(id);
+    rt.path.push((op, id));
+    #[cfg(feature = "prof")]
+    crate::prof::mark(op as u32);
     let mut out = eval_node(a, rt, id, tail, op);
     if let Err(Fault::Trap(t)) = &mut out {
         if !t.anomaly.enriched {
@@ -617,7 +625,8 @@ pub fn eval(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
         }
     }
     rt.path.pop();
-    rt.path_ids.pop();
+    #[cfg(feature = "prof")]
+    crate::prof::mark(rt.path.last().map(|f| f.0 as u32).unwrap_or(crate::prof::NONE));
     out
 }
 
@@ -630,7 +639,8 @@ fn eval_node(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool, op: u8) -> R<Value
     match op {
         REF => {
             let slot = a.kids(id)[0];
-            if a.op(slot) != LIT_INT {
+            let holder = a.get(slot);
+            if holder.op != LIT_INT {
                 return Err(domain(
                     "malformed",
                     "REF: name slot must be a literal integer id".to_string(),
@@ -638,7 +648,10 @@ fn eval_node(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool, op: u8) -> R<Value
                     "put a literal integer in REF's slot",
                 ));
             }
-            let name = a.get(slot).ival.as_ref().unwrap().to_i64().unwrap_or(i64::MIN);
+            let name = match &holder.ival {
+                Some(Int::S(v)) => *v,
+                _ => i64::MIN,
+            };
             match rt.env.lookup(name) {
                 Some(v) => Ok(v),
                 None => Err(unbound(rt, name)),
@@ -683,6 +696,13 @@ fn eval_node(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool, op: u8) -> R<Value
             let x = as_int(a, &x, "mul")?;
             let y = eval(a, rt, k1, false)?;
             let y = as_int(a, &y, "mul")?;
+            // Two `i64`s cannot reach 4096 bits between them, so a
+            // product that fits one is past the ceiling check.
+            if let (Some(p), Some(q)) = (x.to_i64(), y.to_i64()) {
+                if let Some(n) = p.checked_mul(q) {
+                    return Ok(Value::Int(Int::from_i64(n)));
+                }
+            }
             let (ab, bb) = (x.bit_length(), y.bit_length());
             if ab + bb > MAX_INT_BITS {
                 return Err(domain(
@@ -925,8 +945,10 @@ fn eval_node(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool, op: u8) -> R<Value
 
 fn eval_let(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
     let chained = rt.let_chain == Some((id, tail));
-    let slot = a.kids(id)[0];
-    if a.op(slot) != LIT_INT {
+    let kids = a.kids(id);
+    let (slot, value_node, body_node) = (kids[0], kids[1], kids[2]);
+    let holder = a.get(slot);
+    if holder.op != LIT_INT {
         charge_tick(rt)?;
         return Err(domain(
             "malformed",
@@ -935,19 +957,20 @@ fn eval_let(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
             "put a literal integer in LET's first slot",
         ));
     }
+    let name = match &holder.ival {
+        Some(Int::S(v)) => *v,
+        _ => i64::MIN,
+    };
     charge_tick(rt)?;
-    let name = a.get(slot).ival.as_ref().unwrap().to_i64().unwrap_or(i64::MIN);
-    let value_node = a.kids(id)[1];
-    let body_node = a.kids(id)[2];
     let saved_env = rt.env.clone();
     let extend = chained && !saved_env.root && !saved_env.bound(name);
-    let scope = if extend {
-        saved_env.clone()
-    } else {
-        let s = Scope::open(&saved_env);
-        rt.env = s.clone();
-        s
-    };
+    if !extend {
+        let fresh = open_frame(rt, &saved_env);
+        rt.env = fresh;
+    }
+    // The frame the binding goes in is `rt.env`: the value's own
+    // evaluation puts back what it borrowed, so this is the frame
+    // opened (or extended) just above, and it need not be held twice.
     let result = (|| -> R<Value> {
         let value = eval(a, rt, value_node, false)?;
         if let Value::Closure(c) = &value {
@@ -956,13 +979,14 @@ fn eval_let(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
                 rt.named.push(c.clone());
             }
         }
-        scope.set(name, value);
+        rt.env.vars.borrow_mut().insert(name, value);
         rt.let_chain = Some((body_node, tail));
         eval(a, rt, body_node, tail)
     })();
     rt.let_chain = None;
     if !extend {
-        rt.env = saved_env;
+        let spent = std::mem::replace(&mut rt.env, saved_env);
+        recycle_frame(rt, spent);
     }
     result
 }
@@ -1211,14 +1235,13 @@ fn eval_generic(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             evolve::eval_evolution(a, rt, id, op)
         }
         END => Err(Fault::NotImplemented(
-            "operator end (family struct) not implemented in Milestone 1 runtime".to_string(),
+            "operator end (family struct) not implemented in Milestone 1 runtime".into(),
         )),
         _ if (0x40..=0x4F).contains(&op) => text::eval_text(a, rt, id, op),
         _ if (0x50..=0x57).contains(&op) => eval_list(a, rt, id, op),
-        _ => Err(Fault::NotImplemented(format!(
-            "operator {} is outside this runtime's phase-2 scope",
-            op_name(op)
-        ))),
+        _ => Err(Fault::NotImplemented(
+            format!("operator {} is outside this runtime's phase-2 scope", op_name(op)).into(),
+        )),
     }
 }
 
@@ -1367,14 +1390,6 @@ fn before(a: &mut Arena, rt: &mut Rt, less: &Value, x: &Value, y: &Value) -> R<b
 
 // --- calls (spec §4.1) ------------------------------------------------------
 
-fn same(x: &Option<Rc<ClosureData>>, y: &Option<Rc<ClosureData>>) -> bool {
-    match (x, y) {
-        (None, None) => true,
-        (Some(p), Some(q)) => Rc::ptr_eq(p, q),
-        _ => false,
-    }
-}
-
 pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Value> {
     loop {
         if let Value::Loop(lf) = &fnv {
@@ -1393,37 +1408,55 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
                 value = call(a, rt, lf.step.clone(), value)?;
             }
         }
-        let cl = match &fnv {
-            Value::Closure(c) => c.clone(),
-            other => return Err(not_callable(a, other)),
+        let cl = match fnv {
+            Value::Closure(c) => c,
+            other => return Err(not_callable(a, &other)),
         };
 
-        let me: Option<Rc<ClosureData>> = if cl.name.get().is_some() {
+        // Who the steps belong to (Exp 20).  The reference compares two
+        // closures by identity, so the addresses decide it and nothing
+        // is cloned unless the function in flight actually changes.
+        let named = cl.name.get().is_some();
+        if named {
             cl.calls.set(cl.calls.get() + 1);
-            Some(cl.clone())
+        }
+        let me_at: *const ClosureData = if named {
+            Rc::as_ptr(&cl)
         } else {
-            cl.owner.borrow().clone()
+            match &*cl.owner.borrow() {
+                Some(o) => Rc::as_ptr(o),
+                None => std::ptr::null(),
+            }
         };
-        let outer = rt.current.clone();
-        let changed = !same(&me, &outer);
+        let now_at: *const ClosureData = match &rt.current {
+            Some(c) => Rc::as_ptr(c),
+            None => std::ptr::null(),
+        };
+        let changed = me_at != now_at;
+        let mut outer: Option<Rc<ClosureData>> = None;
         if changed {
+            let me = if named { Some(cl.clone()) } else { cl.owner.borrow().clone() };
             let s = rt.steps;
+            outer = std::mem::replace(&mut rt.current, me);
             if let Some(o) = &outer {
                 o.own.set(o.own.get() + (s - rt.mark));
             }
             rt.mark = s;
-            rt.current = me.clone();
         }
 
         rt.call_depth += 1;
         if rt.call_depth > rt.max_call_depth {
             let depth = rt.call_depth;
             rt.call_depth -= 1;
+            // The reference leaves the function in flight as it is on
+            // this path, and `hot` in the trap reads it.
             return Err(depth_trap(depth, rt.max_call_depth));
         }
 
-        let scope = Scope::open(&cl.env);
-        scope.set(cl.param, arg);
+        #[cfg(feature = "prof")]
+        crate::prof::mark(crate::prof::R_CALL);
+        let scope = open_frame(rt, &cl.env);
+        scope.vars.borrow_mut().insert(cl.param, arg);
         let saved_env = std::mem::replace(&mut rt.env, scope);
         let saved_caps = rt.caps;
         let saved_enclosed = rt.enclosed;
@@ -1431,14 +1464,17 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
         rt.enclosed = cl.enclosed;
 
         let result = eval(a, rt, cl.body, true);
+        #[cfg(feature = "prof")]
+        crate::prof::mark(crate::prof::R_CALL);
 
-        rt.env = saved_env;
+        let spent = std::mem::replace(&mut rt.env, saved_env);
+        recycle_frame(rt, spent);
         rt.caps = saved_caps;
         rt.enclosed = saved_enclosed;
         rt.call_depth -= 1;
         if changed {
             let s = rt.steps;
-            if let Some(m) = &me {
+            if let Some(m) = &rt.current {
                 m.own.set(m.own.get() + (s - rt.mark));
             }
             rt.mark = s;
@@ -1446,11 +1482,51 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
         }
 
         match result? {
-            Value::Tail(t) => {
-                fnv = t.0.clone();
-                arg = t.1.clone();
-            }
+            // The marker is made fresh by `apply` and nothing else
+            // holds it, so its two values move out rather than clone.
+            Value::Tail(t) => match Rc::try_unwrap(t) {
+                Ok((f, next)) => {
+                    fnv = f;
+                    arg = next;
+                }
+                Err(shared) => {
+                    fnv = shared.0.clone();
+                    arg = shared.1.clone();
+                }
+            },
             other => return Ok(other),
         }
     }
 }
+
+/// A call frame, from the pool when one is free (Q124).
+///
+/// A frame is one allocation and a program makes millions of them, and
+/// most are dead the moment the call returns -- nothing closed over
+/// them.  Those come back here instead of to the allocator.  A frame a
+/// closure captured is not recycled: `strong_count` says so.
+#[inline]
+fn open_frame(rt: &mut Rt, parent: &Rc<Scope>) -> Rc<Scope> {
+    while let Some(mut free) = rt.scope_pool.pop() {
+        if let Some(frame) = Rc::get_mut(&mut free) {
+            frame.parent = Some(parent.clone());
+            return free;
+        }
+    }
+    Scope::open(parent)
+}
+
+#[inline]
+fn recycle_frame(rt: &mut Rt, mut frame: Rc<Scope>) {
+    if rt.scope_pool.len() < SCOPE_POOL && Rc::strong_count(&frame) == 1 {
+        if let Some(f) = Rc::get_mut(&mut frame) {
+            // emptied now, not on the way out: a pooled frame must not
+            // keep a world alive.
+            f.parent = None;
+            f.vars.get_mut().clear();
+            rt.scope_pool.push(frame);
+        }
+    }
+}
+
+const SCOPE_POOL: usize = 1024;

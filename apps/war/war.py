@@ -30,6 +30,7 @@ side comes looking for you whatever you do.
 
 from __future__ import annotations
 
+import argparse
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -38,13 +39,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from core.cli import build
 from core.conservation import BudgetTrap, DeltaTrap
-from core.runtime import Runtime, _call, _map_key, evaluate, list_to_python
+from core.native import open_session
+from core.runtime import Runtime, _call, _map_key, evaluate
+from core.runtime import list_to_python as _list_to_python
 
 SOURCE = """\
 (use "war")
 (rec ground terrain new new-war tick tick spr sprites
      left standing select choose all select-all order order)
 """
+
+NAMES = ("ground", "new", "tick", "spr", "left", "select", "all", "order")
+
+
+def list_to_python(value):
+    """A LOVA list as a Python one, whichever runtime produced it.
+
+    The native session already hands a list over as a Python list (and
+    the empty list as `None`, which is what `nil` is); the Python
+    runtime hands over a cons chain.  Every call site below wants the
+    same thing, so the conversion takes both.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return _list_to_python(value)
 
 VIEW_W, VIEW_H = 1000, 620
 BUDGET = 20_000_000
@@ -80,27 +100,52 @@ def rgb(c):
 
 
 class Rules:
-    """The LOVA program, loaded once; every tick is a call into it."""
+    """The LOVA program, loaded once; every tick is a call into it.
 
-    def __init__(self) -> None:
+    Two runtimes, one surface.  `native` is `auto` / `on` / `off`: with
+    a native runtime at hand (`LOVA_NATIVE`, or the built binary) the
+    program is opened as a session there and the world is a handle;
+    otherwise it runs in this process and the world is a LOVA value.
+    Either way `call(name, *args)` answers the same thing and `rt.steps`
+    is what the last call cost.
+    """
+
+    def __init__(self, native: str = "auto") -> None:
         tree, _report = build(SOURCE)
-        self.rt = Runtime(max_steps=BUDGET, max_call_depth=10_000)
-        api = evaluate(tree, self.rt)
-        self.build_steps = self.rt.steps
-        self.fn = {name: api.entries[_map_key(name, "rec")][1]
-                   for name in ("ground", "new", "tick", "spr", "left",
-                                "select", "all", "order")}
+        self.session = open_session(tree, native, max_steps=BUDGET,
+                                    max_depth=10_000)
+        if self.session is not None:
+            # The session carries `steps` of the last call, which is
+            # what the window reads off `rt`.
+            self.rt = self.session
+            self.build_steps = self.session.steps
+            self.fn = {name: self.session.get(name) for name in NAMES}
+        else:
+            self.rt = Runtime(max_steps=BUDGET, max_call_depth=10_000)
+            api = evaluate(tree, self.rt)
+            self.build_steps = self.rt.steps
+            self.fn = {name: api.entries[_map_key(name, "rec")][1]
+                       for name in NAMES}
         sys.setrecursionlimit(max(sys.getrecursionlimit(), 20_000))
 
     def call(self, name, *args):
+        if self.session is not None:
+            return self.session.call(self.fn[name], *args)
+        # Steps start at zero for every call, and so does the `hot`
+        # interval (`mark` / `current`), as the session protocol's
+        # `call` does: with `mark` left at its post-load value a step
+        # trap's attribution went negative (found at Q126).
         self.rt.steps = 0
+        self.rt.mark = 0
+        self.rt.current = None
         fn = self.fn[name]
         for arg in args:
             fn = _call(fn, arg, self.rt)
         return fn
 
-    @staticmethod
-    def field(value, name: str):
+    def field(self, value, name: str):
+        if self.session is not None:
+            return self.session.get(name, value)
         return value.entries[_map_key(name, "get")][1]
 
     def fields(self, value, *names):
@@ -279,8 +324,51 @@ class Battlefield(tk.Frame):
             self.canvas.yview_scroll(-3 if key == "Up" else 3, "units")
 
 
+def headless(rules: Rules, ticks: int, ground: int = 0) -> int:
+    """The battle with no window: the same numbers, printed.
+
+    What a screenshot is to the other two drivers -- a run that says
+    exactly what the rules computed, so the native path and the Python
+    path can be compared character for character.
+    """
+    if ground:
+        cells = list_to_python(rules.call("ground"))
+        print(f"ground {len(cells)} cells")
+        for cell in cells[:ground]:
+            print(rules.fields(cell, "u0", "v0", "u1", "v1", "u2", "v2",
+                               "u3", "v3", "t", "l", "d", "s"))
+    world = rules.call("new", 1)
+    print(f"new {rules.rt.steps} steps")
+    for i in range(ticks):
+        world = rules.call("tick", world)
+        steps = rules.rt.steps
+        if (i + 1) % 10 == 0 or i + 1 == ticks:
+            sprites = [rules.fields(s, "u", "v", "t", "hp", "s", "f")
+                       for s in list_to_python(rules.call("spr", world))]
+            print(f"{i + 1:4d} turn={rules.field(world, 'turn')} "
+                  f"yours={rules.call('left', world, 0)} "
+                  f"theirs={rules.call('left', world, 1)} "
+                  f"tick={steps} {sprites}")
+    return 0
+
+
 def main() -> int:
-    rules = Rules()
+    parser = argparse.ArgumentParser(
+        description="an isometric battlefield: the window is Python, "
+                    "the rules are LOVA")
+    parser.add_argument("--native", choices=("auto", "on", "off"),
+                        default="auto",
+                        help="run the rules in a native runtime (auto: if "
+                             "there is one and it takes this program)")
+    parser.add_argument("--ticks", type=int, default=0, metavar="N",
+                        help="no window: run N ticks and print what the "
+                             "rules computed")
+    parser.add_argument("--ground", type=int, default=0, metavar="N",
+                        help="with --ticks: print the first N ground cells too")
+    args = parser.parse_args()
+    rules = Rules(native=args.native)
+    if args.ticks:
+        return headless(rules, args.ticks, args.ground)
     root = tk.Tk()
     root.title("war -- the window is Python, the battlefield is LOVA")
     root.configure(bg="#0a0c10")

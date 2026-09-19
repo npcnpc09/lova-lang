@@ -151,7 +151,12 @@ native runtime, and `lova run` uses it by itself for every program it
 implements (`--native off` for the Python runtime, `--native on` to be
 told why it could not be used): the same values, the same anomalies,
 the same step counts, checked record by record against
-`corpus/golden/`.
+`corpus/golden/`. The compiled program is cached under `$LOVA_CACHE`,
+or `%LOCALAPPDATA%\lova\cache` on Windows and `~/.cache/lova`
+elsewhere, keyed by the source, the libraries it uses and a hash of
+the implementation, so a second run of a program that pulls in one of
+the 3D libraries skips a parse that costs one to two seconds;
+`LOVA_CACHE=off` disables it.
 
 ```bash
 git clone <this-repo> lova && cd lova
@@ -728,8 +733,8 @@ Stated plainly, because the list is short and the omissions are large:
 - **It is an interpreter.** The tree is compiled to closures (M23)
   and runs at ~700 000 steps a second on CPython, ~4 million under
   PyPy (journal M22, M23 and M25 have the profiles); the native
-  runtime (M33) is about five times CPython wall-clock on a pure
-  program and is the way past this. Tens of thousands of lines of
+  runtime (M33, M34) runs the same programs at 4-5 million steps a
+  second, 8-11x CPython, and the tick-driven 3D apps run on it. Tens of thousands of lines of
   input are seconds; millions are not this language yet (Q76).
 - **IO is whole values.** `fs-read` reads a whole file, `net-recv` one
   datagram: there are no handles and no streams (Q72). The terminal is

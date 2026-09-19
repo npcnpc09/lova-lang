@@ -150,9 +150,15 @@ pub fn py_name_list(names: &[&str]) -> String {
 
 // --- the node arena ---------------------------------------------------------
 
+/// A node's children live in the arena's own vector, not in a vector
+/// of the node's own (Q124): a tree of thousands of nodes was as many
+/// small allocations scattered over the heap, and the walk chased a
+/// pointer into one of them at every node.  `start` / `len` index
+/// `Arena::kids`, so siblings are contiguous and the node is smaller.
 pub struct Node {
     pub op: u8,
-    pub kids: Vec<u32>,
+    start: u32,
+    len: u32,
     pub ival: Option<Int>,
     pub sval: Option<Rc<String>>,
     /// The lineage uid, set by `register_root` / `_register_child`.
@@ -160,17 +166,26 @@ pub struct Node {
     pub uid: Cell<Option<u64>>,
 }
 
-pub fn node(op: u8, kids: Vec<u32>, ival: Option<Int>, sval: Option<Rc<String>>) -> Node {
-    Node { op, kids, ival, sval, uid: Cell::new(None) }
+/// A node before it has an arena to live in.
+pub struct NodeSpec {
+    pub op: u8,
+    pub kids: Vec<u32>,
+    pub ival: Option<Int>,
+    pub sval: Option<Rc<String>>,
+}
+
+pub fn node(op: u8, kids: Vec<u32>, ival: Option<Int>, sval: Option<Rc<String>>) -> NodeSpec {
+    NodeSpec { op, kids, ival, sval }
 }
 
 pub struct Arena {
     pub nodes: Vec<Node>,
+    kids: Vec<u32>,
 }
 
 impl Arena {
     pub fn new() -> Arena {
-        Arena { nodes: Vec::new() }
+        Arena { nodes: Vec::new(), kids: Vec::new() }
     }
 
     #[inline]
@@ -185,11 +200,22 @@ impl Arena {
 
     #[inline]
     pub fn kids(&self, id: u32) -> &[u32] {
-        &self.nodes[id as usize].kids
+        let n = &self.nodes[id as usize];
+        &self.kids[n.start as usize..(n.start + n.len) as usize]
     }
 
-    pub fn push(&mut self, node: Node) -> u32 {
-        self.nodes.push(node);
+    pub fn push(&mut self, spec: NodeSpec) -> u32 {
+        let start = self.kids.len() as u32;
+        let len = spec.kids.len() as u32;
+        self.kids.extend_from_slice(&spec.kids);
+        self.nodes.push(Node {
+            op: spec.op,
+            start,
+            len,
+            ival: spec.ival,
+            sval: spec.sval,
+            uid: Cell::new(None),
+        });
         (self.nodes.len() - 1) as u32
     }
 
@@ -197,7 +223,7 @@ impl Arena {
     pub fn deep_copy(&mut self, id: u32) -> u32 {
         let (op, kids, ival, sval) = {
             let n = self.get(id);
-            (n.op, n.kids.clone(), n.ival.clone(), n.sval.clone())
+            (n.op, self.kids(id).to_vec(), n.ival.clone(), n.sval.clone())
         };
         let new_kids: Vec<u32> = kids.iter().map(|k| self.deep_copy(*k)).collect();
         // `_deep_copy_node` clears the uid on the copy (quirk 29).
@@ -312,7 +338,7 @@ fn encode_into(arena: &Arena, id: u32, buf: &mut Vec<u8>) {
         buf.extend_from_slice(&bytes[bytes.len() - n_bytes..]);
         return;
     }
-    for k in &n.kids {
+    for k in arena.kids(id) {
         encode_into(arena, *k, buf);
     }
     if matches!(sig(n.op).map(|s| &s.arity), Some(Arity::Var)) {
@@ -331,10 +357,10 @@ pub fn pretty(arena: &Arena, id: u32) -> String {
         return crate::value::quote_text(n.sval.as_ref().unwrap());
     }
     let name = op_name(n.op);
-    if n.kids.is_empty() {
+    if arena.kids(id).is_empty() {
         return format!("({})", name);
     }
-    let kids: Vec<String> = n.kids.iter().map(|k| pretty(arena, *k)).collect();
+    let kids: Vec<String> = arena.kids(id).iter().map(|k| pretty(arena, *k)).collect();
     format!("({} {})", name, kids.join(" "))
 }
 
@@ -362,7 +388,7 @@ fn fill(arena: &Arena, id: u32, next: &mut u32, out: &mut Vec<u32>) {
 pub fn operators_used(arena: &Arena, id: u32, seen: &mut [bool; 0x58]) {
     let n = arena.get(id);
     seen[n.op as usize] = true;
-    for k in &n.kids {
+    for k in arena.kids(id) {
         operators_used(arena, *k, seen);
     }
 }

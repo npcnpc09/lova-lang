@@ -55,7 +55,8 @@ from core.tokens import LAMBDA, Node, SIGNATURES, encode
 
 __all__ = [
     "NativeUnavailable", "NativeUnsupported", "NativeResult", "NativeRuntime",
-    "UNSUPPORTED_OPS", "UNSUPPORTED_OP_NAMES", "default_runtime", "supports",
+    "NativeSession", "NativeSessionError", "Ref", "UNSUPPORTED_OPS",
+    "UNSUPPORTED_OP_NAMES", "default_runtime", "open_session", "supports",
     "unsupported_in", "operators_of", "ops_named", "split_command",
     "span_for_path", "trap_from_anomaly",
 ]
@@ -135,6 +136,14 @@ class NativeUnavailable(RuntimeError):
 
 class NativeUnsupported(RuntimeError):
     """The native runtime refused the program: not in its phase's scope."""
+
+
+class NativeSessionError(RuntimeError):
+    """The session refused the request: a released handle, a closed session.
+
+    Not a trap: a trap is the language's answer to a fault in a program,
+    and a handle that no longer exists is a fault in the conversation.
+    """
 
 
 # --- scanning a tree ---------------------------------------------------------
@@ -463,6 +472,13 @@ class NativeRuntime:
             raise self._fail("the native runtime answered a non-object")
         return reply
 
+    def _request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """One request under the next id on this process's counter."""
+        self._id += 1
+        payload = dict(payload)
+        payload["id"] = self._id
+        return self._call(payload)
+
     def _read_line(self) -> str:
         """One reply line, under a timeout; a timeout kills the process.
 
@@ -598,6 +614,286 @@ class NativeRuntime:
     def __exit__(self, *_exc: Any) -> bool:
         self.close()
         return False
+
+
+# --- sessions ----------------------------------------------------------------
+#
+# `run` evaluates a program and forgets it.  A session keeps it: the
+# runtime holds the value the program produced and hands out handles,
+# and the driver calls closures by handle with arguments that are data
+# or handles.  That is the shape `apps/war`, `apps/platformer` and
+# `apps/citybuilder` already have in Python -- evaluate once, take the
+# record of closures, call into it sixty times a second with the world
+# as an argument -- and `NativeSession` is that shape over the wire, so
+# a `Rules` class can hold one or the other and the rest of a driver
+# cannot tell which.
+
+SAFE_INT = 1 << 53              # past this an integer crosses as a string
+
+
+class Ref:
+    """A handle on a value the runtime holds: a map, a closure, a program.
+
+    Data crosses as data; everything else crosses as one of these.  It
+    is an opaque token -- the world going back in next tick -- and the
+    only things to do with it are pass it to `call` / `get` and release
+    it.
+    """
+
+    __slots__ = ("id", "session")
+
+    def __init__(self, ident: int, session: Optional["NativeSession"] = None):
+        self.id = int(ident)
+        self.session = session
+
+    def __repr__(self) -> str:
+        return f"<ref {self.id}>"
+
+    def __eq__(self, other: object) -> bool:
+        return (isinstance(other, Ref) and other.id == self.id
+                and other.session is self.session)
+
+    def __hash__(self) -> int:
+        return hash((id(self.session), self.id))
+
+
+class NativeSession:
+    """A program kept alive in a native runtime, called into by handle.
+
+        with NativeSession(runtime, tree, max_steps=...) as session:
+            tick = session.get("tick")          # a Ref on the closure
+            world = session.call(session.get("new"), 1)
+            world = session.call(tick, world)   # a Ref again
+            print(session.steps)                # what that call cost
+
+    `get` is `map-get` on a held map and charges nothing; `call` applies
+    a closure one argument at a time, exactly as `core.runtime._call`
+    does, with the steps starting at zero for every call.  A trap raises
+    the same `core.conservation` class a Python run raises, enriched
+    with the span from the tree, and the session stays open.
+    """
+
+    def __init__(self, runtime: NativeRuntime, tree: Optional[Node], *,
+                 allow: int = 0, max_steps: int = 1_000_000,
+                 max_depth: int = 10_000, stdin: str = "",
+                 program: Any = None, owns_runtime: bool = False) -> None:
+        self.runtime = runtime
+        self.tree = tree if isinstance(tree, Node) else None
+        self.max_steps = int(max_steps)
+        self.owns_runtime = owns_runtime
+        self.steps = 0
+        self.stdout = ""
+        self.id: Optional[int] = None
+        if program is None:
+            program = tree
+        if isinstance(program, Node):
+            data = encode(program)
+        elif isinstance(program, (bytes, bytearray)):
+            data = bytes(program)
+        else:
+            raise TypeError("NativeSession: a Node tree or its bytes")
+        reply = runtime._request({
+            "op": "session", "bytes": data.hex(), "stdin": stdin,
+            "allow": int(allow), "max_steps": int(max_steps),
+            "max_depth": int(max_depth),
+        })
+        self.steps = int(reply.get("steps") or 0)
+        self.stdout = reply.get("stdout") or ""
+        if not reply.get("ok"):
+            self._raise(reply)
+        self.id = reply.get("session")
+        if self.id is None:
+            raise NativeUnavailable(
+                "the native runtime opened no session: it may not speak 0.3.0")
+        self.api = self._decode(reply.get("value"))
+
+    @classmethod
+    def open(cls, runtime: NativeRuntime, tree: Optional[Node],
+             **kwargs: Any) -> "NativeSession":
+        """`NativeSession.open(runtime, tree, allow=, max_steps=, max_depth=)`."""
+        return cls(runtime, tree, **kwargs)
+
+    # -- what the wire carries ----------------------------------------------
+
+    def _encode(self, value: Any) -> Any:
+        """A Python (or LOVA) value as the protocol carries it."""
+        if value is None:
+            return None
+        if isinstance(value, Ref):
+            if value.session is not None and value.session is not self:
+                raise NativeSessionError(
+                    f"ref {value.id} belongs to another session")
+            return {"ref": value.id}
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value if -SAFE_INT < value < SAFE_INT else {"int": str(value)}
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)):
+            return [self._encode(item) for item in value]
+        # A value of the Python runtime -- a Cons chain, `nil` -- which a
+        # driver may still have at hand (a list read back off a save
+        # file).  `core.runtime` is imported here and not at module
+        # level: a host that only asks "is there a native runtime?"
+        # should not pay for the interpreter.
+        from core.runtime import NIL_VALUE, Cons
+        if value is NIL_VALUE:
+            return None
+        if isinstance(value, Cons):
+            out = []
+            rest: Any = value
+            while isinstance(rest, Cons):
+                out.append(self._encode(rest.head))
+                rest = rest.tail
+            return out
+        raise TypeError(f"a session argument cannot be {type(value).__name__}")
+
+    def _decode(self, data: Any) -> Any:
+        """What the protocol carries, as Python: ints, texts, lists, Refs."""
+        if data is None:
+            return None
+        if isinstance(data, bool):
+            return int(data)
+        if isinstance(data, (int, str)):
+            return data
+        if isinstance(data, float):
+            return int(data) if data.is_integer() else data
+        if isinstance(data, list):
+            return [self._decode(item) for item in data]
+        if isinstance(data, dict):
+            if "ref" in data:
+                return Ref(data["ref"], self)
+            if "int" in data:
+                return int(str(data["int"]))
+        raise NativeUnavailable(f"the native runtime sent {data!r}")
+
+    # -- the requests --------------------------------------------------------
+
+    def _raise(self, reply: Dict[str, Any]):
+        """A reply that is not ok, as the exception it stands for."""
+        anomaly = reply.get("anomaly")
+        if not anomaly:
+            error = str(reply.get("error", "the native runtime said not ok"))
+            if error.startswith("unsupported"):
+                raise NativeUnsupported(error)
+            if error.startswith("no such "):
+                raise NativeSessionError(error)
+            raise NativeUnavailable(error)
+        anomaly = dict(anomaly)
+        anomaly["position_path"] = tuple(anomaly.get("position_path") or ())
+        enrich(anomaly, self.tree)
+        trap = trap_from_anomaly(anomaly)
+        trap.steps = int(reply.get("steps") or 0)
+        trap.stdout = reply.get("stdout") or ""
+        raise trap
+
+    def _ask(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if self.id is None:
+            raise NativeSessionError("the session is closed")
+        reply = self.runtime._request(dict(payload, session=self.id))
+        if not reply.get("ok"):
+            self._raise(reply)
+        return reply
+
+    def get(self, key: Any, ref: Any = None) -> Any:
+        """`map-get` on a held map -- by default the program's own value.
+
+        Answers `None` for a key the map does not hold, and charges no
+        steps, so `steps` still reports the last `call`.
+        """
+        target = self.api if ref is None else ref
+        if not isinstance(target, Ref):
+            raise NativeSessionError("get: a handle on a map, not a value")
+        reply = self._ask({"op": "get", "ref": target.id,
+                           "key": self._encode(key)})
+        return self._decode(reply.get("value"))
+
+    def call(self, fn: Any, *args: Any, max_steps: Optional[int] = None) -> Any:
+        """Apply a closure to its arguments, one at a time.
+
+        Fewer arguments than the closure takes gives a closure back (a
+        `Ref`); more applies the result to the rest -- which is what
+        `core.runtime._call` per argument does, and what the drivers'
+        curried records rely on.
+        """
+        payload = {"op": "call", "fn": self._encode(fn),
+                   "args": [self._encode(a) for a in args]}
+        payload["max_steps"] = int(self.max_steps if max_steps is None
+                                   else max_steps)
+        try:
+            reply = self._ask(payload)
+        except Exception as exc:                           # noqa: BLE001
+            # A trap carries what the call spent before it stopped, and
+            # `steps` is what the drivers report per tick either way.
+            if hasattr(exc, "steps"):
+                self.steps = int(getattr(exc, "steps") or 0)
+                self.stdout = getattr(exc, "stdout", "") or ""
+            raise
+        self.steps = int(reply.get("steps") or 0)
+        self.stdout = reply.get("stdout") or ""
+        return self._decode(reply.get("value"))
+
+    def release(self, *refs: Any) -> None:
+        """Forget these handles.  A handle nothing holds is the driver's
+        to drop: the world of the tick before, the argument record that
+        went in."""
+        ids = [r.id for r in refs if isinstance(r, Ref)]
+        if ids and self.id is not None:
+            self._ask({"op": "release", "refs": ids})
+
+    def close(self) -> None:
+        """End the session; the runtime forgets everything in it."""
+        if self.id is not None:
+            ident, self.id = self.id, None
+            try:
+                self.runtime._request({"op": "close", "session": ident})
+            except NativeUnavailable:
+                pass
+        if self.owns_runtime:
+            self.runtime.close()
+
+    def __enter__(self) -> "NativeSession":
+        return self
+
+    def __exit__(self, *_exc: Any) -> bool:
+        self.close()
+        return False
+
+
+def open_session(tree: Node, mode: str = "auto", *, allow: int = 0,
+                 max_steps: int = 1_000_000, max_depth: int = 10_000,
+                 stdin: str = "", shared: bool = False,
+                 timeout_s: float = DEFAULT_TIMEOUT_S
+                 ) -> Optional["NativeSession"]:
+    """A session on this program under ``--native auto|on|off``, or None.
+
+    The screen is `choose`'s: ``off`` never opens one, ``auto`` opens one
+    when there is a runtime and the program is inside its scope, and
+    ``on`` raises rather than fall back, because a host that asked for
+    the native runtime wants to be told it did not get it.  ``None``
+    means "run it in Python".
+    """
+    runtime = choose(tree, mode, shared=shared, timeout_s=timeout_s)
+    if runtime is None:
+        return None
+    try:
+        return NativeSession(runtime, tree, allow=allow, max_steps=max_steps,
+                             max_depth=max_depth, stdin=stdin,
+                             owns_runtime=not shared)
+    except (NativeUnavailable, NativeUnsupported):
+        if not shared:
+            runtime.close()
+        if mode == "on":
+            raise
+        return None                    # auto: the program is Python's
+    except BaseException:
+        # The program itself trapped while it was being evaluated, which
+        # is the program's fault and not the runtime's -- but the process
+        # is ours to close.
+        if not shared:
+            runtime.close()
+        raise
 
 
 # --- finding one -------------------------------------------------------------

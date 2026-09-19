@@ -666,6 +666,100 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 34 (2026-09-19) -- The native runtime reaches the apps
+
+M33 ended with three follow-ups, run in the order the owner chose
+(Q126, Q125, Q124) by three Opus subagents on disjoint files, against
+a spec Fable wrote first; Fable verified each on the real binary.
+
+**Q126 -- sessions.** The three tick-driven apps evaluate a program
+once and call into its record of closures sixty times a second with
+the world as an argument; the run-once protocol could not serve them,
+so the protocol gained a session (`spec/native-runtime-protocol.md`,
+"Sessions"): `session` keeps the evaluated program alive; `get` reads
+a field; `call` applies a closure to arguments one at a time, exactly
+as `_call` does from Python, with steps starting at zero per call;
+`release` / `close` drop handles. Data crosses as JSON (integers below
+2^53 as numbers, texts as strings, lists as arrays, nil as null), and
+anything else -- the world, a closure -- as a handle the runtime holds.
+`tools/mock_runtime.py` implements it over the Python runtime as the
+reference; the crate (0.3.0, `src/session.rs`) was diffed against it
+reply for reply on 74 paired requests, zero differences down to the
+handle ids. `core.native.NativeSession` is the client; each driver's
+`Rules` chooses it under `--native auto|on|off` with the same
+`call(name, *args)` surface, so no window code changed. On the real
+binary the platformer's and the city builder's `--shot` PNGs and the
+war driver's new headless `--ticks` output are byte-identical to the
+Python path. A frame call: platformer 0.28 s Python, 0.036 s native.
+Nine ambiguities the two implementations met are ruled in the spec
+(a handle names a value; `get` of absent and of nil both `null`; what
+a call resets; a fraction refused). One real divergence found: the
+drivers' Python path reset only `steps` per call, not the `hot`
+interval, so a step trap's attribution could go negative; they reset
+both now, as the protocol says.
+
+**Q125 -- the build cache.** `core/cache.py`: `core.cli.build` is the
+one funnel every entry point goes through, so it now keys the
+`(tree, report)` pair on a SHA-256 of the expanded source, the build
+flags and a fingerprint of every `core/*.py` and the prelude, pickled
+under `LOVA_CACHE` (default the user cache dir; `off` disables), written
+atomically, never fatal, corrupt entries deleted, stored only when the
+build took 50 ms or more so the suite's thousands of one-line builds
+do not fill it. `analyze` on the city builder: 2.45 s cold, 0.90 s
+warm; every app and bench program built twice in separate processes
+gives identical bytes, spans, symbols and report. Tests +16.
+
+**Q124 -- the evaluator, 1.7-1.9x, no step changed.** With no
+profiler available without administrator rights, the crate samples
+itself (`src/prof.rs`, a cargo feature, off by default: the operator in
+flight written to one atomic, sampled every 40 us). The top costs were
+the call frame (an `Rc` plus a `HashMap` per call), SipHash at every
+frame of a scope lookup, a second frame per `let`, a text map-key
+rebuilt as a codepoint vector on every record read, and two arena
+lookups per `ref`. Fixed: an FxHasher; the first binding inline in the
+frame (a call binds one name, so no table and no hash); a text key
+hashed as its codepoints without building them; the function in flight
+compared by address, closures moved not cloned, a pool of call frames;
+one path stack instead of two; children in the arena. Each change was
+gated on the full golden set (988 + the clock record, the same 29
+failures byte for byte) and `cargo test`. A/B against the M33 binary,
+alternating request by request: war terrain 3.57 -> 6.32 M steps/s,
+city frame 3.29 -> 5.83, tic-tac-toe 2.91 -> 5.01, wordfreq 2.42 ->
+4.53. What is left is the environment model itself (`Rc` traffic, the
+parent-chain walk) and one `Rc` per lambda evaluation; past that is a
+flat instruction stream with resolved slots, a rewrite that would
+re-establish every step count (Q128).
+
+**Q127 -- where a fault is, in a program that uses a library**
+(Fable, found twice that day). Spans index the expanded text, so a
+fault in a program that said `(use "citybuilder")` was reported at
+`5:75674`. `core.surface.expansion` is `expand_uses` with the map back:
+the CLI prints the author's own line and column, or
+`lib/war.lova:318:16` when the offset falls in an included file; the
+MCP server adds `file` for the latter; `lova_patch` maps an expanded
+span back into the source it was given and refuses one inside a
+library by name.
+
+**Measured (`tools/bench_native.py 3`, cache warm, the floor
+subtracted):**
+
+```
+app                        steps   py eval  nat eval  ratio  nat steps/s
+tictactoe 0 (full)       2411809      5.43      0.59    9.2    4 097 879
+maze 0                    204591      0.38      0.12    3.2    1 708 038
+batch 300 2000            311003      0.66      0.12    5.6    2 651 444
+wordfreq 10k lines       1138974      2.76      0.33    8.4    3 462 519
+war terrain              2466307      5.40      0.49   11.1    5 054 206
+war terrain+60 ticks     3186457      6.70      0.61   11.0    5 250 188
+platformer frame          166888      0.35      0.04    9.4    4 451 284
+platformer 60t+frame      406933      1.01      0.10   10.0    4 040 573
+citybuilder frame        1039951      2.53      0.22   11.6    4 761 443
+```
+
+8-11x CPython on every program above 200 000 steps, 4-5 million steps
+a second; the 3D apps now run on it. Tests 1054 -> 1094 (M33's figure
+plus Q125's 16, Q126's 20, Q127's 4).
+
 ### Milestone 33 (2026-09-19) -- A native runtime
 
 The owner's ruling of 2026-09-18, night: speed is the largest defect

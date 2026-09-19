@@ -1,8 +1,11 @@
 [package]
 name = "lova-rt"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "A native LOVA runtime: the byte sequence, evaluated, step for step as core/runtime.py does."
+
+[features]
+prof = []
 
 [dependencies]
 num-bigint = "0.4"
