@@ -26,6 +26,15 @@ camera, + and - zoom, R starts again, Escape leaves -- the kit's own
 keys.  `--shot file.png` draws one frame with no window at all, through
 a forty-line rasteriser at the bottom of this file, which is how the
 screenshot was made.
+
+There are two windows for the same game.  `--host sdl` (the default
+where pygame is installed) draws the faces with `pygame.draw.polygon`
+into one buffer and flips it: 4.6 ms for the level's 305 faces, and
+fifty to fifty-three frames a second on the native runtime.  `--host
+tk` is the original canvas, which deleted and re-created every polygon every
+frame at 21 ms on the median and spikes to a quarter of a second --
+the stutter this replaced.  Nothing else differs.  `--bench N` plays N
+frames to a script and prints what each part of a frame cost.
 """
 
 from __future__ import annotations
@@ -258,6 +267,166 @@ class Game:
                  f"[WASD walk, space jump, arrows camera, +/- zoom, R restart]")
 
 
+# --- the same game in an SDL window ------------------------------------------
+
+SKY_RGB = tuple(int(SKY[i:i + 2], 16) for i in (1, 3, 5))
+
+
+class SdlGame:
+    """The window again, drawn by SDL instead of a Tk canvas.
+
+    Nothing about the game changes: the same `Rules`, the same keys, the
+    same sixtieth-of-a-second cadence with the same catch-up bound.  What
+    changes is the surface -- `pygame.draw.polygon` into a buffer that is
+    flipped once, where the canvas deleted and re-created a few hundred
+    items every frame.
+    """
+
+    TITLE = "platformer -- the window is Python, the game is LOVA"
+
+    KEYS = None                      # filled in once pygame is imported
+
+    def __init__(self, rules: Rules, bench: int = 0) -> None:
+        from apps.sdlhost import Stats, Window
+        self.rules = rules
+        self.win = Window(self.TITLE, VIEW_W, VIEW_H, SKY_RGB)
+        pg = self.win.pg
+        self.pg = pg
+        self.KEYS = {pg.K_w: "w", pg.K_a: "a", pg.K_s: "s", pg.K_d: "d",
+                     pg.K_UP: "Up", pg.K_DOWN: "Down", pg.K_LEFT: "Left",
+                     pg.K_RIGHT: "Right", pg.K_PLUS: "plus", pg.K_EQUALS: "plus",
+                     pg.K_KP_PLUS: "plus", pg.K_MINUS: "minus",
+                     pg.K_KP_MINUS: "minus"}
+        self.coin_font = self.win.font(24, bold=True)
+        self.fell_font = self.win.font(14)
+        self.world = rules.new_game()
+        self.keys: set = set()
+        self.jump_pending = False
+        self.anomaly = None
+        self.running = True
+        self.behind = 0.0
+        self.tick_ms = self.frame_ms = self.draw_ms = self.flip_ms = 0.0
+        self.pass_ms = 1000 / 60
+        self.tick_steps = self.frame_steps = 0
+        self.faces: list = []
+        self.bench = bench
+        self.stats = Stats()
+
+    # --- input -----------------------------------------------------------
+
+    def events(self) -> None:
+        pg = self.pg
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                self.running = False
+            elif event.type == pg.KEYDOWN:
+                if event.key == pg.K_ESCAPE:
+                    self.running = False
+                elif event.key == pg.K_SPACE:
+                    if "space" not in self.keys:
+                        self.jump_pending = True
+                    self.keys.add("space")
+                elif event.key == pg.K_r:
+                    self.world = self.rules.new_game()
+                    self.anomaly = None
+                elif event.key in self.KEYS:
+                    self.keys.add(self.KEYS[event.key])
+            elif event.type == pg.KEYUP:
+                if event.key == pg.K_SPACE:
+                    self.keys.discard("space")
+                elif event.key in self.KEYS:
+                    self.keys.discard(self.KEYS[event.key])
+
+    def script(self, frame: int) -> None:
+        """`--bench`: walk, turn the camera and jump, with no one at the keys."""
+        self.keys = {"d", "w"} if frame % 120 < 60 else {"a", "Right"}
+        if frame % 40 == 0:
+            self.jump_pending = True
+
+    # --- the loop --------------------------------------------------------
+
+    def run(self) -> int:
+        clock = time.perf_counter()
+        drawn = 0
+        while self.running:
+            now = time.perf_counter()
+            self.behind += now - clock
+            clock = now
+            if self.bench:
+                self.pg.event.pump()
+                self.script(drawn)
+            else:
+                self.events()
+            ran = 0
+            tick_ms = 0.0
+            if self.anomaly is None:
+                try:
+                    while self.behind >= TICK and ran < MAX_CATCHUP:
+                        keys = set(self.keys)
+                        if self.jump_pending:
+                            keys.add("jump")
+                            self.jump_pending = False
+                        t0 = time.perf_counter()
+                        self.world = self.rules.tick(self.world, keys)
+                        self.tick_ms = (time.perf_counter() - t0) * 1000
+                        tick_ms += self.tick_ms
+                        self.tick_steps = self.rules.rt.steps
+                        self.behind -= TICK
+                        ran += 1
+                    if self.behind >= TICK:      # too slow to keep up: drop the debt
+                        self.behind = 0.0
+                except (BudgetTrap, DeltaTrap, ValueError) as exc:
+                    self.anomaly = getattr(exc, "anomaly", None) or {"kind": str(exc)}
+            painted = ran or not self.faces
+            if painted:
+                self.paint(tick_ms)
+                drawn += 1
+                if self.bench and drawn >= self.bench:
+                    self.running = False
+            self.win.cap(60)
+            # The cadence a frame was drawn at is this pass end to end,
+            # the wait for the sixtieth included -- measured after it,
+            # and charged to the frame that did the work.
+            self.pass_ms = (time.perf_counter() - now) * 1000
+            if painted and self.bench:
+                self.stats.add("lova tick", tick_ms)
+                self.stats.add("lova frame", self.frame_ms)
+                self.stats.add("draw", self.draw_ms)
+                self.stats.add("flip", self.flip_ms)
+                self.stats.add("total", self.pass_ms)
+                self.stats.add("faces", len(self.faces))
+        if self.bench:
+            self.stats.report("platformer", extra=self.win.vsync_note())
+        self.win.close()
+        return 0
+
+    def paint(self, tick_ms: float) -> None:
+        win = self.win
+        t0 = time.perf_counter()
+        self.faces = [list_to_python(f) for f in self.rules.frame(self.world)]
+        self.frame_steps = self.rules.rt.steps
+        self.frame_ms = (time.perf_counter() - t0) * 1000
+        t1 = time.perf_counter()
+        win.fill_sky()
+        win.faces(self.faces)
+        coins = self.rules.call("coins", self.world)
+        resets = self.rules.call("resets", self.world)
+        win.text(f"coins {coins}", 18, 16, (255, 255, 255), self.coin_font)
+        if resets:
+            win.text(f"fell {resets}x", 18, 52, (0xff, 0xe0, 0x8a), self.fell_font)
+        if self.anomaly is not None:
+            win.bar(f"the rules faulted: {self.anomaly.get('kind')}")
+        else:
+            win.bar(
+                f"tick {self.tick_steps:,} steps / {self.tick_ms:.1f} ms   "
+                f"frame {len(self.faces)} faces, {self.frame_steps:,} steps / "
+                f"{self.frame_ms:.1f} ms   "
+                f"({1000 / max(self.pass_ms, 1e-9):.0f} fps)   "
+                f"[WASD walk, space jump, arrows camera, +/- zoom, R restart]")
+        self.draw_ms = (time.perf_counter() - t1) * 1000
+        self.flip_ms = win.flip()
+
+
 # --- a frame with no window --------------------------------------------------
 
 def rasterise(faces, w, h, sky=(0x8f, 0xb8, 0xe8)):
@@ -336,11 +505,20 @@ def main() -> int:
                         default="auto",
                         help="run the game in a native runtime (auto: if "
                              "there is one and it takes this program)")
+    parser.add_argument("--host", choices=("auto", "sdl", "tk"), default="auto",
+                        help="the window: SDL (pygame, smooth) or the Tk "
+                             "canvas (auto: SDL if pygame is installed)")
+    parser.add_argument("--bench", type=int, metavar="N", default=0,
+                        help="play N frames to a script in the SDL window and "
+                             "print what each part of a frame cost")
     args = parser.parse_args()
     rules = Rules(native=args.native)
     if args.shot:
         shot(rules, args.shot)
         return 0
+    from apps.sdlhost import pick_host
+    if pick_host("sdl" if args.host == "auto" else args.host) == "sdl":
+        return SdlGame(rules, bench=args.bench).run()
     import tkinter as tk
     root = tk.Tk()
     root.title("platformer -- the window is Python, the game is LOVA")

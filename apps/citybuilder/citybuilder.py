@@ -29,6 +29,16 @@ and the cursor's preview, which follows the mouse, is drawn over the
 kept picture on its own, so the window is quiet while you look and
 busy while you pan.
 `--shot file.png` draws one frame with no window at all.
+
+There are two windows for the same city.  `--host sdl` (the default
+where pygame is installed) keeps the city in a surface of its own and
+blits it, drawing only the cursor's dozen faces afresh: sixty frames a
+second while you look, and nine while you pan, three quarters of which
+is `frame-city` in LOVA.  `--host tk` is the original canvas, which
+deleted and re-created every one of the city's two and a half thousand
+polygons whenever the camera moved.  Nothing else differs.  `--bench
+N` pans, stands still and pans back, and prints what each part of a
+frame cost.
 """
 
 from __future__ import annotations
@@ -315,6 +325,243 @@ class City:
                  f"[WASD pan, middle-drag turn, wheel zoom, F centre, F1 save, F2 load, F3 sample]")
 
 
+# --- the same city in an SDL window ------------------------------------------
+
+SKY_RGB = tuple(int(SKY[i:i + 2], 16) for i in (1, 3, 5))
+
+
+class SdlCity:
+    """The city again, drawn by SDL instead of a Tk canvas.
+
+    The rules, the keys and the mouse are the Tk window's; so is what
+    makes the city worth drawing again -- the camera or a cell moving,
+    which `city-key` says and `cursor-key` says separately.  Here the
+    kept city is drawn once into a surface of its own and blitted, and
+    only the cursor's dozen faces are drawn afresh: a pan costs the city
+    a redraw, and looking around costs a blit.
+    """
+
+    TITLE = "city builder -- the window is Python, the city is LOVA"
+
+    def __init__(self, rules: Rules, world, bench: int = 0) -> None:
+        from apps.sdlhost import Stats, Window
+        self.rules = rules
+        self.world = world
+        self.win = Window(self.TITLE, VIEW_W, VIEW_H, SKY_RGB)
+        pg = self.win.pg
+        self.pg = pg
+        self.cash_font = self.win.font(24, bold=True)
+        self.line_font = self.win.font(14)
+        self.city = pg.Surface((VIEW_W, VIEW_H))
+        self.city.fill(SKY_RGB)
+        self.city_faces: list = []
+        self.cursor_faces: list = []
+        self.keys: set = set()
+        self.pending: dict = {}
+        self.mouse = (-1, -1)
+        self.middle = None
+        self.anomaly = None
+        self.running = True
+        self.last_key = (None, None)
+        self.hud = ("", "")
+        self.behind = 0.0
+        self.city_ms = self.cursor_ms = self.tick_ms = 0.0
+        self.draw_ms = self.flip_ms = self.city_draw_ms = 0.0
+        self.pass_ms = 1000 / 60
+        self.city_steps = 0
+        self.bench = bench
+        self.stats = Stats()
+
+    # --- input -----------------------------------------------------------
+
+    def events(self) -> None:
+        pg = self.pg
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
+                self.running = False
+            elif event.type == pg.KEYDOWN:
+                self.key(event.key)
+            elif event.type == pg.KEYUP:
+                if event.key in (pg.K_w, pg.K_a, pg.K_s, pg.K_d):
+                    self.keys.discard(pg.key.name(event.key))
+            elif event.type == pg.MOUSEMOTION:
+                if event.pos[1] < VIEW_H:
+                    self.mouse = event.pos
+                if self.middle is not None:
+                    self.pending["rot"] = self.pending.get("rot", 0) + (event.pos[0] - self.middle)
+                    self.middle = event.pos[0]
+            elif event.type == pg.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    self.pending["build"] = 1
+                elif event.button == 3:
+                    self.pending["rotate"] = 1
+                elif event.button == 2:
+                    self.middle = event.pos[0]
+            elif event.type == pg.MOUSEBUTTONUP and event.button == 2:
+                self.middle = None
+            elif event.type == pg.MOUSEWHEEL:
+                # the kit zooms in a notch on a wheel up, as the Tk window does
+                self.pending["zoom"] = self.pending.get("zoom", 0) + (-1 if event.y > 0 else 1)
+
+    def key(self, key) -> None:
+        pg = self.pg
+        if key == pg.K_ESCAPE:
+            self.running = False
+        elif key in (pg.K_w, pg.K_a, pg.K_s, pg.K_d):
+            self.keys.add(pg.key.name(key))
+        elif key == pg.K_f:
+            self.pending["centre"] = 1
+        elif key == pg.K_e:
+            self.pending["next"] = 1
+        elif key == pg.K_q:
+            self.pending["prev"] = 1
+        elif key == pg.K_DELETE:
+            self.pending["demolish"] = 1
+        elif key == pg.K_F1:
+            SAVE.write_text(json.dumps({"cash": self.rules.call("cash", self.world),
+                                        "cells": self.rules.cells(self.world)}))
+        elif key == pg.K_F2:
+            if SAVE.exists():
+                saved = json.loads(SAVE.read_text())
+                from core.runtime import Cons, NIL_VALUE
+                cells = NIL_VALUE
+                for c in reversed(saved["cells"]):
+                    row = NIL_VALUE
+                    for v in reversed(c):
+                        row = Cons(v, row)
+                    cells = Cons(row, cells)
+                self.world = self.rules.call("load", self.rules.fn["new"], cells)
+        elif key == pg.K_F3:
+            self.world = self.rules.fn["sample"]
+
+    def script(self, frame: int) -> None:
+        """`--bench`: pan, turn and look around, with no one at the keys.
+
+        A pan moves the camera every tick, which is the city's worst
+        case -- every face of it computed and drawn again.
+        """
+        block = frame // 30 % 4
+        # a pan, then a still camera with the mouse moving, then the
+        # pan back: the city's two regimes, which the report separates
+        self.keys = ({"d"}, set(), {"a"}, set())[block]
+        self.mouse = (300 + (frame * 7) % 360, 200 + (frame * 5) % 240)
+        if frame % 90 == 45:
+            self.pending["rot"] = 12
+        if frame % 150 == 75:
+            self.pending["zoom"] = 1 if (frame // 150) % 2 else -1
+
+    # --- the loop --------------------------------------------------------
+
+    def run(self) -> int:
+        clock = time.perf_counter()
+        drawn = 0
+        while self.running:
+            now = time.perf_counter()
+            self.behind += now - clock
+            clock = now
+            if self.bench:
+                self.pg.event.pump()
+                self.script(drawn)
+            else:
+                self.events()
+            ran = 0
+            tick_ms = 0.0
+            built = "build" in self.pending or "demolish" in self.pending
+            if self.anomaly is None:
+                try:
+                    while self.behind >= TICK and ran < 4:
+                        ev = dict(self.pending, keys=set(self.keys),
+                                  mu=self.mouse[0], mv=self.mouse[1])
+                        self.pending = {}
+                        t0 = time.perf_counter()
+                        self.world = self.rules.tick(self.world, ev)
+                        self.tick_ms = (time.perf_counter() - t0) * 1000
+                        tick_ms += self.tick_ms
+                        self.behind -= TICK
+                        ran += 1
+                    if self.behind >= TICK:
+                        self.behind = 0.0
+                except (BudgetTrap, DeltaTrap, ValueError) as exc:
+                    self.anomaly = getattr(exc, "anomaly", None) or {"kind": str(exc)}
+            painted = ran or not self.city_faces
+            if painted:
+                self.refresh(built)
+                self.paint(tick_ms)
+                drawn += 1
+                if self.bench and drawn >= self.bench:
+                    self.running = False
+            self.win.cap(60)
+            # The cadence a frame was drawn at is this pass end to end,
+            # the wait for the sixtieth included -- measured after it,
+            # and charged to the frame that did the work.
+            self.pass_ms = (time.perf_counter() - now) * 1000
+            if painted and self.bench:
+                self.stats.add("lova tick", tick_ms)
+                self.stats.add("lova city", self.city_ms)
+                self.stats.add("lova cursor", self.cursor_ms)
+                self.stats.add("draw", self.draw_ms)
+                self.stats.add("flip", self.flip_ms)
+                self.stats.add("total", self.pass_ms)
+                self.stats.add("total, the city redrawn" if self.city_ms
+                               else "total, the city kept", self.pass_ms)
+                self.stats.add("faces", len(self.city_faces) + len(self.cursor_faces))
+        if self.bench:
+            self.stats.report("citybuilder",
+                              order=("total", "total, the city redrawn",
+                                     "total, the city kept", "lova tick",
+                                     "lova city", "lova cursor", "draw", "flip"),
+                              extra=self.win.vsync_note())
+        self.win.close()
+        return 0
+
+    def refresh(self, built: bool) -> None:
+        """What the rules were asked for: the city only when it moved."""
+        key = self.rules.keys_of(self.world)
+        if key[0] != self.last_key[0] or not self.city_faces:
+            t0 = time.perf_counter()
+            self.city_faces = self.rules.frame(self.world, "city")
+            self.city_steps = self.rules.rt.steps
+            self.city_ms = (time.perf_counter() - t0) * 1000
+            t0 = time.perf_counter()
+            self.city.fill(SKY_RGB)
+            self.win.faces(self.city_faces, surface=self.city)
+            # the city's own polygons, drawn once into a surface of
+            # their own: the rest of the frame is a blit of it
+            self.city_draw_ms = (time.perf_counter() - t0) * 1000
+        else:
+            self.city_ms = self.city_draw_ms = 0.0
+        if key[1] != self.last_key[1] or not self.cursor_faces:
+            t0 = time.perf_counter()
+            self.cursor_faces = self.rules.frame(self.world, "cursor")
+            self.cursor_ms = (time.perf_counter() - t0) * 1000
+        else:
+            self.cursor_ms = 0.0
+        if key != self.last_key or built or not self.hud[0]:
+            self.hud = (f"${self.rules.call('cash', self.world)}",
+                        f"{self.rules.text(self.world)}  "
+                        f"${self.rules.call('price', self.world)}"
+                        "   [Q/E change, right-click turn, click build, Delete remove]")
+        self.last_key = key
+
+    def paint(self, tick_ms: float) -> None:
+        win = self.win
+        t0 = time.perf_counter()
+        win.screen.blit(self.city, (0, 0))
+        win.faces(self.cursor_faces)
+        win.text(self.hud[0], 18, 16, (255, 255, 255), self.cash_font)
+        win.text(self.hud[1], 18, VIEW_H - 30, (255, 255, 255), self.line_font)
+        if self.anomaly is not None:
+            win.bar(f"the rules faulted: {self.anomaly.get('kind')}")
+        else:
+            win.bar(
+                f"city {len(self.city_faces)} faces, {self.city_steps:,} LOVA steps / "
+                f"{self.city_ms:.0f} ms   cursor {len(self.cursor_faces)} faces / "
+                f"{self.cursor_ms:.1f} ms   ({1000 / max(self.pass_ms, 1e-9):.0f} fps)   "
+                f"[WASD pan, middle-drag turn, wheel zoom, F centre, F1 save, F2 load, F3 sample]")
+        self.draw_ms = (time.perf_counter() - t0) * 1000 + self.city_draw_ms
+        self.flip_ms = win.flip()
+
+
 def shot(rules: Rules, path: str) -> None:
     world = rules.fn["sample"]
     # the mouse over a cell near the middle, the cursor holding a tree,
@@ -347,12 +594,21 @@ def main() -> int:
                         default="auto",
                         help="run the city in a native runtime (auto: if "
                              "there is one and it takes this program)")
+    parser.add_argument("--host", choices=("auto", "sdl", "tk"), default="auto",
+                        help="the window: SDL (pygame, smooth) or the Tk "
+                             "canvas (auto: SDL if pygame is installed)")
+    parser.add_argument("--bench", type=int, metavar="N", default=0,
+                        help="pan the camera for N frames in the SDL window "
+                             "and print what each part of a frame cost")
     args = parser.parse_args()
     rules = Rules(native=args.native)
     if args.shot:
         shot(rules, args.shot)
         return 0
     world = rules.fn["new"] if args.empty else rules.fn["sample"]
+    from apps.sdlhost import pick_host
+    if pick_host("sdl" if args.host == "auto" else args.host) == "sdl":
+        return SdlCity(rules, world, bench=args.bench).run()
     import tkinter as tk
     root = tk.Tk()
     root.title("city builder -- the window is Python, the city is LOVA")

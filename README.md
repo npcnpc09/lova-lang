@@ -193,6 +193,9 @@ python apps/model/model.py            # low-poly meshes, turned and lit in real 
 python apps/platformer/platformer.py  # Kenney's 3D platformer kit, ported out of GDScript
 python apps/citybuilder/citybuilder.py # Kenney's city builder kit, sample city and all
 python apps/fps/fps.py                # Kenney's FPS kit: two blasters, four flying enemies
+#   the three 3D kits above draw in an SDL window when pygame is there
+#   (`pip install pygame` for the smooth window; Tk is the fallback, and
+#   `--host tk` / `--host sdl` chooses.  `--bench N` prints frame times)
 python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded

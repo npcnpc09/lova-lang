@@ -239,6 +239,15 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M38** (2026-09-20) -- **the stutter was the window.** On the VM a
+tick is 2 ms and a frame 3-8 ms of LOVA; the Tk canvas took 21 ms with
+250 ms spikes to redraw. `apps/sdlhost.py` and `--host sdl|tk` in the
+three game hosts (pygame, fixed cadence, off-view cull, the city
+blitted from an offscreen surface): the FPS at 60 fps (16.6 ms end to
+end), the platformer 51-53, the city at rest 60 and panned 9.5 -- the
+remainder is LOVA's frame. Q134: a Rust player (one exe, the VM in
+process, a pure-Rust window). `journal/README.md`, "Milestone 38".
+
 **M37** (2026-09-20) -- **Q128, the bytecode VM is the default.**
 `native/lova-rt` 0.4.0 compiles a program to slots, stack frames,
 batched ticks and a derived `position_path` (`spec/vm.md`), delegating

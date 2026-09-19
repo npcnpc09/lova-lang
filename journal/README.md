@@ -666,6 +666,43 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 38 (2026-09-20) -- The stutter was the window
+
+The owner, with the VM and the lighter renderer in place: still not
+smooth, worse than a shooter of twenty years ago. Measured on the
+VM: a tick 2.0 ms of LOVA, a frame 3-8 ms of LOVA -- and then the Tk
+canvas 21 ms median with spikes to 250 ms to delete and re-create the
+polygons and flush. The same 159 faces through SDL (pygame 2.6,
+already installed): 3.1 ms median. The interpreter had stopped being
+the bottleneck two milestones ago; the drawing library was. The order
+of the day's work was wrong, and the lesson is the one the goal
+already states: measure the whole loop before choosing what to speed
+up.
+
+`apps/sdlhost.py` (222 lines) and an SDL window class in each of the
+three hosts, chosen by `--host sdl|tk` (SDL when pygame imports, Tk
+otherwise): a fixed sixty-tick cadence held by the clock (the Windows
+driver accepts `vsync=1` and does not block, so `Clock.tick(60)` holds
+it), the faces drawn in painter's order to the surface, a bounding-box
+cull of faces wholly off the view (SDL walks a polygon's whole
+vertical span before clipping, so a wall projected four thousand rows
+tall cost as much as one on screen -- 38 of 160 faces, the draw 5.7
+-> 2.6 ms), the city drawn once to an offscreen surface on a view
+change and blitted, the mouse spent once per tick, `--bench N`
+printing the split. Rules, libraries, sessions and `--shot`
+untouched; the screenshots reproduce to the byte; the suite 1 100.
+
+**Measured, this machine, `--native on`, median / p95:** the FPS 164
+faces -- tick 2.1 / 4.1, frame 8.1 / 10.9, draw 5.0 / 6.5, flip 0.5,
+end to end **16.6 / 20.6 ms, 60 fps**; the platformer 305 faces --
+18.8 / 25.3 ms, 51-53 fps; the city at rest 16.5 / 17.7 ms, 60 fps;
+the city panned (2 458 faces redrawn) 106 / 132 ms, 9.5 fps. What is
+left in the last two is LOVA's own frame (11 ms and 77 ms), not the
+window: Q129's next cut, or the Rust player (Q134: one exe, the VM in
+process, no JSON, a pure-Rust window), which is where the owner's
+question -- why is a Rust-backed language still opened from Python --
+points.
+
 ### Milestone 37 (2026-09-20) -- Q128: the bytecode VM is the default evaluator
 
 `native/lova-rt` 0.4.0 carries two evaluators. The VM compiles a

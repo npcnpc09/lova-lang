@@ -46,7 +46,35 @@ frame is 100 000 to 160 000, most of it the renderer's two hundred
 steps a triangle.  CPython runs about 700 000 steps a second, so the
 window manages three to four frames a second while keeping the rules
 at sixty ticks of wall time; PyPy runs the same code about six times
-faster.  The step counter in the bar is the honest number.
+faster.  The step counter in the bar is the honest number.  On the
+native runtime a tick is 2.2 ms and a frame 11.3 ms, and the window
+keeps up.
+
+**Two windows.**  `platformer.py` opens an SDL window (pygame) when
+pygame is installed and the Tk one otherwise; `--host tk` asks for the
+old one and `--host sdl` insists on the new.  The game is the same
+either way -- the same `Rules`, the same keys, the same sixtieth of a
+second -- and only the surface differs: the Tk canvas deleted and
+re-created every polygon every frame, 21 ms on the median here with
+spikes to a quarter of a second, and that was the stutter.  `--bench
+N` plays N frames to a script and prints the split; on this machine,
+native runtime, 305 faces a frame:
+
+| part | median | p95 |
+|---|---|---|
+| LOVA tick | 2.2 ms | 4.7 ms |
+| LOVA frame | 11.3 ms | 14.7 ms |
+| draw | 4.6 ms | 6.2 ms |
+| flip | 0.5 ms | 0.6 ms |
+| **a frame, end to end** | **18.8 ms (53 fps)** | **25.3 ms** |
+
+(50 to 53 frames a second over four runs of `--bench 240`.)
+
+Fifty frames a second where the Tk window managed three or four,
+and the three milliseconds that are still missing from sixty are
+LOVA's frame, not the drawing.  `set_mode(vsync=1)` is accepted by
+this driver but does not block -- the flip returns in half a
+millisecond -- so the cadence is held by `Clock.tick(60)`.
 
 ## The models
 

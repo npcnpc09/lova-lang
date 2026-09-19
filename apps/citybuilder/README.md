@@ -65,6 +65,32 @@ or a cell has changed and draws the cursor's preview over the kept
 picture on its own.  Panning is slow; looking, building and choosing
 are not.  PyPy runs the same code about six times faster.
 
+**Two windows.**  `citybuilder.py` opens an SDL window (pygame) when
+pygame is installed and the Tk one otherwise; `--host tk` asks for the
+old one and `--host sdl` insists on the new.  The rules, the mouse and
+the keys are the same, and so is what makes the city worth drawing
+again -- `city-key` and `cursor-key`.  What changes is where the faces
+go: the kept city is drawn once into a surface of its own and blitted
+after that, so looking around costs a blit and only a pan pays for the
+city.  `--bench N` pans, stands still and pans back, and prints the
+split; on this machine, native runtime, the sample city at 2 458 faces:
+
+| part | median | p95 |
+|---|---|---|
+| LOVA tick | 7.3 ms | 9.3 ms |
+| LOVA city frame (a pan only) | 77.5 ms | 92.2 ms |
+| LOVA cursor frame | 1.0 ms | 1.2 ms |
+| draw (the city's 2 458 faces on a pan, else a blit) | 16.5 ms | 19.5 ms |
+| **a frame with the city kept** | **16.6 ms (60 fps)** | **17.5 ms** |
+| **a frame with the city redrawn** | **107 ms (9 fps)** | **132 ms** |
+
+So the still camera is smooth at sixty and a pan is nine frames a
+second, three quarters of which is `frame-city` in LOVA -- the 840 000
+steps `tests/test_frame_cost.py` pins -- and not the window.  That is
+the next number to cut, and it is the language's, not the host's.
+`set_mode(vsync=1)` is accepted by this driver but does not block, so
+the cadence is held by `Clock.tick(60)`.
+
 ## Licence of the data
 
 `lib/citybuilder_assets.lova` is derived from the kit's models, its

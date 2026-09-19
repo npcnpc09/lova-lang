@@ -143,6 +143,35 @@ while the rules keep sixty ticks of wall time, and thirty to fifty
 native.  Both runtimes produce the same screenshot byte for byte.  The
 step counter in the bar is the honest number.
 
+**Two windows.**  `fps.py` opens an SDL window (pygame) when pygame is
+installed and the Tk one otherwise; `--host tk` asks for the old one
+and `--host sdl` insists on the new.  The game is the same either way
+-- the same `Rules`, the same keys, the same sixtieth of a second --
+and only the surface differs: the Tk canvas deleted and re-created
+every polygon every frame, which cost **21 ms on the median here and
+up to 250 ms**, and that was the stutter.  `pygame.draw.polygon` into
+one buffer, flipped once, costs **5 ms** for the same faces.  `--bench
+N` plays N frames to a script and prints the split; on this machine,
+native runtime, 164 faces a frame:
+
+| part | median | p95 |
+|---|---|---|
+| LOVA tick | 2.1 ms | 4.1 ms |
+| LOVA frame | 8.1 ms | 10.9 ms |
+| draw | 5.0 ms | 6.5 ms |
+| flip | 0.5 ms | 0.8 ms |
+| **a frame, end to end** | **16.6 ms (60 fps)** | **20.6 ms** |
+
+So the window now keeps sixty frames a second and what is left to cut
+is LOVA's own frame, not the drawing.  Two notes on the honesty of
+that: `set_mode(vsync=1)` is accepted by this driver but does not
+block -- the flip returns in half a millisecond -- so the cadence is
+held by `Clock.tick(60)`; and a face whose three corners are all off
+one side of the view is dropped before SDL sees it, because SDL walks
+a polygon's whole vertical span before it clips and 38 of the 160
+faces were more than half the milliseconds.  Dropping them changes no
+pixel.
+
 ## Checked against the kit
 
 `tests/test_fps.py` transliterates `objects/player.gd`,
@@ -216,7 +245,7 @@ which are:
 | Key | What |
 |---|---|
 | W A S D | walk |
-| mouse | look (the pointer is warped back to the middle of the canvas after every motion, which is what a captured mouse amounts to in Tk; **Tab** lets it go) |
+| mouse | look (SDL: the pointer is grabbed to the window and hidden and the motion read as a delta, put back in the middle when it strays far, because a grab stops it at the edge; Tk: the pointer is warped back to the middle after every motion, which is what a captured mouse amounts to there.  **Tab** lets it go in both) |
 | arrow keys | look, at the kit's gamepad rate of 120 degrees a second, for a machine where the warp is unwelcome |
 | left mouse button | shoot |
 | space | jump (twice) |
