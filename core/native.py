@@ -20,6 +20,15 @@ anomaly the native side produced, so `core.cli.report_error`,
 `core.cli.name_anomaly` and the MCP server's `_failure` work on it
 unchanged.
 
+What a runtime will *not* run is the runtime's own answer: its `ping`
+reply carries `unsupported`, the operator names it refuses, and that
+list -- not a copy of a phase's scope kept on this side -- is what
+`supports` / `unsupported_in` / `choose` screen a program against.  The
+screen happens before a caller hands stdin over, because the protocol
+carries the whole of stdin up front and a program refused after that has
+lost its input.  A reply with no such key is a phase-2 runtime, and
+`UNSUPPORTED_OP_NAMES` below is the fallback.
+
 Two things the native side cannot know are added here, exactly as
 `core.runtime._enrich_trap` adds them for a Python trap:
 `valid_alternatives` (derived from the offending operator) and `span`
@@ -42,18 +51,24 @@ import sys
 import threading
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from core.tokens import Node, SIGNATURES, encode
+from core.tokens import LAMBDA, Node, SIGNATURES, encode
 
 __all__ = [
     "NativeUnavailable", "NativeUnsupported", "NativeResult", "NativeRuntime",
-    "UNSUPPORTED_OPS", "default_runtime", "supports", "operators_of",
-    "split_command",
+    "UNSUPPORTED_OPS", "UNSUPPORTED_OP_NAMES", "default_runtime", "supports",
+    "unsupported_in", "operators_of", "ops_named", "split_command",
     "span_for_path", "trap_from_anomaly",
 ]
 
 
-# --- what a phase-2 native runtime does not do -------------------------------
+# --- what a native runtime does not do ---------------------------------------
 
+# The runtime says so itself: since phase 3 the `ping` reply carries
+# `unsupported`, the operator names it refuses, and that list is what a
+# program is screened against (`NativeRuntime.unsupported_ops`).  The
+# list below is the **fallback**, used for a runtime whose reply has no
+# such key -- a phase-2 binary, which predates the field.
+#
 # D7 (`spec/runtime-semantics.md` §0.1): phase 2 is everything except the
 # Meta family, the Evolution family, `trace` / `trace-surprise`, `read` /
 # `explain` and the network.  Named, not numbered, so a slot that changes
@@ -67,25 +82,36 @@ UNSUPPORTED_OP_NAMES = frozenset({
     "generation",
     # named by D7 outside those two families
     "trace-surprise", "read", "net-send", "net-recv",
-    # the world: D7 gives these to phase 3, and the phase-2 binary
-    # refuses them (`unsupported` in native/lova-rt/src/main.rs).  They
-    # must be screened here and not left to the binary's refusal, because
-    # `run` has already handed over the whole of stdin by then, and a
-    # program that falls back to Python after that has lost its input
-    # (apps/guess.lova: `clock` inside a boundary, `stdin` in a def).
+    # the world: D7 gives these to phase 3, and a phase-2 binary refuses
+    # them.  They must be screened here and not left to the binary's
+    # refusal, because `run` has already handed over the whole of stdin
+    # by then, and a program that falls back to Python after that has
+    # lost its input (apps/guess.lova: `clock` inside a boundary, `stdin`
+    # in a def).  The same reason is why the screen against a runtime's
+    # *own* list happens in `choose`, before a caller reads stdin.
     "fs-read", "fs-write", "clock",
 })
 
-UNSUPPORTED_OPS = frozenset(
-    token for token, sig in SIGNATURES.items()
-    if sig.get("name") in UNSUPPORTED_OP_NAMES
-)
 
-# The list is the binary's own list, by name.  A runtime that disagrees
-# still says so, and `run` turns its `{"ok": false, "error": "unsupported:
-# ..."}` into `NativeUnsupported`, which every caller treats as "this
-# program is Python's" -- but that is the safety net, not the screen:
-# phase 3 removes the world from both lists at once.
+def ops_named(names) -> frozenset:
+    """The token bytes those operator names spell in `core.tokens`.
+
+    A name `core.tokens` does not know is ignored: a runtime is allowed
+    to refuse something this build has never heard of, and a program of
+    this build cannot contain it.  The names themselves are kept by the
+    caller, so a message can still say what the runtime said.
+    """
+    wanted = frozenset(names)
+    return frozenset(token for token, sig in SIGNATURES.items()
+                     if sig.get("name") in wanted)
+
+
+UNSUPPORTED_OPS = ops_named(UNSUPPORTED_OP_NAMES)
+
+# Whichever list is in force, a runtime that disagrees still says so, and
+# `run` turns its `{"ok": false, "error": "unsupported: ..."}` into
+# `NativeUnsupported`, which every caller treats as "this program is
+# Python's" -- but that is the safety net, not the screen.
 
 
 def split_command(text: str) -> List[str]:
@@ -126,14 +152,31 @@ def operators_of(tree: Node) -> frozenset:
     return frozenset(seen)
 
 
-def supports(tree: Node) -> bool:
-    """Can a phase-2 native runtime run this program?"""
-    return not (operators_of(tree) & UNSUPPORTED_OPS)
+def _screen(runtime: Optional["NativeRuntime"]) -> frozenset:
+    """The token bytes to screen against: the runtime's, or the fallback.
+
+    A started runtime has been pinged, so its list is its own answer;
+    ``None`` means no runtime is at hand and the phase-2 list is the best
+    guess this side can make.
+    """
+    if runtime is None:
+        return UNSUPPORTED_OPS
+    return runtime.unsupported_ops
 
 
-def unsupported_in(tree: Node) -> List[str]:
+def supports(tree: Node, runtime: Optional["NativeRuntime"] = None) -> bool:
+    """Can this native runtime run this program?
+
+    With no runtime, the question is the one this side can answer alone:
+    can a phase-2 native runtime run it.
+    """
+    return not (operators_of(tree) & _screen(runtime))
+
+
+def unsupported_in(tree: Node,
+                   runtime: Optional["NativeRuntime"] = None) -> List[str]:
     """The names of the operators that keep this program in Python."""
-    found = sorted(operators_of(tree) & UNSUPPORTED_OPS)
+    found = sorted(operators_of(tree) & _screen(runtime))
     return [SIGNATURES.get(t, {}).get("name", hex(t)) for t in found]
 
 
@@ -197,6 +240,15 @@ def span_for_path(tree: Node, position_path: Sequence[int]):
     and asked again, outward through the call, which is what the Python
     path does by walking up its own stack.
 
+    A match counts only when it is anchored: either the whole chain from
+    the root matched (the path never crossed a call), or the first
+    unmatched ancestor is a `lambda` -- a call boundary enters a lambda
+    body and nothing else, so the ops after the boundary are the body's
+    own nesting.  Without the anchor, a `seq` that matched one op of the
+    path was taken for the callee's `seq` and the span landed one form
+    too far out (the program's `(seq ...)` for a `println` that was
+    handed a program), where the Python stack reports the call.
+
     It is a best effort, and it says so: two identical expressions in one
     def are indistinguishable by op alone, and the deepest match wins
     arbitrarily.  ``None`` when the path is empty or nothing matches.
@@ -216,7 +268,9 @@ def span_for_path(tree: Node, position_path: Sequence[int]):
             k = 0
             while k < len(ops) and k < len(want) and ops[-1 - k] == want[-1 - k]:
                 k += 1
-            ranked.append((-k, index, node))
+            anchored = k == len(ops) or ops[-1 - k] == LAMBDA
+            if anchored:
+                ranked.append((-k, index, node))
         if not ranked:
             continue
         ranked.sort(key=lambda item: (item[0], item[1]))
@@ -241,10 +295,33 @@ def enrich(anomaly: Dict[str, Any], tree: Optional[Node]) -> Dict[str, Any]:
     if not anomaly.get("offending_op_name") and op is not None:
         anomaly["offending_op_name"] = SIGNATURES.get(op, {}).get("name", "?")
     if tree is not None and not anomaly.get("span"):
-        span = span_for_path(tree, anomaly.get("position_path") or ())
+        span = span_for_nodes(tree, anomaly.get("position_nodes"))
+        if span is None:
+            span = span_for_path(tree, anomaly.get("position_path") or ())
         if span is not None:
             anomaly["span"] = span
     return anomaly
+
+
+def span_for_nodes(tree: Node, position_nodes) -> Optional[Any]:
+    """The span the Python runtime would report, from `position_nodes`.
+
+    A runtime that names its frames' nodes -- the ordinal of each in the
+    decoded program, preorder, literals included, `None` for a node not
+    from the program's bytes -- makes the recovery exact: the innermost
+    frame whose node carries a span, which is what `_enrich_trap` reads
+    off the Python stack.  ``None`` when the field is absent or names
+    nothing with a span, and `span_for_path` is the fallback.
+    """
+    if not position_nodes:
+        return None
+    order, _ = _index(tree)
+    for ordinal in reversed(list(position_nodes)):
+        if isinstance(ordinal, int) and 0 <= ordinal < len(order):
+            span = getattr(order[ordinal], "span", None)
+            if span is not None:
+                return span
+    return None
 
 
 def trap_from_anomaly(anomaly: Dict[str, Any], message: str = ""):
@@ -331,6 +408,15 @@ class NativeRuntime:
             raise NativeUnavailable("no native runtime command")
         self.timeout_s = timeout_s
         self.version = "?"
+        # What this runtime refuses, until its `ping` says otherwise: the
+        # phase-2 list, which is also what stands if the reply has no
+        # `unsupported` key.  `unsupported_names` is the runtime's own
+        # spelling, kept whole for a message; `unsupported_ops` is the
+        # part of it this build can screen a tree against.
+        self.unsupported_names: Tuple[str, ...] = tuple(
+            sorted(UNSUPPORTED_OP_NAMES))
+        self.unsupported_ops: frozenset = UNSUPPORTED_OPS
+        self.declares_unsupported = False
         self._id = 0
         self._lock = threading.Lock()
         self._dead: Optional[str] = None
@@ -409,10 +495,27 @@ class NativeRuntime:
     # -- the two requests ----------------------------------------------------
 
     def ping(self) -> str:
+        """The runtime's version, and -- the part with teeth -- its list.
+
+        Since phase 3 the reply carries `unsupported`, the operator names
+        this runtime refuses; that list is what a program is screened
+        against from here on, so the screen follows the binary instead of
+        a copy of its scope kept on this side.  A reply without the key
+        is a phase-2 runtime, and `UNSUPPORTED_OP_NAMES` stands.
+        """
         reply = self._call({"op": "ping"})
         if not reply.get("ok"):
             raise self._fail(f"ping: {reply.get('error', 'not ok')}")
         self.version = str(reply.get("version", "?"))
+        declared = reply.get("unsupported")
+        if isinstance(declared, (list, tuple)):
+            self.unsupported_names = tuple(str(name) for name in declared)
+            self.unsupported_ops = ops_named(self.unsupported_names)
+            self.declares_unsupported = True
+        else:
+            self.unsupported_names = tuple(sorted(UNSUPPORTED_OP_NAMES))
+            self.unsupported_ops = UNSUPPORTED_OPS
+            self.declares_unsupported = False
         return self.version
 
     def run(self, program: Any, *, stdin: str = "", allow: int = 0,
@@ -575,23 +678,35 @@ def choose(tree: Node, mode: str = "auto", *, shared: bool = False,
     ``None`` means "run it in Python".  ``on`` raises `NativeUnavailable`
     or `NativeUnsupported` rather than falling back, because a host that
     asked for the native runtime wants to be told it did not get it.
+
+    The runtime is started *before* the screen, because the list a
+    program is screened against is the runtime's own (`ping`) and not a
+    copy kept here -- and the screen is still before the caller reads
+    stdin, which is the order that matters: a program handed its input
+    and then refused has lost it.  With ``shared=True`` the process is
+    the server's one process, so every program is screened again against
+    it, and a restart re-reads the list with the new process's `ping`.
     """
     if mode not in ("auto", "on", "off"):
         raise ValueError(f"--native: expected auto, on or off, got {mode!r}")
     if mode == "off":
         return None
-    if not supports(tree):
-        missing = ", ".join(unsupported_in(tree))
+    runtime = (shared_runtime(timeout_s=timeout_s) if shared
+               else default_runtime(timeout_s=timeout_s))
+    if runtime is None:
+        if mode == "on":
+            raise NativeUnavailable(
+                "no native runtime: set LOVA_NATIVE to a command, or build "
+                "native/lova-rt (cargo build --release)")
+        return None
+    if not supports(tree, runtime):
+        missing = ", ".join(unsupported_in(tree, runtime))
+        if not shared:
+            runtime.close()
         if mode == "on":
             raise NativeUnsupported(
                 f"the native runtime does not implement: {missing}")
         return None
-    runtime = (shared_runtime(timeout_s=timeout_s) if shared
-               else default_runtime(timeout_s=timeout_s))
-    if runtime is None and mode == "on":
-        raise NativeUnavailable(
-            "no native runtime: set LOVA_NATIVE to a command, or build "
-            "native/lova-rt (cargo build --release)")
     return runtime
 
 

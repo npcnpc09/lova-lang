@@ -666,6 +666,96 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 33 (2026-09-19) -- A native runtime
+
+The owner's ruling of 2026-09-18, night: speed is the largest defect
+left, so build a Rust runtime -- not a rewrite of the tooling. Rust
+executes the compiled byte sequence; Python keeps the parser, the
+macros, the compiler passes, the locator, the examples, the MCP server,
+the CLI and the card. The division of labour was by model: Fable wrote
+the step-count semantics, the golden set and the conformance harness,
+reviewed, and judged the mismatches; Opus subagents did the port
+function by function against the golden set.
+
+**Phase 1** (e5c28ee): `spec/runtime-semantics.md` -- what
+`core/runtime.py` actually does, step accounting, call semantics,
+every operator's faults, the anomaly schema, and nine porting
+decisions D1-D9 (a specified merge sort for `sort-by`, ASCII digits for
+`text-int`, the pattern subset, Python's whitespace set, the phase
+scopes, an explicit path stack, and the quirks kept as contract);
+`spec/native-runtime-protocol.md` -- one JSON object a line over
+stdio, the value as `format_value` prints it, steps compared exactly;
+`corpus/golden/` -- 1023 records (card, traps, tests, lovabench, lib,
+apps) each with the compiled bytes, the printed value or the anomaly,
+the stdout and the step count; `tools/golden.py`, `tools/conformance.py`
+and `tools/mock_runtime.py`, the Python runtime behind the protocol,
+so a port has something that already answers.
+
+**Phase 2** (8dcc25e): `native/lova-rt`, 3 600 lines, everything but
+the Meta and Evolution families, `trace`, `read` / `explain`, the
+network and the world; `core/native.py`, `lova run --native
+auto|on|off`, `lova check --native`, MCP `lova_execute` `native`. Zero
+in-scope value or step mismatches. Two regressions found on review:
+the client's screen lacked `fs-read` / `fs-write` / `clock`, which the
+binary refused *after* stdin had been handed over, so `guess.lova` fell
+back to Python with its input gone; and the MCP path dropped
+`value_text` / `value_list`, now read back off the printed form, which
+is one-to-one for an integer, a text and a flat integer list.
+
+**Phase 3** (this entry): `fs-read` / `fs-write` / `clock` under both
+capability traps; the Meta family without `read` / `explain` -- a
+`LineageStore`, `hash` as the integer of the bytes, `trace` as a
+sandbox on the remaining ceilings with its steps added afterwards
+(quirks 21, 23); the Evolution family with `populations.py`'s rule;
+and **D4 amended**: the PRNG *is* contractual. It had read "not
+contractual" and no golden record was ever marked non-deterministic
+for it; `apps/repair.lova` and `apps/evolve.lova` promise a
+reproducible run, and the algorithm was already written down. The
+crate reproduces CPython's `random.Random` -- MT19937 seeded from 0,
+`random()` from two words, `_randbelow` by rejection, `choice` -- with
+a unit test pinning CPython's values, and an evolution program's
+`why` lines, lineage chains, fitness lists and hashes come out
+identical on both runtimes. The `ping` reply carries the operators the
+binary refuses, and the client screens against that list before it
+hands over stdin, so the two lists cannot drift again.
+
+**What the golden set says, phase 3:** 989 of 1023; the 29 that fail
+all contain `read`, `explain`, `net-send` or `net-recv` (the network
+stays out; `read` / `explain` need the Stage-1 surface and stay in
+Python; the client keeps such programs in Python). Zero warnings. The
+Opus session built 43 more records for the parts the set covers thinly
+(evolution over generations, `retire` / `variant` / `select`, `trace`
+under a budget, the world round-tripping a multi-byte text): 43/43.
+
+**Speed.** A pure 8.3M-step program: 10.1 s Python, 2.0 s native, both
+wall-clock including the Python start; a 20M-step budget trap in 4.0 s
+against 23.4 s, with the same `position_path` and the same `hot`
+table. On programs of a few thousand steps the process start is the
+cost and the two tie. The apps' numbers (`wordfreq` at 10 000 lines,
+the city builder's ticks) are the next measurement.
+
+**Found on integration, and the one design change of the phase:** the
+client recovered a trap's span by matching `position_path`'s ops
+against the tree, and two calls of the same shape -- `(seq (println (f
+1)) (println (quote ...)))` trapping in the second -- were
+indistinguishable, so the span landed on the first, where Python
+reports the second. The op-matching was tightened (a match counts only
+when it reaches the root or breaks under a `lambda`, which is what a
+call boundary enters), and the protocol gained **`position_nodes`**:
+parallel to `position_path`, each frame's node as its ordinal in the
+decoded program, preorder, literals counted, `null` for a node not from
+the program's own bytes. The mock runtime and the crate both emit it;
+the client takes the innermost with a span, which is exactly what
+`_enrich_trap` reads off the Python stack. Three trap shapes now report
+the same `at:` on both runtimes.
+
+Recorded for a port, not changed: `created_at` on a lineage record is
+host-side and unread; the selection weights may be held in i128 under
+the clamp; `fs-read`'s fault `reason` is the Python class name and its
+message text is not contractual. Tests 1009 -> 1054. Remaining:
+integration and the apps' timings; a native `read` would need the
+Stage-1 parser and is not planned.
+
 ### Milestone 32 (2026-09-18) -- A complete language
 
 The owner's ruling after Exp 29: more experiments of the same shape

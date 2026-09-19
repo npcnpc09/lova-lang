@@ -2,8 +2,12 @@
 //! JSON reply per line out.  Nothing else goes on stdout.
 
 mod conserve;
+mod evolve;
 mod int;
+mod lineage;
+mod meta;
 mod nt;
+mod rng;
 mod rt;
 mod text;
 mod tokens;
@@ -16,12 +20,14 @@ use std::io::{BufRead, Write};
 use tokens::*;
 use trap::Fault;
 
-const VERSION: &str = "lova-rt 0.1.0";
+const VERSION: &str = "lova-rt 0.2.0";
 
-/// D7, phase 2: the Meta family, the Evolution family, `trace-surprise`,
-/// `read`, and the world beyond `stdout` / `stdin`.
+/// D7, phase 3: everything but `read` / `explain`, which need the
+/// Stage-1 surface, and the network.
+const UNSUPPORTED: [u8; 4] = [READ, EXPLAIN, NET_SEND, NET_RECV];
+
 fn unsupported(op: u8) -> bool {
-    matches!(op, 0x1D | 0x1E | 0x20..=0x27 | 0x31..=0x34 | 0x37 | 0x38..=0x3F)
+    UNSUPPORTED.contains(&op)
 }
 
 fn main() {
@@ -50,7 +56,12 @@ fn serve() -> i32 {
         let reply: J = match serde_json::from_str::<J>(line) {
             Err(e) => json!({"ok": false, "error": format!("bad request: {}", e)}),
             Ok(request) => match request.get("op").and_then(|v| v.as_str()) {
-                Some("ping") => json!({"ok": true, "version": VERSION}),
+                Some("ping") => json!({
+                    "ok": true,
+                    "version": VERSION,
+                    "unsupported": UNSUPPORTED.iter().map(|o| op_name(*o))
+                        .collect::<Vec<&str>>(),
+                }),
                 Some("run") => run(&request),
                 other => json!({
                     "id": request.get("id").cloned().unwrap_or(J::Null),
@@ -100,6 +111,7 @@ fn run(request: &J) -> J {
     let max_depth = request.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(10_000) as u32;
 
     let mut state = rt::Rt::new(max_steps, max_depth, allow, stdin_text);
+    state.ordinals = std::rc::Rc::new(preorder_ordinals(&arena, root));
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         rt::eval(&mut arena, &mut state, root, false)
     }));
@@ -135,6 +147,15 @@ fn run(request: &J) -> J {
             an.insert(
                 "position_path".into(),
                 J::Array(a.position_path.iter().map(|o| J::from(*o)).collect()),
+            );
+            an.insert(
+                "position_nodes".into(),
+                J::Array(
+                    a.position_nodes
+                        .iter()
+                        .map(|n| n.map(J::from).unwrap_or(J::Null))
+                        .collect(),
+                ),
             );
             if let Some(b) = &a.body_offender {
                 an.insert("body_offender".into(), b.clone());

@@ -72,11 +72,17 @@ document that says otherwise (§3.4 and quirks 7, 10, 12 in particular).
   `type-violation` DomainTrap, message `text-cmp: the elements are not
   comparable (an integer against a text or a list)`. Quirk 10 is
   closed.
-- **D4 — the evolution PRNG is not contractual.** `evolve` and
-  `mutate` must be deterministic for a given runtime and seed, but a
-  native runtime need not reproduce MT19937 or CPython's `random`
-  methods; evolution results are excluded from conformance (golden
-  records that depend on them are marked non-deterministic).
+- **D4 — the evolution PRNG is contractual** (amended 2026-09-19, at
+  phase 3; it read "not contractual" from phase 1 to phase 2, and no
+  golden record was in fact marked non-deterministic for it).  A port
+  reproduces the Mersenne Twister stream of CPython's `random.Random`
+  as §5.5 "Randomness" specifies -- `random()`, `randint` through
+  `_randbelow` on `getrandbits`, `choice` -- seeded with 0 per
+  `LineageStore`.  Three reasons: the algorithm is fully written down
+  and is ~150 lines; `apps/repair.lova` and `apps/evolve.lova` promise
+  a reproducible run, and that promise should not depend on which
+  runtime ran it; and the golden records that pin a mutation stay
+  exact instead of being relaxed.
 - **D5 — the pattern engine is the subset, not the host.** A native
   runtime may use any engine that gives leftmost-first alternation,
   greedy quantifiers with `?` for the shortest, and non-overlapping
@@ -1463,6 +1469,9 @@ survivors = order[:size - n_retire]                 # fittest first
 clamp     = [min(scores[i], 10**9) for i in survivors]
 worst_kept= max(clamp)
 weights   = [(worst_kept - c + 1) ** 3 for c in clamp]     # SELECTION_SHARPNESS
+# A port may hold a weight in a fixed width: the clamp bounds it above,
+# and the native runtime uses i128 with saturation, which only differs
+# from Python's bignum for a variant scoring below about -10^12.
 rng       = rt.lineage._rng                         # random.Random(seed), seed 0 by default
 for _ in range(n_retire):
     pick = rng.random() * sum(weights)
@@ -1496,7 +1505,9 @@ substitute any PRNG — but then evolution results diverge.
   an attribute, never in the bytes.
 - `register_root(node, notes)` → record `{uid, parent_uid: None,
   root_uid: uid, generation: 0, mutation_kind: "root",
-  created_at: time.time(), notes}`.
+  created_at: time.time(), notes}`.  `created_at` is host-side: nothing
+  in the language reads it (`why` prints `mutation_kind` and `notes`),
+  and a port need not keep it (the native runtime does not).
 - `clone(parent)` → `_deep_copy_node` + child record with
   `mutation_kind "clone"`, `generation = parent.generation + 1`.
   Raises a bare `ValueError("parent must be registered before clone()")`
@@ -1687,6 +1698,9 @@ if not rt.caps & bit:
 ```
 "domain-error", "fs-read: {path}: {exc}"
 detail {"operator": "fs-read", "path": path, "reason": type(exc).__name__}
+(`reason` is the Python exception class name; a port maps its own error
+kinds onto those names -- `FileNotFoundError`, `PermissionError`,
+`IsADirectoryError` -- and the message text is not contractual.)
 hint "give `fs-read` the path of a readable UTF-8 file"
 ```
 

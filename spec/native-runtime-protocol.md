@@ -32,19 +32,56 @@ net 8); `max_steps` / `max_depth` are the ceilings for this run.
 ## Responses
 
 ```json
-{"ok": true, "version": "lova-rt 0.1.0"}
+{"ok": true, "version": "lova-rt 0.2.0",
+ "unsupported": ["read", "explain", "net-send", "net-recv"]}
 
 {"id": 1, "ok": true, "value": "42", "steps": 1234, "stdout": "..."}
 
 {"id": 1, "ok": false, "steps": 1234, "stdout": "...",
  "anomaly": {"kind": "domain-error", "offending_op": 13,
              "offending_op_name": "div", "position_path": [46, 45, 13],
+             "position_nodes": [0, 3, 5],
              "detail": {"operator": "div"},
              "repair_hint": "guard the divisor with `(if d (div a d) fallback)`"}}
 
 {"ok": false, "error": "decode: unknown token 0xFE at position 7"}
 ```
 
+* **`unsupported`** (in the `ping` reply, since phase 3) is the list
+  of operator names this runtime refuses, by name as `core.tokens`
+  spells them; empty when it runs everything.  The Python client
+  screens a program against this list *before* handing over stdin,
+  because a program refused after that has lost its input.  A
+  runtime whose reply has no `unsupported` key is taken to be a
+  phase-2 runtime, and the client uses its own copy of the phase-2
+  list.  A program that reaches the runtime with a refused operator
+  is still answered `{"ok": false, "error": "unsupported: <name>"}`
+  before evaluation starts.  The example above is the phase-3 list;
+  the phase-2 list was that plus the Meta and Evolution families,
+  `trace-surprise`, `fs-read`, `fs-write` and `clock`.  A name the
+  client's `core.tokens` does not know is kept for the message and
+  ignored for the screen, since no program of that build can contain
+  it.  The list is fixed for the life of the process: the client reads
+  it once, at `ping`, and again only when it starts a new process.
+  Because the list is the runtime's, the client has to start the
+  runtime to learn it, so under `--native auto` a program that ends up
+  in Python has paid one process start; under `--native on` with no
+  runtime at all the error is "no native runtime", not the operator's
+  name, because without a runtime there is no list.  The reference
+  server (`tools/mock_runtime.py`) runs everything and answers `[]`,
+  so a test of the screen needs a runtime that declares something.
+* **`position_nodes`** (since 0.2.0) is parallel to `position_path`:
+  for each frame, the 0-based ordinal of that node in the decoded
+  program, counting every node in byte-stream (preorder) order,
+  literal nodes included -- the order `core.tokens.decode` produces
+  them; `null` for a frame whose node is not from the program's own
+  bytes (a program made by `quote` / `clone` / `mutate` / `eval` and
+  then run, a `trace` body that came from a value).  The client uses
+  it to report the innermost frame that carries a source span, which
+  is what the Python runtime reads off its own stack; without it the
+  client matches `position_path`'s ops against the tree and two
+  calls of the same shape cannot be told apart.  The harness does not
+  compare it.
 * **`value`** is the printed form, character for character what
   `core.cli.format_value` gives: an integer bare, a text in double
   quotes with LOVA's escapes, a list as `(1 2 3)` -- and with

@@ -239,6 +239,27 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M33** (2026-09-19) -- **a native runtime.** The owner's ruling
+after M32: speed is the largest defect left. `native/lova-rt` is a
+Rust runtime for the compiled byte sequence, one JSON object a line
+over stdio (`spec/native-runtime-protocol.md`), checked against
+`corpus/golden/` (1023 records: value, anomaly, stdout and the exact
+step count) by `tools/conformance.py`; `spec/runtime-semantics.md` is
+what `core/runtime.py` does, with the porting decisions D1-D9. Python
+keeps the parser, macros, compiler, locator, examples, MCP and CLI;
+`lova run --native auto|on|off` (auto is the default: the binary when
+there is one and the program stays inside what it implements, which
+its `ping` reply declares), `lova check --native`, MCP `native`. In
+scope everything but `read` / `explain` (the Stage-1 surface) and the
+network: 989/1023, the 29 failures all one of those four operators,
+zero in-scope value or step mismatches; the evolution PRNG is
+reproduced exactly (D4 amended: contractual). A pure 8.3M-step program
+10.1 s -> 2.0 s; a 20M-step trap 23.4 s -> 4.0 s with the same
+`position_path` and `hot` table. Traps carry `position_nodes` so the
+client reports the same span Python does. Division of labour: Fable
+the spec, the golden set, review and judgment; Opus subagents the
+port. Tests 1009 -> 1054. `journal/README.md`, "Milestone 33".
+
 **M32** (2026-09-18) -- **a complete language.** The owner's ruling
 after Exp 29: more experiments of the same shape add decimals to
 numbers no decision depends on; close the standing defects instead.
@@ -1055,7 +1076,7 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-1009 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+1054 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 24 first-class apps (the last Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

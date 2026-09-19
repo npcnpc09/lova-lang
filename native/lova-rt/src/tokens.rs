@@ -1,6 +1,7 @@
 //! The byte encoding (spec §1): opcodes, arities, and `decode`.
 
 use crate::int::Int;
+use std::cell::Cell;
 use std::rc::Rc;
 
 pub enum Arity {
@@ -61,6 +62,13 @@ pub const TRACE_SURPRISE: u8 = 0x1D;
 pub const READ: u8 = 0x1E;
 pub const DEVIATION: u8 = 0x1F;
 pub const DEFPOP: u8 = 0x20;
+pub const VARIANT: u8 = 0x21;
+pub const EVOLVE: u8 = 0x22;
+pub const SELECT: u8 = 0x23;
+pub const MUTATE: u8 = 0x24;
+pub const CLONE: u8 = 0x25;
+pub const FITNESS: u8 = 0x26;
+pub const RETIRE: u8 = 0x27;
 pub const NET_SEND: u8 = 0x31;
 pub const NET_RECV: u8 = 0x32;
 pub const FS_READ: u8 = 0x33;
@@ -77,8 +85,14 @@ pub const APPLY: u8 = 0x2D;
 pub const LET: u8 = 0x2E;
 pub const REF: u8 = 0x2F;
 pub const EXTERNAL_BOUNDARY: u8 = 0x30;
+pub const LINEAGE_QUERY: u8 = 0x38;
+pub const WHY: u8 = 0x39;
 pub const TRACE: u8 = 0x3A;
 pub const EXPLAIN: u8 = 0x3B;
+pub const HASH: u8 = 0x3C;
+pub const UID: u8 = 0x3D;
+pub const ANCESTOR_OF: u8 = 0x3E;
+pub const GENERATION: u8 = 0x3F;
 pub const LIT_TEXT: u8 = 0x40;
 pub const TEXT_LEN: u8 = 0x41;
 pub const TEXT_CAT: u8 = 0x42;
@@ -141,6 +155,13 @@ pub struct Node {
     pub kids: Vec<u32>,
     pub ival: Option<Int>,
     pub sval: Option<Rc<String>>,
+    /// The lineage uid, set by `register_root` / `_register_child`.
+    /// Metadata on the node, never in the bytes (spec §5.5).
+    pub uid: Cell<Option<u64>>,
+}
+
+pub fn node(op: u8, kids: Vec<u32>, ival: Option<Int>, sval: Option<Rc<String>>) -> Node {
+    Node { op, kids, ival, sval, uid: Cell::new(None) }
 }
 
 pub struct Arena {
@@ -179,7 +200,8 @@ impl Arena {
             (n.op, n.kids.clone(), n.ival.clone(), n.sval.clone())
         };
         let new_kids: Vec<u32> = kids.iter().map(|k| self.deep_copy(*k)).collect();
-        self.push(Node { op, kids: new_kids, ival, sval })
+        // `_deep_copy_node` clears the uid on the copy (quirk 29).
+        self.push(node(op, new_kids, ival, sval))
     }
 }
 
@@ -211,7 +233,7 @@ fn decode_one(arena: &mut Arena, data: &[u8], mut pos: usize) -> Result<(u32, us
             return Err("LIT_INT: truncated payload".to_string());
         }
         let val = Int::from_signed_bytes_be(&data[pos + 2..pos + 2 + length]);
-        let id = arena.push(Node { op, kids: Vec::new(), ival: Some(val), sval: None });
+        let id = arena.push(node(op, Vec::new(), Some(val), None));
         return Ok((id, pos + 2 + length));
     }
     if op == LIT_TEXT {
@@ -226,12 +248,7 @@ fn decode_one(arena: &mut Arena, data: &[u8], mut pos: usize) -> Result<(u32, us
             Ok(t) => t.to_string(),
             Err(e) => return Err(format!("LIT_TEXT: invalid utf-8: {}", e)),
         };
-        let id = arena.push(Node {
-            op,
-            kids: Vec::new(),
-            ival: None,
-            sval: Some(Rc::new(text)),
-        });
+        let id = arena.push(node(op, Vec::new(), None, Some(Rc::new(text))));
         return Ok((id, pos + 3 + length));
     }
     pos += 1;
@@ -256,8 +273,51 @@ fn decode_one(arena: &mut Arena, data: &[u8], mut pos: usize) -> Result<(u32, us
             }
         }
     }
-    let id = arena.push(Node { op, kids, ival: None, sval: None });
+    let id = arena.push(node(op, kids, None, None));
     Ok((id, pos))
+}
+
+// --- encode (core/tokens.py) ------------------------------------------------
+
+/// `encode(node)`: the byte stream `hash` turns into an integer.
+pub fn encode(arena: &Arena, id: u32) -> Vec<u8> {
+    let mut buf = Vec::new();
+    encode_into(arena, id, &mut buf);
+    buf
+}
+
+fn encode_into(arena: &Arena, id: u32, buf: &mut Vec<u8>) {
+    let n = arena.get(id);
+    buf.push(n.op);
+    if n.op == LIT_TEXT {
+        let data = n.sval.as_ref().unwrap().as_bytes();
+        buf.push((data.len() >> 8) as u8);
+        buf.push((data.len() & 0xFF) as u8);
+        buf.extend_from_slice(data);
+        return;
+    }
+    if n.op == LIT_INT {
+        let value = n.ival.as_ref().unwrap();
+        // `bit_length() + 1` for the sign, rounded up to whole bytes.
+        let bits = value.bit_length() + 1;
+        let n_bytes = std::cmp::max(1, ((bits + 7) / 8) as usize);
+        let mut bytes = value.to_big().to_signed_bytes_be();
+        if bytes.len() < n_bytes {
+            let fill = if value.is_negative() { 0xFF } else { 0x00 };
+            let mut padded = vec![fill; n_bytes - bytes.len()];
+            padded.extend_from_slice(&bytes);
+            bytes = padded;
+        }
+        buf.push(n_bytes as u8);
+        buf.extend_from_slice(&bytes[bytes.len() - n_bytes..]);
+        return;
+    }
+    for k in &n.kids {
+        encode_into(arena, *k, buf);
+    }
+    if matches!(sig(n.op).map(|s| &s.arity), Some(Arity::Var)) {
+        buf.push(END);
+    }
 }
 
 /// `core.surface.pretty` -- the Stage-1 projection, which
@@ -276,6 +336,26 @@ pub fn pretty(arena: &Arena, id: u32) -> String {
     }
     let kids: Vec<String> = n.kids.iter().map(|k| pretty(arena, *k)).collect();
     format!("({} {})", name, kids.join(" "))
+}
+
+/// `ordinals[node id]` = the node's 0-based place in the byte stream,
+/// which is preorder with literals counted -- the order
+/// `core.tokens.decode` meets them in.  Only the decoded tree is in the
+/// table; a node made later (`quote`, `clone`, `mutate`, a probe) is
+/// past its end and has no place in the program's text.
+pub fn preorder_ordinals(arena: &Arena, root: u32) -> Vec<u32> {
+    let mut out = vec![0u32; arena.nodes.len()];
+    let mut next = 0u32;
+    fill(arena, root, &mut next, &mut out);
+    out
+}
+
+fn fill(arena: &Arena, id: u32, next: &mut u32, out: &mut Vec<u32>) {
+    out[id as usize] = *next;
+    *next += 1;
+    for k in arena.kids(id) {
+        fill(arena, *k, next, out);
+    }
 }
 
 /// The set of operators a tree uses -- the scan D7 asks for before a run.

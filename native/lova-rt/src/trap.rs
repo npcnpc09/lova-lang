@@ -19,6 +19,11 @@ pub struct Anomaly {
     pub detail: JMap<String, J>,
     pub repair_hint: String,
     pub position_path: Vec<u8>,
+    /// Parallel to `position_path`: each frame's node as its 0-based
+    /// ordinal in the decoded program, byte-stream (preorder) order,
+    /// literals counted.  `None` for a node that is not from the
+    /// program's own bytes -- one `quote` / `clone` / `mutate` made.
+    pub position_nodes: Vec<Option<u32>>,
     pub offending_op: Option<u8>,
     pub offending_op_name: String,
     pub valid_alternatives: Vec<u8>,
@@ -34,6 +39,7 @@ impl Anomaly {
             detail,
             repair_hint: hint.to_string(),
             position_path: Vec::new(),
+            position_nodes: Vec::new(),
             offending_op: None,
             offending_op_name: String::new(),
             valid_alternatives: Vec::new(),

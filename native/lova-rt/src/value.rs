@@ -16,6 +16,9 @@ pub enum Value {
     Closure(Rc<ClosureData>),
     Loop(Rc<LoopFn>),
     Program(u32),
+    /// A pool of variants under a scorer (spec 5.5).  Immutable:
+    /// `evolve` and `retire` return a new pool.
+    Population(Rc<PopulationData>),
     /// A call in tail position, handed back to `call` (spec §4.4).
     /// Never escapes a call frame.
     Tail(Rc<(Value, Value)>),
@@ -60,6 +63,12 @@ pub struct ClosureData {
 pub struct LoopFn {
     pub pred: Value,
     pub step: Value,
+}
+
+pub struct PopulationData {
+    pub scorer: Value,
+    pub variants: Vec<u32>,
+    pub generation: i64,
 }
 
 // --- environment (spec §4.2) ------------------------------------------------
@@ -397,6 +406,9 @@ pub fn value_repr(a: &Arena, v: &Value) -> String {
         },
         Value::Loop(_) => "<loop-until>".to_string(),
         Value::Program(id) => format!("Node(op={}, {})", a.op(*id), pretty(a, *id)),
+        Value::Population(p) => {
+            format!("<population n={} gen={}>", p.variants.len(), p.generation)
+        }
         Value::Tail(_) => "<tail-call>".to_string(),
     }
 }
@@ -454,6 +466,7 @@ pub fn type_name(v: &Value) -> &'static str {
         Value::Closure(_) => "Closure",
         Value::Loop(_) => "LoopFn",
         Value::Program(_) => "Node",
+        Value::Population(_) => "Population",
         Value::Tail(_) => "TailCall",
     }
 }
@@ -470,9 +483,19 @@ pub fn format_value(a: &Arena, v: &Value) -> String {
                 .map(|e| format!("{}: {}", format_value(a, &e.key), format_value(a, &e.val)))
                 .collect();
             let more = if entries.len() <= 8 { "" } else { " ..." };
-            format!("#<map n={} {{{}{}}}>", entries.len(), shown.join(" "), more)
+            format!("#<map n={} {{{}{}}}>", m.len(), shown.join(" "), more)
         }
-        Value::Program(id) => format!("#<program {}>", pretty(a, *id)),
+        Value::Program(id) => {
+            // `format_value` tags a registered program with its uid.
+            let tag = match a.get(*id).uid.get() {
+                Some(uid) if uid != 0 => format!(" uid={}", uid),
+                _ => String::new(),
+            };
+            format!("#<program{} {}>", tag, pretty(a, *id))
+        }
+        Value::Population(p) => {
+            format!("#<population n={} gen={}>", p.variants.len(), p.generation)
+        }
         Value::Nil | Value::Cons(_) => {
             let items = list_walk(v);
             let parts: Vec<String> = items

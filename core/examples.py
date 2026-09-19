@@ -239,7 +239,9 @@ def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
                 got_tree, _ = build(with_body(expr_text), prelude=prelude)
             except Exception:              # noqa: BLE001 -- Python reports it
                 return None
-            if not (supports(want_tree) and supports(got_tree)):
+            # Screened against *this* runtime's list, which its `ping`
+            # gave us, not against a copy of a phase's scope kept here.
+            if not (supports(want_tree, native) and supports(got_tree, native)):
                 return None
             want = native.run(want_tree, allow=granted, **limits)
             got = native.run(got_tree, allow=granted, **limits)

@@ -26,7 +26,7 @@ from core.cli import format_value                      # noqa: E402
 from core.conservation import BudgetTrap, DeltaTrap    # noqa: E402
 from core.observability import suggest_alternatives    # noqa: E402
 from core.runtime import Runtime, evaluate             # noqa: E402
-from core.tokens import decode                         # noqa: E402
+from core.tokens import Node, decode                         # noqa: E402
 
 VERSION = "mock-runtime 1.0.0 (core.runtime behind the protocol)"
 
@@ -67,12 +67,31 @@ def run(request):
             "offending_op": anomaly.get("offending_op"),
             "offending_op_name": anomaly.get("offending_op_name", ""),
             "position_path": list(anomaly.get("position_path") or ()),
+            "position_nodes": _position_nodes(tree, getattr(exc, "path_nodes", ())),
             "detail": _jsonable(anomaly.get("detail") or {}),
             "repair_hint": anomaly.get("repair_hint", ""),
         })
     reply["steps"] = rt.steps
     reply["stdout"] = rt.written()
     return reply
+
+
+def _position_nodes(tree, path_nodes):
+    """Each frame's node as its ordinal in the decoded program.
+
+    Preorder over every node, literals included -- the order the bytes
+    hold them -- and ``None`` for a node that is not in the program's
+    own tree (one made by `quote` / `clone` / `mutate` and then run).
+    """
+    ordinal = {}
+    stack = [tree]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, Node):
+            continue
+        ordinal[id(node)] = len(ordinal)
+        stack.extend(reversed(node.args))
+    return [ordinal.get(id(n)) for n in path_nodes]
 
 
 def main() -> int:
@@ -88,7 +107,7 @@ def main() -> int:
         else:
             op = request.get("op")
             if op == "ping":
-                reply = {"ok": True, "version": VERSION}
+                reply = {"ok": True, "version": VERSION, "unsupported": []}
             elif op == "run":
                 reply = run(request)
             else:

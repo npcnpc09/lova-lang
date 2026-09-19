@@ -1134,6 +1134,10 @@ def _enrich_trap(trap, rt: Runtime) -> None:
     from core.observability import suggest_alternatives
 
     path = _node_path(rt)
+    # The nodes themselves, for a driver that has the tree and wants to
+    # name them (tools/mock_runtime.py's `position_nodes`); on the
+    # exception and not in the anomaly, which is JSON.
+    trap.path_nodes = tuple(path)
     top = path[-1] if path else None
     op = top.op if top is not None else None
     alternatives = suggest_alternatives(op) if op is not None else ()

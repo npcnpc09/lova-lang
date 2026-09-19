@@ -8,7 +8,7 @@ use crate::rt::{as_int, eval, Rt};
 use crate::tokens::*;
 use crate::trap::*;
 use crate::value::Value;
-use serde_json::{json, Map as JMap, Value as J};
+use serde_json::{Map as JMap, Value as J};
 use std::collections::HashMap;
 
 pub fn op_conserve(a: &mut Arena, rt: &mut Rt, id: u32) -> R<Value> {
@@ -106,22 +106,22 @@ fn probe(a: &mut Arena, env: &HashMap<i64, Value>, tree: u32) -> Option<Int> {
     }
 }
 
-fn clone_with_replacement(a: &mut Arena, node: u32, path: &[usize], new_node: u32) -> u32 {
+fn clone_with_replacement(a: &mut Arena, target: u32, path: &[usize], new_node: u32) -> u32 {
     if path.is_empty() {
         return new_node;
     }
-    let mut kids = a.kids(node).to_vec();
+    let mut kids = a.kids(target).to_vec();
     let cur = kids[path[0]];
     kids[path[0]] = clone_with_replacement(a, cur, &path[1..], new_node);
     let (op, ival, sval) = {
-        let n = a.get(node);
+        let n = a.get(target);
         (n.op, n.ival.clone(), n.sval.clone())
     };
-    a.push(Node { op, kids, ival, sval })
+    a.push(crate::tokens::node(op, kids, ival, sval))
 }
 
 fn lit(a: &mut Arena, v: Int) -> u32 {
-    a.push(Node { op: LIT_INT, kids: Vec::new(), ival: Some(v), sval: None })
+    a.push(node(LIT_INT, Vec::new(), Some(v), None))
 }
 
 fn record(
@@ -199,7 +199,7 @@ fn scan_body_offender(
                 let n = a.get(c.node);
                 (n.ival.clone(), n.sval.clone())
             };
-            let swapped = a.push(Node { op: alt, kids, ival, sval });
+            let swapped = a.push(node(alt, kids, ival, sval));
             let path = candidates[*i].path.clone();
             let modified = clone_with_replacement(a, body, &path, swapped);
             if probe(a, env, modified).as_ref() != Some(expected) {
@@ -271,9 +271,4 @@ fn scan_body_offender(
         }
     }
     None
-}
-
-#[allow(dead_code)]
-fn unused() -> J {
-    json!({})
 }

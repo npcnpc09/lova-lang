@@ -10,9 +10,17 @@ What is checked: the process is started once and kept; a value printed
 through the native path is character for character the value the Python
 path prints; a trap is the same trap class, the same kind and the same
 `position_path`, and reaches the same `span` / `line` / `col` through
-`lova run` and `lova_execute`; `supports` keeps a program with `explain`
-in Python; `--native on` with nothing to run on is an error and not a
+`lova run` and `lova_execute`; a runtime's **own** `unsupported` list is
+what a program is screened against, and screens it before stdin is
+handed over; `--native on` with nothing to run on is an error and not a
 traceback; and a runtime that dies says so instead of hanging.
+
+The reference server runs everything (it is the Python runtime), so its
+`ping` declares `unsupported: []`.  A runtime that refuses something is
+therefore a **fake** written for the test -- `write_fake_runtime` -- one
+that answers `ping` with the list under test and refuses to run a
+program at all, because every test that uses it is a test of the screen
+and a program that reaches it has already got past the screen.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ from __future__ import annotations
 import io
 import os
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -31,12 +40,59 @@ from core import native as native_mod                          # noqa: E402
 from core.cli import build, format_value, main as cli_main     # noqa: E402
 from core.conservation import DomainTrap                       # noqa: E402
 from core.native import (                                      # noqa: E402
-    NativeResult, NativeRuntime, NativeUnavailable, NativeUnsupported,
-    span_for_path, supports,
+    UNSUPPORTED_OPS, NativeResult, NativeRuntime, NativeUnavailable,
+    NativeUnsupported, ops_named, span_for_nodes, span_for_path, supports,
+    unsupported_in,
 )
 from core.runtime import Runtime, evaluate                     # noqa: E402
 
 COMMAND = [sys.executable, str(MOCK)]
+
+FAKE_SOURCE = '''\
+"""A runtime that answers `ping` and runs nothing (tests/test_native.py)."""
+import json
+import sys
+
+UNSUPPORTED = {unsupported!r}
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        request = json.loads(line)
+    except ValueError:
+        continue
+    if request.get("op") == "ping":
+        reply = {{"ok": True, "version": "fake runtime 0.0.0"}}
+        if UNSUPPORTED is not None:
+            reply["unsupported"] = UNSUPPORTED
+    else:
+        reply = {{"id": request.get("id"), "ok": False,
+                  "error": "fake: this runtime never runs a program"}}
+    sys.stdout.write(json.dumps(reply) + "\\n")
+    sys.stdout.flush()
+'''
+
+
+# Two programs an operator screen can tell apart *after* the compiler:
+# constant folding leaves `(merge 1 2)` a literal, so the operator under
+# test has to reach the tree through a parameter.
+MERGING = "(def f [n] (merge n 1))\n(f 2)\n"
+MULTIPLYING = "(def g [n] (mul n 2))\n(g 5)\n"
+
+
+def write_fake_runtime(directory: str, unsupported, name="fake_rt.py"):
+    """A fake runtime's command, written into ``directory``.
+
+    ``unsupported`` is the list its `ping` declares; ``None`` writes a
+    runtime whose reply has no such key at all -- a phase-2 runtime,
+    which is what `UNSUPPORTED_OP_NAMES` is the fallback for.
+    """
+    path = os.path.join(directory, name)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(FAKE_SOURCE.format(unsupported=unsupported))
+    return [sys.executable, path]
 
 # Ten programs whose values cover the shapes `format_value` prints
 # differently: an integer, a negative, a text, a list, a list that is
@@ -150,6 +206,117 @@ class NativeClient(unittest.TestCase):
             NativeRuntime([str(ROOT / "no" / "such" / "binary")])
 
 
+class DeclaredScope(unittest.TestCase):
+    """The runtime says what it refuses; this side believes it."""
+
+    def setUp(self) -> None:
+        holder = tempfile.TemporaryDirectory(prefix="lova-fake-rt-")
+        self.addCleanup(holder.cleanup)
+        self.dir = holder.name
+
+    def _fake(self, unsupported, name="fake_rt.py") -> NativeRuntime:
+        runtime = NativeRuntime(write_fake_runtime(self.dir, unsupported, name),
+                                timeout_s=60.0)
+        self.addCleanup(runtime.close)
+        runtime.ping()
+        return runtime
+
+    # -- (a) the runtime's list is the screen --------------------------------
+
+    def test_a_declared_list_overrides_the_static_one(self):
+        # `merge` is in no phase's unsupported list; this runtime refuses
+        # it anyway, and that is the answer that counts.  (Through a def:
+        # `(merge 1 2)` on its own is folded to a literal before it gets
+        # here, and a program with no `merge` left in it is not a test.)
+        runtime = self._fake(["merge", "not-an-operator"])
+        self.assertTrue(runtime.declares_unsupported)
+        self.assertEqual(runtime.unsupported_ops, ops_named(["merge"]))
+        self.assertIn("not-an-operator", runtime.unsupported_names)
+        tree, _ = build(MERGING)
+        self.assertFalse(supports(tree, runtime))
+        self.assertEqual(unsupported_in(tree, runtime), ["merge"])
+        # ... and the static list still says the opposite on its own.
+        self.assertTrue(supports(tree))
+
+    @unittest.skipUnless(MOCK.is_file(), f"no reference server at {MOCK}")
+    def test_an_empty_declared_list_takes_the_whole_static_one_back(self):
+        # The reference server is the Python runtime: it runs `explain`,
+        # says so, and a program with `explain` is its to run.
+        runtime = NativeRuntime(COMMAND, timeout_s=60.0)
+        self.addCleanup(runtime.close)
+        runtime.ping()
+        self.assertTrue(runtime.declares_unsupported)
+        self.assertEqual(runtime.unsupported_ops, frozenset())
+        tree, _ = build("(explain (quote (merge 1 2)))")
+        self.assertFalse(supports(tree))            # the static list
+        self.assertTrue(supports(tree, runtime))    # the runtime's own
+        self.assertEqual(runtime.run(tree, max_steps=100_000).value_text,
+                         '"(merge 1 2)"')
+
+    # -- (b) no list at all is a phase-2 runtime -----------------------------
+
+    def test_a_ping_without_the_key_falls_back_to_the_static_list(self):
+        runtime = self._fake(None)
+        self.assertFalse(runtime.declares_unsupported)
+        self.assertEqual(runtime.unsupported_ops, UNSUPPORTED_OPS)
+        tree, _ = build("(explain (quote (merge 1 2)))")
+        self.assertFalse(supports(tree, runtime))
+        self.assertEqual(unsupported_in(tree, runtime), ["explain"])
+        plain, _ = build("(merge 1 2)")
+        self.assertTrue(supports(plain, runtime))
+
+    def test_a_runtime_that_was_never_pinged_holds_the_static_list(self):
+        runtime = NativeRuntime(write_fake_runtime(self.dir, [], "unpinged.py"),
+                                timeout_s=60.0)
+        self.addCleanup(runtime.close)
+        self.assertEqual(runtime.unsupported_ops, UNSUPPORTED_OPS)
+
+    # -- (2) the shared runtime, and a restart -------------------------------
+
+    def _point_at(self, command) -> None:
+        os.environ["LOVA_NATIVE"] = " ".join(f'"{word}"' for word in command)
+        native_mod.forget_default()
+
+    def test_the_shared_runtime_screens_every_program_against_its_list(self):
+        self._env_guard()
+        self._point_at(write_fake_runtime(self.dir, ["merge"], "shared_a.py"))
+        refused, _ = build(MERGING)
+        allowed, _ = build(MULTIPLYING)
+        first = native_mod.choose(allowed, "auto", shared=True)
+        self.assertIsNotNone(first)
+        self.assertIsNone(native_mod.choose(refused, "auto", shared=True))
+        # Screened, not closed: the server's one process serves the next
+        # program, which is the whole point of sharing it.
+        self.assertTrue(first.alive)
+        self.assertIs(native_mod.choose(allowed, "auto", shared=True), first)
+        with self.assertRaises(NativeUnsupported):
+            native_mod.choose(refused, "on", shared=True)
+
+    def test_a_restarted_shared_runtime_re_reads_the_list(self):
+        self._env_guard()
+        self._point_at(write_fake_runtime(self.dir, ["merge"], "shared_b.py"))
+        refused, _ = build(MERGING)
+        self.assertIsNone(native_mod.choose(refused, "auto", shared=True))
+        # The process dies and the command behind it changes: the next
+        # ask starts a new one and takes its list, not the dead one's.
+        self._point_at(write_fake_runtime(self.dir, [], "shared_c.py"))
+        after = native_mod.choose(refused, "auto", shared=True)
+        self.assertIsNotNone(after)
+        self.assertEqual(after.unsupported_ops, frozenset())
+
+    def _env_guard(self) -> None:
+        previous = os.environ.get("LOVA_NATIVE")
+
+        def restore() -> None:
+            if previous is None:
+                os.environ.pop("LOVA_NATIVE", None)
+            else:
+                os.environ["LOVA_NATIVE"] = previous
+            native_mod.forget_default()
+
+        self.addCleanup(restore)
+
+
 class SpanRecovery(unittest.TestCase):
     """`span_for_path` mirrors what `_enrich_trap` reads off the stack."""
 
@@ -175,6 +342,28 @@ class SpanRecovery(unittest.TestCase):
         tree, _ = build("(merge 1 2)")
         self.assertIsNone(span_for_path(tree, ()))
 
+    @unittest.skipUnless(MOCK.is_file(), f"no reference server at {MOCK}")
+    def test_position_nodes_pick_the_call_the_ops_cannot(self):
+        # Two println calls of the same shape; the second traps.  By ops
+        # alone they tie and the first wins, so `span_for_path` cannot
+        # answer these; the reference server names its frames' nodes,
+        # and the client reports what the Python stack reports.
+        for source in ("(def f [x] (merge x 1))\n"
+                       "(seq (println (f 1))\n"
+                       "     (println (quote (merge 1 2))))\n",
+                       "(def show [p] (println p))\n"
+                       "(let q (quote (mul 2 3)) (seq (println 1) (show q)))\n"):
+            with self.subTest(source=source):
+                tree, anomaly = self._python_trap(source)
+                with NativeRuntime(COMMAND, timeout_s=60.0) as native:
+                    with self.assertRaises(ValueError) as caught:
+                        native.run(tree)
+                got = caught.exception.anomaly
+                self.assertIn("position_nodes", got)
+                self.assertEqual(tuple(got["span"]), tuple(anomaly["span"]))
+                self.assertEqual(
+                    span_for_nodes(tree, got["position_nodes"]), anomaly["span"])
+
 
 @unittest.skipUnless(MOCK.is_file(), f"no reference server at {MOCK}")
 class Wiring(unittest.TestCase):
@@ -194,6 +383,14 @@ class Wiring(unittest.TestCase):
 
     def _use_mock(self) -> None:
         os.environ["LOVA_NATIVE"] = f'"{sys.executable}" "{MOCK}"'
+        native_mod.forget_default()
+
+    def _use_fake(self, unsupported, name="fake_rt.py") -> None:
+        """Point `LOVA_NATIVE` at a runtime that refuses what it names."""
+        holder = tempfile.TemporaryDirectory(prefix="lova-fake-rt-")
+        self.addCleanup(holder.cleanup)
+        command = write_fake_runtime(holder.name, unsupported, name)
+        os.environ["LOVA_NATIVE"] = " ".join(f'"{w}"' for w in command)
         native_mod.forget_default()
 
     def _write(self, name: str, text: str) -> str:
@@ -240,7 +437,7 @@ class Wiring(unittest.TestCase):
 
     def test_native_on_with_an_unsupported_program_is_a_clean_error(self):
         path = self._write("m.lova", "(explain (quote (merge 1 2)))\n")
-        self._use_mock()
+        self._use_fake(None)                     # a phase-2 runtime
         code, _out, err = self._cli(["run", path, "--native", "on"])
         self.assertEqual(code, 1)
         self.assertIn("explain", err)
@@ -248,10 +445,43 @@ class Wiring(unittest.TestCase):
 
     def test_auto_falls_back_to_python_for_an_unsupported_program(self):
         path = self._write("m.lova", "(explain (quote (merge 1 2)))\n")
-        self._use_mock()
+        self._use_fake(None)
         code, _out, err = self._cli(["run", path, "--native", "auto"])
         self.assertEqual(code, 0)
         self.assertIn('=> "(merge 1 2)"', err)
+
+    def test_an_operator_the_runtime_names_stays_in_python(self):
+        # `text-cat` is in no phase's list: only this runtime's own reply
+        # keeps the program out of it, which is what is being checked.
+        path = self._write("t.lova", '(text-cat "ab" "cd")\n')
+        self._use_fake(["text-cat"])
+        auto = self._cli(["run", path, "--native", "auto"])
+        self.assertEqual(auto[0], 0)
+        self.assertIn('=> "abcd"', auto[2])
+        code, _out, err = self._cli(["run", path, "--native", "on"])
+        self.assertEqual(code, 1)
+        self.assertIn("text-cat", err)
+        self.assertNotIn("Traceback", err)
+
+    def test_a_screened_program_never_has_its_stdin_handed_over(self):
+        """The bug apps/guess.lova found: refused after the hand-over.
+
+        The whole of stdin goes to the native side in the `run` request,
+        so a program screened *after* that falls back to Python with its
+        input already gone.  Here the screen is the runtime's own list,
+        the fallback is Python, and the value proves Python still had
+        the line to read.
+        """
+        path = self._write("i.lova", "(text-int (text-trim (stdin)))\n")
+        self._use_fake(["text-int"])
+        stdin = sys.stdin
+        sys.stdin = io.StringIO("41\n")
+        try:
+            code, _out, err = self._cli(["run", path, "--native", "auto"])
+        finally:
+            sys.stdin = stdin
+        self.assertEqual(code, 0)
+        self.assertIn("=> 41", err)
 
     def test_check_native_agrees_with_check(self):
         text = ("(def sq [n] (mul n n))\n(example (sq 5) 25)\n"

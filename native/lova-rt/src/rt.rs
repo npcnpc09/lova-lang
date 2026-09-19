@@ -7,13 +7,17 @@
 //! is written (spec §0), and the generic shape is reached only through
 //! the malformed slots `decode` can still produce.
 
+use crate::evolve;
 use crate::int::Int;
+use crate::lineage::Lineage;
+use crate::meta;
 use crate::nt;
 use crate::text;
 use crate::tokens::*;
 use crate::trap::*;
 use crate::value::*;
 use serde_json::{json, Value as J};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -33,6 +37,11 @@ pub struct Rt {
     pub call_depth: u32,
     pub max_call_depth: u32,
     pub path: Vec<u8>,
+    /// The same frames as `path`, by arena node id.
+    pub path_ids: Vec<u32>,
+    /// `ordinals[node id]` is the node's preorder place in the decoded
+    /// program; ids past its end were made during the run.
+    pub ordinals: Rc<Vec<u32>>,
     pub let_chain: Option<(u32, bool)>,
     pub current: Option<Rc<ClosureData>>,
     pub mark: u64,
@@ -44,6 +53,10 @@ pub struct Rt {
     pub caps: u32,
     pub enclosed: bool,
     pub patterns: HashMap<String, regex::Regex>,
+    /// The provenance store, shared with a `trace` sandbox.
+    pub lineage: Rc<RefCell<Lineage>>,
+    /// The deviations `trace` reports, in emission order.
+    pub surprise: Vec<Int>,
 }
 
 impl Rt {
@@ -56,6 +69,8 @@ impl Rt {
             call_depth: 0,
             max_call_depth: max_depth,
             path: Vec::new(),
+            path_ids: Vec::new(),
+            ordinals: Rc::new(Vec::new()),
             let_chain: None,
             current: None,
             mark: 0,
@@ -67,7 +82,22 @@ impl Rt {
             caps: 0,
             enclosed: false,
             patterns: HashMap::new(),
+            lineage: Rc::new(RefCell::new(Lineage::new())),
+            surprise: Vec::new(),
         }
+    }
+
+    /// `emit`: the surprise trace, which only `trace` reads back.
+    pub fn emit(&mut self, predicted: &Int, actual: &Int) -> Int {
+        let dev = predicted.sub(actual).abs();
+        self.surprise.push(dev.clone());
+        dev
+    }
+
+    /// The node's place in the byte stream, or `None` when the node
+    /// was built during the run rather than decoded.
+    pub fn ordinal(&self, id: u32) -> Option<u32> {
+        self.ordinals.get(id as usize).copied()
     }
 
     fn read_line(&mut self) -> Option<String> {
@@ -136,6 +166,19 @@ fn tick(rt: &mut Rt, n: u64) -> R<()> {
 pub fn as_int(a: &Arena, v: &Value, ctx: &str) -> R<Int> {
     match v {
         Value::Int(i) => Ok(i.clone()),
+        Value::Population(_) => Err(domain(
+            "type-violation",
+            format!(
+                "{}: expected an Int, got a population; `fitness` gives its scores, `select` gives a variant",
+                ctx
+            ),
+            detail(vec![
+                ("operator", J::from(ctx)),
+                ("expected", J::from("Int")),
+                ("got", J::from("Population")),
+            ]),
+            "use `fitness` for the scores or `select` for a variant",
+        )),
         Value::Map(_) | Value::Closure(_) | Value::Loop(_) | Value::Text(_) | Value::Tail(_) => {
             Err(domain(
                 "type-violation",
@@ -410,6 +453,53 @@ pub fn sep_of(a: &Arena, v: &Value, ctx: &str) -> R<Rc<String>> {
     }
 }
 
+/// `_require_capability` (spec 5.7): the innermost boundary must have
+/// declared the effect, whatever the host granted.
+pub fn require_capability(rt: &Rt, bit: u32, name: &str) -> R<()> {
+    if rt.caps & bit != 0 {
+        return Ok(());
+    }
+    let needed = capability_names(bit)[0];
+    Err(domain(
+        "capability-denied",
+        format!("{}: used outside a boundary that declares {}", name, needed),
+        detail(vec![
+            ("operator", J::from(name)),
+            ("needs", J::from(needed)),
+            ("declared", J::from(capability_names(rt.caps))),
+        ]),
+        &format!("wrap the use in (boundary \"{}\" ...)", needed),
+    ))
+}
+
+/// The `OSError` subclass name Python's `type(exc).__name__` would give.
+fn os_error_name(e: &std::io::Error) -> &'static str {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => "FileNotFoundError",
+        std::io::ErrorKind::PermissionDenied => "PermissionError",
+        std::io::ErrorKind::AlreadyExists => "FileExistsError",
+        _ => "OSError",
+    }
+}
+
+fn fs_fault(op: &str, path: &str, reason: &str) -> Fault {
+    let hint = if op == "fs-read" {
+        "give `fs-read` the path of a readable UTF-8 file"
+    } else {
+        "give `fs-write` a path in a directory that exists"
+    };
+    domain(
+        "domain-error",
+        format!("{}: {}: {}", op, path, reason),
+        detail(vec![
+            ("operator", J::from(op)),
+            ("path", J::from(path)),
+            ("reason", J::from(reason)),
+        ]),
+        hint,
+    )
+}
+
 fn not_callable(a: &Arena, fnv: &Value) -> Fault {
     domain(
         "type-violation",
@@ -475,6 +565,7 @@ fn enrich(rt: &Rt, t: &mut Trap) {
     let op = rt.path.last().copied();
     let alts = op.map(suggest_alternatives).unwrap_or_default();
     t.anomaly.position_path = rt.path.clone();
+    t.anomaly.position_nodes = rt.path_ids.iter().map(|id| rt.ordinal(*id)).collect();
     t.anomaly.offending_op = op;
     t.anomaly.offending_op_name = op.map(op_name).unwrap_or("").to_string();
     t.anomaly.valid_alternatives = alts.clone();
@@ -518,6 +609,7 @@ pub fn eval(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
         return Ok(Value::Text(a.get(id).sval.clone().unwrap()));
     }
     rt.path.push(op);
+    rt.path_ids.push(id);
     let mut out = eval_node(a, rt, id, tail, op);
     if let Err(Fault::Trap(t)) = &mut out {
         if !t.anomaly.enriched {
@@ -525,6 +617,7 @@ pub fn eval(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
         }
     }
     rt.path.pop();
+    rt.path_ids.pop();
     out
 }
 
@@ -961,7 +1054,14 @@ fn eval_generic(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             let p = as_int(a, &p, "surprise")?;
             let q = eval(a, rt, k1, false)?;
             let q = as_int(a, &q, "surprise")?;
-            Ok(Value::Int(p.sub(&q).abs()))
+            Ok(Value::Int(rt.emit(&p, &q)))
+        }
+        TRACE_SURPRISE => {
+            let k = a.kids(id)[0];
+            let v = eval(a, rt, k, false)?;
+            let v = as_int(a, &v, "trace-surprise")?;
+            rt.emit(&Int::zero(), &v);
+            Ok(Value::Int(v))
         }
         WHEN_ANOMALY => {
             let (k0, k1) = (a.kids(id)[0], a.kids(id)[1]);
@@ -973,6 +1073,8 @@ fn eval_generic(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
                         return Err(Fault::Trap(t));
                     }
                     let code = anomaly_code(&t.anomaly);
+                    // A handled fault is still observed (spec 5.4).
+                    rt.emit(&Int::zero(), &Int::from_i64(code));
                     let handler = eval(a, rt, k1, false)?;
                     call(a, rt, handler, Value::Int(Int::from_i64(code)))
                 }
@@ -1067,6 +1169,46 @@ fn eval_generic(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             rt.caps = saved_caps;
             rt.enclosed = saved_enclosed;
             out
+        }
+        FS_READ => {
+            require_capability(rt, CAP_FS_READ, "fs-read")?;
+            let k = a.kids(id)[0];
+            let v = eval(a, rt, k, false)?;
+            let path = as_text(a, &v, "fs-read")?;
+            match std::fs::read(path.as_str()) {
+                Ok(raw) => match String::from_utf8(raw) {
+                    Ok(text) => Ok(Value::Text(Rc::new(text))),
+                    Err(_) => Err(fs_fault("fs-read", path.as_str(), "UnicodeDecodeError")),
+                },
+                Err(e) => Err(fs_fault("fs-read", path.as_str(), os_error_name(&e))),
+            }
+        }
+        FS_WRITE => {
+            require_capability(rt, CAP_FS_WRITE, "fs-write")?;
+            let (k0, k1) = (a.kids(id)[0], a.kids(id)[1]);
+            let v = eval(a, rt, k0, false)?;
+            let path = as_text(a, &v, "fs-write")?;
+            let v = eval(a, rt, k1, false)?;
+            let text = as_text(a, &v, "fs-write")?;
+            // `newline=""` on the Python side: the text goes out as it is.
+            match std::fs::write(path.as_str(), text.as_bytes()) {
+                Ok(()) => Ok(Value::Int(Int::from_usize(text.chars().count()))),
+                Err(e) => Err(fs_fault("fs-write", path.as_str(), os_error_name(&e))),
+            }
+        }
+        CLOCK => {
+            require_capability(rt, CAP_CLOCK, "clock")?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            Ok(Value::Int(Int::from_i64(now)))
+        }
+        LINEAGE_QUERY | WHY | TRACE | HASH | UID | ANCESTOR_OF | GENERATION => {
+            meta::eval_meta(a, rt, id, op)
+        }
+        DEFPOP | VARIANT | EVOLVE | SELECT | MUTATE | CLONE | FITNESS | RETIRE => {
+            evolve::eval_evolution(a, rt, id, op)
         }
         END => Err(Fault::NotImplemented(
             "operator end (family struct) not implemented in Milestone 1 runtime".to_string(),
