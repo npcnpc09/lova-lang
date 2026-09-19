@@ -88,15 +88,25 @@
 
 ;; A face on the screen, or the accumulator unchanged if its back is
 ;; turned: the same test as mesh3d's `face-of`, with the sign the other
-;; way.
-(def face-in [pv sun f acc]
+;; way.  `near` is 1 for a camera standing inside the scene, and then a
+;; face whose three vertices are all at or behind the near plane is
+;; dropped as well: their depths were all clamped, so the triangle
+;; would be drawn somewhere arbitrary and could be the size of the sky.
+;; A face that only reaches behind the camera is kept -- two of its
+;; corners are pushed far off the edges, which is roughly where the
+;; ground under your feet belongs.  Nothing outside the camera ever
+;; comes that close, which is why the flag is 0 for `scene-shot`.
+(def face-in [pv sun f near acc]
   (let p (map-get pv (get f a) nowhere3)
     (let q (map-get pv (get f b) nowhere3)
       (let r (map-get pv (get f c) nowhere3)
        (let pu (head p) (let pv2 (head (tail p))
         (let qu (head q) (let qv (head (tail q))
          (let ru (head r) (let rv (head (tail r))
-          (if (ge (sub (mul (sub qu pu) (sub rv pv2)) (mul (sub ru pu) (sub qv pv2))) 0)
+          (if (or (ge (sub (mul (sub qu pu) (sub rv pv2)) (mul (sub ru pu) (sub qv pv2))) 0)
+                  (and near (and (le (head (tail (tail p))) NEAR)
+                                 (and (le (head (tail (tail q))) NEAR)
+                                      (le (head (tail (tail r))) NEAR)))))
             acc
             (cons (list pu pv2 qu qv ru rv
                         (get f k)
@@ -110,7 +120,7 @@
 ;; One object's faces in front of `acc`, or `acc` if it stands too far
 ;; from the target.  `off` is where the object stands in the camera's
 ;; frame, computed once by `stand`.
-(def object-faces [o off cam cp sp cx cyy acc]
+(def object-faces [o off cam cp sp cx cyy near acc]
   (let oy (get o yaw)
     (let ocy (cos (sub oy (get cam yaw)))
       (let osy (sin (sub oy (get cam yaw)))
@@ -120,15 +130,23 @@
                              (get cam zoom) (get cam focal) cx cyy)
             ;; the sun in the object's frame: the yaw undone
             (let sun (turn SUN (cos (neg oy)) (sin (neg oy)) ONE 0)
-              (fold (lambda acc2 (lambda f (face-in pv sun f acc2)))
+              (fold (lambda acc2 (lambda f (face-in pv sun f near acc2)))
                     acc (get m fs)))))))))
+
+;; How close an object may stand to a camera inside the scene and be
+;; kept whatever its centre projects to: eight metres, more than the
+;; widest thing in the kits.
+(def NEARBY [] 8192)
 
 ;; Where an object stands in the camera's frame, paired with the
 ;; object; nil if it is too far from the target to draw, or if its
 ;; centre falls more than a screen's quarter outside the picture -- a
 ;; city of a hundred cells seen from close up is mostly off the edges,
-;; and an object costs nothing that is dropped here.
-(def stand [o cam cy sy cp sp]
+;; and an object costs nothing that is dropped here.  A camera standing
+;; inside the scene (`near`) keeps what is around it whatever its
+;; centre projects to: the platform under your feet has its centre at
+;; no depth at all.
+(def stand [o cam cy sy cp sp near]
   (let dx (sub (get o x) (get cam tx))
     (let dz (sub (get o z) (get cam tz))
       (if (gt (merge (abs dx) (abs dz)) (get cam far))
@@ -137,12 +155,16 @@
           (let d (max NEAR (sub (get cam zoom) (get off z)))
             (let u (div (mul (get off x) (get cam focal)) d)
               (let v (div (mul (get off y) (get cam focal)) d)
-                (if (or (gt (abs u) (div (mul (get cam sw) 3) 4))
-                        (gt (abs v) (div (mul (get cam sh) 3) 4)))
+                (if (and (or (gt (abs u) (div (mul (get cam sw) 3) 4))
+                             (gt (abs v) (div (mul (get cam sh) 3) 4)))
+                         (or (not near)
+                             (gt (merge (abs dx) (merge (abs dz)
+                                                        (abs (sub (get o y) (get cam ty)))))
+                                 NEARBY)))
                   (nil)
                   (list o off))))))))))
 
-(def scene-shot [objs cam]
+(def shot-of [objs cam near]
   (let cy (cos (neg (get cam yaw)))
     (let sy (sin (neg (get cam yaw)))
       (let cp (cos (neg (get cam pitch)))
@@ -150,14 +172,24 @@
           (let cx (div (get cam sw) 2)
             (let cyy (div (get cam sh) 2)
               (let stood (filter (lambda s (not (nil? s)))
-                                 (map (lambda o (stand o cam cy sy cp sp)) objs))
+                                 (map (lambda o (stand o cam cy sy cp sp near)) objs))
                 ;; the nearest object (the largest z: depth is zoom minus
                 ;; z) goes into the fold first, so that consing each
                 ;; object's faces in front leaves it at the back of the
                 ;; list, painted last
                 (fold (lambda acc (lambda s
-                        (object-faces (head s) (head (tail s)) cam cp sp cx cyy acc)))
+                        (object-faces (head s) (head (tail s)) cam cp sp cx cyy near acc)))
                       (nil)
                       (sort-by (lambda i (lambda j
                                  (gt (get (head (tail i)) z) (get (head (tail j)) z))))
                                stood))))))))))
+
+;; The picture from a camera that stands back from what it looks at --
+;; the platformer's and the city builder's.
+(def scene-shot [objs cam] (shot-of objs cam 0))
+
+;; The picture from a camera standing inside the scene, at the eye:
+;; `zoom` is nothing, the thing you stand on is kept however its centre
+;; projects, and a face reaching behind you is dropped rather than
+;; smeared across the sky.
+(def scene-inside [objs cam] (shot-of objs cam 1))

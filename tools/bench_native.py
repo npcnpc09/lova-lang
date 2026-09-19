@@ -66,6 +66,11 @@ APPS = [
     ("platformer 60t+frame", ["tools/bench/platformer.lova", "n=60"], "", None),
     ("citybuilder frame",    ["tools/bench/citybuilder.lova", "n=0"], "", None),
     ("citybuilder 60t+frame", ["tools/bench/citybuilder.lova", "n=60"], "", None),
+    ("fps frame",            ["tools/bench/fps.lova", "n=0"], "", None),
+    ("fps 60t+frame",        ["tools/bench/fps.lova", "n=60"], "", None),
+    # long enough that the native evaluator is a tenth of a second and
+    # not a rounding of the floor it is measured against
+    ("fps 300t+frame",       ["tools/bench/fps.lova", "n=300"], "", None),
 ]
 
 STATS = re.compile(r"\[(\d+) steps")
@@ -116,8 +121,13 @@ print(f"{'app':24s} {'steps':>9} {'py eval':>8} {'nat eval':>9} {'ratio':>6} {'n
 for r in rows:
     py = max(r["python"] - r["floor"], 0.0)
     nat = max(r["native"] - r["floor"], 0.0)
-    ratio = py / nat if nat > 0.02 else float("nan")
-    rate = r["steps"] / nat if nat > 0.02 and r["steps"] else float("nan")
-    print(f"{r['app']:24s} {r['steps']!s:>9} {py:8.2f} {nat:9.2f} {ratio:6.1f} {rate:12.0f}"
+    # Below a fiftieth of a second the native evaluator is lost in the
+    # noise of the floor it is measured against, and a ratio against it
+    # would be a number about the clock; say so instead of dividing.
+    if nat > 0.02:
+        tail = f"{py / nat:6.1f} {r['steps'] / nat if r['steps'] else 0:12.0f}"
+    else:
+        tail = f"{'>' + str(round(py / 0.02)):>6} {'  under 20 ms':>12}"
+    print(f"{r['app']:24s} {r['steps']!s:>9} {py:8.2f} {nat:9.2f} {tail}"
           f"  {'' if r['same'] else 'DIFF'}")
 (BENCH / "last_run.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")

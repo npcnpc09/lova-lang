@@ -1,0 +1,704 @@
+;;; fps.lova  --  the rules of Kenney's FPS starter kit
+;;;
+;;; `(use "fps")`.  A port of KenneyNL/Starter-Kit-FPS (MIT, ~1 000
+;;; stars): the player who walks at five, jumps twice at eight, looks
+;;; with the mouse and shoots two blasters; the four enemies that hover,
+;;; turn to face him and fire every quarter second; the knockback that
+;;; throws the shooter back and kicks the aim up; the level of
+;;; platforms and walls; and the fall off the world that starts
+;;; everything again.  Written against the kit's GDScript --
+;;; `objects/player.gd`, `objects/enemy.gd`, `scripts/weapon.gd` with
+;;; `weapons/blaster.tres` and `weapons/blaster-repeater.tres` -- and
+;;; checked tick by tick against a transliteration of them in
+;;; `tests/test_fps.py`.  The level and the models are the kit's own,
+;;; read out of it by `apps/fps/import_kit.py` into `lib/fps_assets.lova`.
+;;;
+;;; Units, as in `lib/platformer.lova`.  A length is in 65 536ths of a
+;;; metre (`F`) and an angle in 16 384ths of a turn (`A`), 64 to each
+;;; of `lib/fixed.lova`'s 256ths; a tick is one sixtieth of a second,
+;;; the kit's frame.  A velocity is in F a second and is divided by
+;;; sixty where it moves something.
+;;;
+;;; What the original does with a physics engine, this does with boxes,
+;;; spheres and rays.  Godot gives every platform a concave collision
+;;; mesh, the player a capsule and each enemy a sphere, and
+;;; `move_and_slide` and `RayCast3D` sort out the rest; here a solid is
+;;; the box of its collision shape turned by its yaw, the player is a
+;;; vertical segment with a radius (the same capsule: 0.3 by 1.0
+;;; centred at 0.55), an enemy is the sphere of its shape (0.75 at
+;;; +0.25), and a shot is a segment tested against both -- nearest hit
+;;; wins.  A body pushed out of a box slides as `move_and_slide` does:
+;;; out along the face's normal, and the velocity keeps only what ran
+;;; along the face.  The numbers that came across unchanged: speed 5, two jumps
+;;; of 8, gravity 20 a second, the lerp of a sixth, the camera dip of
+;;; -0.1 eased at a twelfth, health 100, damage 5 every quarter second
+;;; from an enemy five metres away, the blaster's 25 / 0.25 / 1.0 / 3 /
+;;; 40 and the repeater's 10 / 0.1 / 0.5 / 1 / 10, both knockback
+;;; ranges, the ten-metre shot, and -10 as the bottom of the world.
+;;;
+;;; Randomness.  The kit calls `randf_range` for a shot's spread and
+;;; for the knockback and `randi() % 2` for its sign; here a linear
+;;; congruential generator lives in the world, `(rand s lo hi)` gives
+;;; back the new state and a value in [lo, hi] and `(rand-coin s)` a
+;;; parity, so a run repeats exactly and the test's transliteration can
+;;; draw the same numbers in the same order.
+;;;
+;;;   new-game                       ; the world at the start
+;;;   (input mx mz jump shoot toggle dyaw dpitch)
+;;;                                  ; what is held this tick: the two
+;;;                                  ; axes as -1 / 0 / 1, jump / shoot /
+;;;                                  ; toggle as 1, and the mouse's turn
+;;;                                  ; this tick in A
+;;;   (tick w in)                    ; one sixtieth of a second later
+;;;   (frame w focal sw sh far)      ; the picture, through lib/scene3d.lova
+
+(use "fixed")
+(use "scene3d")
+(use "fps_assets")
+
+(def F [] 65536)                        ; a metre
+(def A [] 16384)                        ; a turn
+(def QUARTER-A [] 4096)                 ; 90 degrees, the pitch's limit
+
+;; --- the player's numbers, from player.gd ---------------------------
+
+(def MOVE [] (mul 5 F))                 ; movement_speed 5, a second
+(def JUMP [] (mul 8 F))                 ; jump_strength 8
+(def JUMPS [] 2)                        ; number_of_jumps
+(def GRAV [] (div (mul 20 F) 60))       ; gravity's gain of 20 a second, a tick
+(def HEALTH [] 100)
+(def EYE [] 65536)                      ; the Head node, a metre up
+(def DIP [] -6554)                      ; camera.position.y on landing: -0.1
+(def FEET [] 3277)                      ; the capsule's bottom above the position: 0.05
+(def CAP [] 68813)                      ; and its top: 1.05
+(def RADIUS [] 19661)                   ; 0.3
+(def EDGE [] 13107)                     ; how far past a top the feet may stand: 0.2
+(def STEP [] 6554)                      ; a top this little above the feet is a floor: 0.1
+(def SNAP [] 1311)                      ; how far above a top the feet may be to land: 0.02
+(def BOTTOM [] (neg (mul 10 F)))        ; below this the world starts again
+(def DIAG [] 724)                       ; 1 / sqrt 2, in 1024ths
+(def NEAR-XZ [] (mul 5 F))              ; a solid further than this is not in the way
+(def NEAR-Y [] (mul 4 F))
+
+;; --- the enemies' numbers, from enemy.gd and enemy.tscn -------------
+
+(def E-HEALTH [] 100)
+(def E-DAMAGE [] 5)                     ; what one of its shots takes
+(def E-RANGE [] (mul 5 F))              ; RayCast target_position (0, 0, 5)
+(def E-RADIUS [] 49152)                 ; SphereShape3D radius 0.75
+(def E-UP [] 16384)                     ; its shape sits 0.25 above the node
+(def AIM [] 32768)                      ; it looks at the player plus (0, 0.5, 0)
+(def E-TIMER [] 15)                     ; the Timer's 0.25 s, in ticks
+(def HOVER [] 217)                      ; cos(time * 5): 5 radians a second, in A a tick
+(def IMPACT-LIFE [] 12)                 ; a hit mark lasts a fifth of a second
+
+;; --- the weapons, from weapon.gd and the two .tres ------------------
+;;
+;; Index 0 is the blaster and 1 the repeater, the order player.tscn
+;; lists them in.  The knockback angles are the kit's radians in A:
+;; 0.025 is 65, 0.045 is 117, 0.04 is 104, 0.001 is 3, 0.0025 is 7,
+;; 0.002 is 5.
+
+(def w-damage [i] (if i 10 25))
+(def w-cool [i] (if i 6 15))            ; cooldown 0.1 s and 0.25 s, in ticks:
+                                        ; the period, the tick it fires included
+(def w-range [] (mul 10 F))             ; max_distance 10, both weapons
+(def w-spread [i] (if i 32768 65536))   ; spread 0.5 and 1.0, metres at the far end
+(def w-shots [i] (if i 1 3))            ; shot_count
+(def w-knock [i] (if i (mul 10 F) (mul 40 F)))   ; knockback, backwards
+(def w-kx-lo [i] (if i 3 65))           ; min_knockback.x, the aim's kick up
+(def w-kx-hi [i] (if i 7 117))          ; max_knockback.x
+(def w-ky-lo [i] (if i 3 65))           ; min_knockback.y, the aim's kick sideways
+(def w-ky-hi [i] (if i 5 104))          ; max_knockback.y
+(def w-name [i] (if i "blaster-repeater" "blaster"))
+
+;; --- randomness -----------------------------------------------------
+;;
+;; A linear congruential generator, the one from the C standard: the
+;; state is thirty-one bits and a draw takes the fifteen above the low
+;; sixteen, which are the ones that are not short-period.  `rand`
+;; gives back a two-list, the new state and the value, because a LOVA
+;; function returns one thing and the caller needs both.
+;;
+;; `rand-coin` is not `(rand s 0 1)`: that spreads one draw over two
+;; values by division and gives a one only on the highest draw of
+;; 32 768, so the knockback's sign would always be the same.  The kit
+;; asks `randi() % 2`, a parity, and so does this.
+
+(def lcg [s] (mod (merge (mul s 1103515245) 12345) 2147483648))
+(def draw-of [s] (mod (div s 65536) 32768))
+
+(def rand [s lo hi]
+  (let s2 (lcg s)
+    (list s2 (merge lo (div (mul (draw-of s2) (sub hi lo)) 32767)))))
+
+(def rand-coin [s]
+  (let s2 (lcg s) (list s2 (mod (draw-of s2) 2))))
+
+(def rs [r] (head r))                   ; the state a draw left
+(def rv [r] (head (tail r)))            ; the value it gave
+
+;; --- the world ------------------------------------------------------
+
+(def input [mx mz jump shoot toggle dyaw dpitch]
+  (rec mx mx mz mz jump jump shoot shoot toggle toggle dyaw dyaw dpitch dpitch))
+
+(def still [] (input 0 0 0 0 0 0 0))
+
+;; The player, at the Player node's (0, 0.5, 0).  `lx` / `lz` are the
+;; wanted velocity in the player's own frame, where the kit builds it
+;; before `transform.basis` turns it; `jumps` starts at nought because
+;; the kit's `jumps_remaining` does, and `handle_gravity` fills it on
+;; the first tick that finds the floor.
+(def new-player []
+  (rec x 0 y 32768 z 0 vx 0 vz 0 lx 0 lz 0 g 0 yaw 0 pitch 0
+       jumps 0 health HEALTH weapon 0 cool 0 dip 0
+       floored 0 ceiled 0 prev 0))
+
+;; --- the level, as the rules see it ---------------------------------
+;;
+;; Each solid is the box of the kit's own *collision shape* -- not of
+;; the model, which is bevelled wider -- in F: how far it reaches
+;; either way across, where its z is centred (wall-low's shape is not
+;; centred on its node), and how high its top is above its position.
+;; The kind is the number `lib/fps_assets.lova` gives it: 1 platform,
+;; 2 wall-low, 3 wall-high, 4 platform-large-grass, 0 decoration.
+
+(def hx-of [k]
+  (cond (eq k 1) 72090                     ; platform, 1.1
+        (eq k 2) 72090                     ; wall-low, 1.1
+        (eq k 3) 49152                     ; wall-high, 0.75
+        (eq k 4) 163840                    ; platform-large-grass, 2.5
+        0))
+
+(def hz-of [k]
+  (cond (eq k 1) 72090
+        (eq k 2) 35560                     ; (0.7354 + 0.3498) / 2
+        (eq k 3) 22938                     ; 0.35
+        (eq k 4) 163840
+        0))
+
+(def cz-of [k] (if (eq k 2) 12634 0))      ; (0.7354 - 0.3498) / 2
+
+(def top-of [k]
+  (cond (eq k 1) 32768                     ; 0.5
+        (eq k 2) 65536                     ; 1.0
+        (eq k 3) 111411                    ; 1.7
+        (eq k 4) 32768
+        0))
+
+(def solid-of [it]
+  (let k (get it kind)
+    (rec x (mul (get it x) 64) y (mul (get it y) 64) z (mul (get it z) 64)
+         yaw (mul (get it yaw) 64)
+         hx (hx-of k) hz (hz-of k) cz (cz-of k) top (top-of k))))
+
+(def enemy-of [e i]
+  (rec i i x (mul (get e x) 64) y (mul (get e y) 64) z (mul (get e z) 64)
+       ty (mul (get e y) 64) yaw (mul (get e yaw) 64)
+       time 0 health E-HEALTH alive 1 fire E-TIMER))
+
+(def new-game []
+  (rec p new-player
+       enemies (map (lambda pr (enemy-of (head pr) (head (tail pr))))
+                    (zip fps-enemies (range 0 (len fps-enemies))))
+       impacts (nil)
+       solids (filter (lambda s (get s hx)) (map solid-of level))
+       scene level
+       clouds fps-clouds
+       rng 20260919 t 0 restarts 0))
+
+;; --- solids ---------------------------------------------------------
+;;
+;; A point's offset from a solid, in the solid's own frame: the turn
+;; undone.
+
+(def local-x [s px pz]
+  (let a (div (get s yaw) 64)
+    (div (sub (mul (sub px (get s x)) (cos a)) (mul (sub pz (get s z)) (sin a))) ONE)))
+
+(def local-z [s px pz]
+  (let a (div (get s yaw) 64)
+    (div (merge (mul (sub px (get s x)) (sin a)) (mul (sub pz (get s z)) (cos a))) ONE)))
+
+;; Is (px, pz) within `margin` of the solid's footprint?
+(def over? [s px pz margin]
+  (and (le (abs (local-x s px pz)) (merge (get s hx) margin))
+       (le (abs (sub (local-z s px pz) (get s cz))) (merge (get s hz) margin))))
+
+(def top-y [s] (merge (get s y) (get s top)))
+(def bottom-y [s] (get s y))
+
+(def near? [s p]
+  (and (le (abs (sub (get s x) (get p x))) NEAR-XZ)
+       (and (le (abs (sub (get s z) (get p z))) NEAR-XZ)
+            (le (abs (sub (get s y) (get p y))) NEAR-Y))))
+
+;; --- the move -------------------------------------------------------
+
+;; A wall: a solid whose height spans the player's, that the segment
+;; has pushed into.  Pushed out along the axis it is least into, in the
+;; solid's frame, then turned back.
+(def wall? [s p]
+  (and (gt (top-y s) (merge (merge (get p y) FEET) STEP))
+       (lt (bottom-y s) (merge (get p y) CAP))))
+
+;; The face pushed off is the one it is least far into, so the normal
+;; is one of the box's four sides, turned into the world.  The body is
+;; moved out along it, and the velocity loses what it had along it --
+;; `move_and_slide` keeps only what runs along the surface, and the
+;; next tick lerps from there, so walking at a wall does not build up a
+;; velocity that is spent the moment you turn away.
+(def push-out [s p]
+  (if (wall? s p)
+    (let lx (local-x s (get p x) (get p z))
+      (let lz (sub (local-z s (get p x) (get p z)) (get s cz))
+        (let rx (merge (get s hx) RADIUS)
+          (let rz (merge (get s hz) RADIUS)
+            (if (or (ge (abs lx) rx) (ge (abs lz) rz))
+              p
+              (let ox (sub rx (abs lx))
+                (let oz (sub rz (abs lz))
+                  (let flat (le ox oz)
+                    (let deep (if flat ox oz)           ; how far in it is
+                      ;; the face's outward normal, in the box's frame
+                      (let lnx (if flat (if (ge lx 0) ONE (neg ONE)) 0)
+                        (let lnz (if flat 0 (if (ge lz 0) ONE (neg ONE)))
+                          (let a (div (get s yaw) 64)
+                            (let nx (div (merge (mul lnx (cos a)) (mul lnz (sin a))) ONE)
+                              (let nz (div (sub (mul lnz (cos a)) (mul lnx (sin a))) ONE)
+                                (let into (div (merge (mul (get p vx) nx) (mul (get p vz) nz)) ONE)
+                                  (put (put (put (put p
+                                       x (merge (get p x) (div (mul nx deep) ONE)))
+                                       z (merge (get p z) (div (mul nz deep) ONE)))
+                                       vx (sub (get p vx) (div (mul nx into) ONE)))
+                                       vz (sub (get p vz) (div (mul nz into) ONE))))))))))))))))))
+    p))
+
+;; The vertical move.  `y0` is where the player was.  A top the feet
+;; were above and are now at or below, within reach, catches them --
+;; `is_on_floor`; a bottom the head was under and is now past stops it
+;; -- `is_on_ceiling`.
+(def land [s p y0]
+  (if (and (ge (get p g) 0)
+           (and (over? s (get p x) (get p z) EDGE)
+                (and (ge (merge y0 FEET) (sub (top-y s) SNAP))
+                     (le (merge (get p y) FEET) (top-y s)))))
+    (put (put p y (sub (top-y s) FEET)) floored 1)
+    p))
+
+(def bump [s p y0]
+  (if (and (lt (get p g) 0)
+           (and (over? s (get p x) (get p z) RADIUS)
+                (and (le (merge y0 CAP) (bottom-y s))
+                     (gt (merge (get p y) CAP) (bottom-y s)))))
+    (put (put p y (sub (bottom-y s) CAP)) ceiled 1)
+    p))
+
+;; `movement_velocity = transform.basis * movement_velocity`, then
+;; `velocity.lerp(movement_velocity, delta * 10)`, then
+;; `move_and_slide`.
+(def move [p solids]
+  (let a (div (get p yaw) 64)
+    (let wx (div (merge (mul (get p lx) (cos a)) (mul (get p lz) (sin a))) ONE)
+      (let wz (div (sub (mul (get p lz) (cos a)) (mul (get p lx) (sin a))) ONE)
+        (let vx (merge (get p vx) (div (sub wx (get p vx)) 6))
+          (let vz (merge (get p vz) (div (sub wz (get p vz)) 6))
+            (let y0 (get p y)
+              (let p1 (put (put (put (put (put (put p vx vx) vz vz)
+                               x (merge (get p x) (div vx 60)))
+                               z (merge (get p z) (div vz 60)))
+                               floored 0)
+                          ceiled 0)
+                (let p2 (fold (lambda q (lambda s (push-out s q))) p1 solids)
+                  (let p3 (put p2 y (sub (get p2 y) (div (get p2 g) 60)))
+                    (fold (lambda q (lambda s (bump s (land s q y0) y0)))
+                          p3 solids)))))))))))
+
+;; --- rays -----------------------------------------------------------
+;;
+;; A ray is a start in F, a unit direction in 1024ths and a length in
+;; F.  `ray-sphere` gives the distance to the near surface or -1;
+;; `ray-box` gives a record whose `t` is the distance or -1 and whose
+;; `nx` / `ny` / `nz` is the face's outward normal in 1024ths, in the
+;; box's own frame.  Neither needs a square root of anything large: the
+;; sphere's is of a number below the radius squared, which
+;; `lib/fixed.lova`'s twelve rounds of Newton settle in three.
+
+(def dot3 [ax ay az bx by bz]
+  (merge (mul ax bx) (merge (mul ay by) (mul az bz))))
+
+(def ray-sphere [ox oy oz u cx cy cz r len]
+  (let mx (sub ox cx)
+    (let my (sub oy cy)
+      (let mz (sub oz cz)
+        (let proj (div (dot3 mx my mz (get u x) (get u y) (get u z)) ONE)
+          (let perp (sub (dot3 mx my mz mx my mz) (mul proj proj))
+            (if (gt perp (mul r r))
+              -1
+              (let h (mul (isqrt (div (sub (mul r r) perp) 4096)) 64)
+                (let t (sub (neg proj) h)
+                  (if (or (lt t 0) (gt t len)) -1 t))))))))))
+
+;; One slab of the box: the interval of the ray inside it, intersected
+;; with what the earlier slabs left.  `qlo` / `qhi` are the slab's two
+;; planes and `ax` says which axis it is, so that the entry face's
+;; normal can be recorded when this slab is the one that sets the entry.
+(def slab [acc o d qlo qhi ax]
+  (if (eq d 0)
+    (if (or (lt o qlo) (gt o qhi)) (put acc hi (neg ONE)) acc)
+    (let t1 (div (mul (sub qlo o) ONE) d)
+      (let t2 (div (mul (sub qhi o) ONE) d)
+        (let a (min t1 t2)
+          (let b (max t1 t2)
+            (let acc1 (if (gt a (get acc lo))
+                        (let s (if (gt d 0) (neg ONE) ONE)
+                          (put (put (put (put acc lo a)
+                                    nx (if (eq ax 1) s 0))
+                               ny (if (eq ax 2) s 0))
+                               nz (if (eq ax 3) s 0)))
+                        acc)
+              (if (lt b (get acc hi)) (put acc1 hi b) acc1))))))))
+
+(def ray-box [s ox oy oz u len]
+  (let a (div (get s yaw) 64)
+    (let ux (div (sub (mul (get u x) (cos a)) (mul (get u z) (sin a))) ONE)
+      (let uz (div (merge (mul (get u x) (sin a)) (mul (get u z) (cos a))) ONE)
+        (let acc (slab (slab (slab (rec lo 0 hi len nx 0 ny 0 nz 0)
+                                   (local-x s ox oz) ux (neg (get s hx)) (get s hx) 1)
+                             (sub oy (get s y)) (get u y) 0 (get s top) 2)
+                       (local-z s ox oz) uz (sub (get s cz) (get s hz))
+                       (merge (get s cz) (get s hz)) 3)
+          (if (and (le (get acc lo) (get acc hi)) (le (get acc lo) len))
+            (put acc t (get acc lo))
+            (put acc t -1)))))))
+
+;; The nearest solid the ray meets, as a hit record; `kind` is 0 for
+;; nothing, 1 for an enemy and 2 for the level.
+(def no-hit [len] (rec t len kind 0 i -1 nx 0 ny 0 nz 0))
+
+(def hit-solids [solids ox oy oz u best]
+  (fold (lambda b (lambda s
+          (let h (ray-box s ox oy oz u (get b t))
+            (if (and (ge (get h t) 0) (lt (get h t) (get b t)))
+              ;; the normal, turned back out of the box's frame
+              (let a (div (get s yaw) 64)
+                (rec t (get h t) kind 2 i -1
+                     nx (div (merge (mul (get h nx) (cos a)) (mul (get h nz) (sin a))) ONE)
+                     ny (get h ny)
+                     nz (div (sub (mul (get h nz) (cos a)) (mul (get h nx) (sin a))) ONE)))
+              b))))
+        best solids))
+
+(def hit-enemies [es ox oy oz u best]
+  (fold (lambda b (lambda e
+          (if (get e alive)
+            (let t (ray-sphere ox oy oz u (get e x) (merge (get e y) E-UP) (get e z)
+                               E-RADIUS (get b t))
+              (if (and (ge t 0) (lt t (get b t)))
+                (let hx (merge ox (div (mul (get u x) t) ONE))
+                  (let hy (merge oy (div (mul (get u y) t) ONE))
+                    (let hz (merge oz (div (mul (get u z) t) ONE))
+                      (rec t t kind 1 i (get e i)
+                           nx (div (mul (sub hx (get e x)) ONE) E-RADIUS)
+                           ny (div (mul (sub hy (merge (get e y) E-UP)) ONE) E-RADIUS)
+                           nz (div (mul (sub hz (get e z)) ONE) E-RADIUS)))))
+                b))
+            b)))
+        best es))
+
+;; --- looking and aiming ---------------------------------------------
+
+;; A direction in the camera's frame carried into the world: pitch
+;; about x, then yaw about y, Godot's order.  Everything is in 1024ths.
+(def cam-dir [dx dy dz yaw pitch]
+  (let cp (cos (div pitch 64))
+    (let sp (sin (div pitch 64))
+      (let cy (cos (div yaw 64))
+        (let sy (sin (div yaw 64))
+          (let y1 (div (sub (mul dy cp) (mul dz sp)) ONE)
+            (let z1 (div (merge (mul dy sp) (mul dz cp)) ONE)
+              (rec x (div (merge (mul dx cy) (mul z1 sy)) ONE)
+                   y y1
+                   z (div (sub (mul z1 cy) (mul dx sy)) ONE)))))))))
+
+;; A direction, cut to unit length in 1024ths, with the length it had.
+(def unit-of [v]
+  (let n (max 1 (isqrt (dot3 (get v x) (get v y) (get v z)
+                             (get v x) (get v y) (get v z))))
+    (rec x (div (mul (get v x) ONE) n) y (div (mul (get v y) ONE) n)
+         z (div (mul (get v z) ONE) n) n n)))
+
+(def eye-y [p] (merge (merge (get p y) EYE) (get p dip)))
+
+;; --- shooting -------------------------------------------------------
+;;
+;; `action_shoot`, in the order the kit draws its random numbers: for
+;; each shot the spread's x and y, then the knockback's sign, its x and
+;; its y.  The state carried through is the player, the enemies, the
+;; impacts, the level and the generator.
+
+(def impact-at [h ox oy oz u]
+  (rec x (merge (merge ox (div (mul (get u x) (get h t)) ONE)) (div (mul (get h nx) 64) 10))
+       y (merge (merge oy (div (mul (get u y) (get h t)) ONE)) (div (mul (get h ny) 64) 10))
+       z (merge (merge oz (div (mul (get u z) (get h t)) ONE)) (div (mul (get h nz) 64) 10))
+       life IMPACT-LIFE))
+
+(def damaged [es i amount]
+  (map (lambda e
+         (if (eq (get e i) i)
+           (let h (sub (get e health) amount)
+             (if (le h 0) (put (put e health h) alive 0) (put e health h)))
+           e))
+       es))
+
+(def one-shot [st]
+  (let p (get st p)
+    (let wi (get p weapon)
+      (let sp (w-spread wi)
+        (let r1 (rand (get st rng) (neg sp) sp)
+          (let r2 (rand (rs r1) (neg sp) sp)
+            (let d (cam-dir (div (rv r1) 64) (div (rv r2) 64) (div (neg w-range) 64)
+                            (get p yaw) (get p pitch))
+              (let u (unit-of d)
+                (let len (mul (get u n) 64)
+                  (let ox (get p x)
+                    (let oy (eye-y p)
+                      (let oz (get p z)
+                        (let h (hit-solids (get st solids) ox oy oz u
+                                           (hit-enemies (get st enemies) ox oy oz u (no-hit len)))
+                          (let st1 (put st rng (rs r2))
+                            (if (get h kind)
+                              (put (put st1 impacts (cons (impact-at h ox oy oz u) (get st1 impacts)))
+                                   enemies (if (eq (get h kind) 1)
+                                             (damaged (get st1 enemies) (get h i) (w-damage wi))
+                                             (get st1 enemies)))
+                              st1)))))))))))))))
+
+;; The knockback: `random_vec2` draws its sign first, then x, then y.
+;; The sign is `-1 if randi() % 2 == 0 else 1`, so the coin's nought
+;; turns the sideways kick the other way.
+(def knock [st]
+  (let p (get st p)
+    (let wi (get p weapon)
+      (let r0 (rand-coin (get st rng))
+        (let r1 (rand (rs r0) (w-kx-lo wi) (w-kx-hi wi))
+          (let r2 (rand (rs r1) (w-ky-lo wi) (w-ky-hi wi))
+            (let ky (if (rv r0) (rv r2) (neg (rv r2)))
+              (put (put st rng (rs r2))
+                   p (put (put (put p pitch (max (neg QUARTER-A)
+                                                 (min QUARTER-A (merge (get p pitch) (rv r1)))))
+                               yaw (mod (merge (get p yaw) ky) A))
+                          lz (merge (get p lz) (w-knock wi)))))))))))
+
+;; The cooldown counts the tick it was started on, so a weapon of
+;; fifteen fires on every fifteenth tick and not every sixteenth.
+(def fire [st in]
+  (let p (get st p)
+    (if (and (get in shoot) (not (get p cool)))
+      (knock (fold (lambda acc (lambda i (one-shot acc)))
+                   (put st p (put p cool (sub (w-cool (get p weapon)) 1)))
+                   (range 0 (w-shots (get p weapon)))))
+      (put st p (put p cool (max 0 (sub (get p cool) 1)))))))
+
+;; --- the enemies ----------------------------------------------------
+
+;; `_process`: look at the player plus half a metre -- the yaw of it is
+;; what the picture turns the model by -- and hover, `target_position.y
+;; += cos(time * 5) * delta`.
+(def hover [e p]
+  (let ty (merge (get e ty)
+                 (div (div (mul F (cos (div (mul HOVER (get e time)) 64))) ONE) 60))
+    (put (put (put (put e ty ty) y ty)
+              yaw (mul (atan2 (sub (get p x) (get e x)) (sub (get p z) (get e z))) 64))
+         time (inc (get e time)))))
+
+;; `_on_timer_timeout`: a ray five metres along the enemy's forward,
+;; which is straight at the player's middle, against the player's
+;; capsule -- a sphere of its radius at the point aimed at -- and the
+;; level in front of it.
+(def sees? [e p solids]
+  (let ox (get e x)
+    (let oy (merge (get e y) E-UP)
+      (let oz (get e z)
+        ;; the direction in 1024ths, not in F: `isqrt` is twelve rounds
+        ;; of Newton from n / 1024, which is enough rounds for a square
+        ;; whose root is five figures and not for one of seven
+        (let d (unit-of (rec x (div (sub (get p x) ox) 64)
+                             y (div (sub (merge (get p y) AIM) oy) 64)
+                             z (div (sub (get p z) oz) 64)))
+          (let t (ray-sphere ox oy oz d (get p x) (merge (get p y) AIM) (get p z)
+                             RADIUS E-RANGE)
+            (if (lt t 0)
+              0
+              (ge (get (hit-solids solids ox oy oz d (no-hit t)) t) t))))))))
+
+(def step-enemy [acc e]
+  (if (not (get e alive))
+    (put acc es (cons e (get acc es)))
+    (let e1 (hover e (get acc p))
+      (let f (sub (get e1 fire) 1)
+        (if (gt f 0)
+          (put acc es (cons (put e1 fire f) (get acc es)))
+          (let e2 (put e1 fire E-TIMER)
+            (if (sees? e2 (get acc p) (get acc solids))
+              (put (put acc es (cons e2 (get acc es)))
+                   p (put (get acc p) health (sub (get (get acc p) health) E-DAMAGE)))
+              (put acc es (cons e2 (get acc es))))))))))
+
+(def enemies-tick [st]
+  (let done (fold (lambda acc (lambda e (step-enemy acc e))) (put st es (nil)) (get st enemies))
+    (put done enemies (reverse (get done es)))))
+
+;; --- a tick ---------------------------------------------------------
+
+;; `handle_rotation` on the mouse path: the turn is set, not eased, and
+;; the pitch is held to a quarter turn either way.
+(def look [p in]
+  (put (put p yaw (mod (merge (get p yaw) (get in dyaw)) A))
+       pitch (max (neg QUARTER-A) (min QUARTER-A (merge (get p pitch) (get in dpitch))))))
+
+;; `Input.get_vector(...).normalized() * movement_speed`, in the
+;; player's own frame.
+(def controls [p in]
+  (let both (and (get in mx) (get in mz))
+    (put (put p lx (if both (div (mul (mul (get in mx) MOVE) DIAG) ONE) (mul (get in mx) MOVE)))
+         lz (if both (div (mul (mul (get in mz) MOVE) DIAG) ONE) (mul (get in mz) MOVE)))))
+
+(def do-jump [p in]
+  (if (and (get in jump) (get p jumps))
+    (put (put p g (neg JUMP)) jumps (sub (get p jumps) 1))
+    p))
+
+(def swap-weapon [p in]
+  (if (get in toggle) (put p weapon (mod (inc (get p weapon)) 2)) p))
+
+;; `handle_gravity`, reading the floor and the ceiling the last move
+;; left, as the kit's `is_on_floor` does when it runs before
+;; `move_and_slide`.
+(def gravity [p]
+  (let g (merge (get p g) GRAV)
+    (cond (and (lt g 0) (get p ceiled)) (put p g 0)
+          (and (gt g 0) (get p floored)) (put (put p g 0) jumps JUMPS)
+          (put p g g))))
+
+;; The camera's dip: eased back to nothing at a fifth of a second, and
+;; dropped a tenth of a metre on the tick a fall ends.
+(def dip [p]
+  (let d (merge (get p dip) (div (neg (get p dip)) 12))
+    (let landed (and (get p floored) (and (gt (get p g) F) (not (get p prev))))
+      (put (put p dip (if landed DIP d)) prev (get p floored)))))
+
+(def age-impacts [xs]
+  (filter (lambda m (get m life))
+          (map (lambda m (put m life (sub (get m life) 1))) xs)))
+
+(def tick [w in]
+  (let p0 (controls (look (get w p) in) in)
+    (let st (fire (rec p p0 enemies (get w enemies) impacts (get w impacts)
+                       solids (get w solids) rng (get w rng) es (nil))
+                  in)
+      (let p1 (gravity (swap-weapon (do-jump (get st p) in) in))
+        (let near (filter (lambda s (near? s p1)) (get w solids))
+          (let p2 (dip (move p1 near))
+            (let st2 (enemies-tick (put st p p2))
+              (let p3 (get st2 p)
+                (if (or (lt (get p3 y) BOTTOM) (lt (get p3 health) 0))
+                  (put (put (put new-game restarts (inc (get w restarts)))
+                            rng (get st2 rng))
+                       t (inc (get w t)))
+                  (rec p p3 enemies (get st2 enemies)
+                       impacts (age-impacts (get st2 impacts))
+                       solids (get w solids) scene (get w scene) clouds (get w clouds)
+                       rng (get st2 rng) t (inc (get w t))
+                       restarts (get w restarts)))))))))))
+
+;; --- what the host asks -----------------------------------------------
+
+(def health [w] (get (get w p) health))
+(def weapon-name [w] (w-name (get (get w p) weapon)))
+(def standing [w] (len (filter (lambda e (get e alive)) (get w enemies))))
+(def where [w] (list (get (get w p) x) (get (get w p) y) (get (get w p) z)))
+(def facing [w] (list (get (get w p) yaw) (get (get w p) pitch)))
+
+;; --- the picture ------------------------------------------------------
+;;
+;; First person: the camera stands at the eye and looks nowhere else,
+;; so `lib/scene3d.lova`'s camera is placed at the head with a zoom of
+;; nothing, its yaw the player's and its pitch the camera's.  The
+;; weapon is the one object in the player's own frame: its place is
+;; carried into the world exactly, its turn only by the yaw, so a
+;; blaster held while looking hard up or down keeps its screen position
+;; but stays level with the world.
+
+;; The kit draws the weapon with a *second* camera -- a Camera3D of 40
+;; degrees inside a SubViewport stretched over the whole screen -- while
+;; the world is seen at 80.  A narrower camera magnifies: its focal
+;; length is tan(40) / tan(20) = 2.305 times the world camera's, and
+;; that ratio is ITEM-ZOOM, in 1024ths.  One camera reaches the same
+;; picture by keeping the offset across and down and dividing the one
+;; along the view by the ratio, which multiplies both the model's
+;; screen position and its size by it: at the kit's own fields of view
+;; the blaster then lands where the kit's screenshot has it, just off
+;; the bottom right corner, and the same size.
+(def CONTAINER-X [] 1229)               ; container_offset (1.2, -1.1, -2.75)
+(def CONTAINER-Y [] -1126)
+(def CONTAINER-Z [] -2816)
+(def ITEM-ZOOM [] 2361)                 ; tan(40 degrees) / tan(20 degrees)
+(def ITEM-Z [] (div (mul CONTAINER-Z ONE) ITEM-ZOOM))
+
+(def enemy-obj [e]
+  (obj (model-of "enemy-flying") (div (get e x) 64) (div (get e y) 64) (div (get e z) 64)
+       (div (get e yaw) 64) ONE ONE))
+
+;; The kit's impact is a 2D animated sprite, which this renderer has no
+;; kind for; `model-of` gives "impact" the cloud's cube, and it is
+;; drawn small and shrinking as the mark ages.
+(def impact-obj [m]
+  (obj (model-of "impact") (div (get m x) 64) (div (get m y) 64) (div (get m z) 64)
+       0 (mul (get m life) 16) (mul (get m life) 16)))
+
+(def level-obj [it]
+  (obj (model-of (get it model)) (get it x) (get it y) (get it z)
+       (get it yaw) (get it scale) (get it scale)))
+
+(def weapon-obj [p]
+  (let d (cam-dir CONTAINER-X CONTAINER-Y ITEM-Z (get p yaw) (get p pitch))
+    (obj (model-of (w-name (get p weapon)))
+         (merge (div (get p x) 64) (get d x))
+         (merge (div (eye-y p) 64) (get d y))
+         (merge (div (get p z) 64) (get d z))
+         (merge (div (get p yaw) 64) 128) ONE ONE)))
+
+(def picture [w focal sw sh far]
+  (let p (get w p)
+    (rec objs (cons (weapon-obj p)
+                    (append (map enemy-obj (filter (lambda e (get e alive)) (get w enemies)))
+                            (append (map impact-obj (get w impacts))
+                                    (append (map level-obj (get w scene))
+                                            (map level-obj (get w clouds))))))
+         cam (camera (div (get p x) 64) (div (eye-y p) 64) (div (get p z) 64)
+                     (div (get p yaw) 64) (div (get p pitch) 64)
+                     0 focal sw sh far))))
+
+(def frame [w focal sw sh far]
+  (let pic (picture w focal sw sh far)
+    (scene-inside (get pic objs) (get pic cam))))
+
+;; --- what the rules say about themselves ------------------------------
+
+(example (get new-game restarts) 0)
+(example (get (tick new-game still) t) 1)
+;; the player starts half a metre above the grass platform and falls
+(example (lt (get (get (tick new-game still) p) y) 32768) 1)
+;; with no jump left until the floor is under him
+(example (get (get (tick new-game still) p) jumps) 0)
+;; four enemies, all of them standing
+(example (standing new-game) 4)
+;; the blaster first, the repeater after a toggle
+(example (weapon-name new-game) "blaster")
+(example (get (get (tick new-game (input 0 0 0 0 1 0 0)) p) weapon) 1)
+;; the mouse turns the player as far as it is moved, and the pitch
+;; stops at a quarter turn
+(example (get (get (tick new-game (input 0 0 0 0 0 100 0)) p) yaw) 100)
+(example (get (get (tick new-game (input 0 0 0 0 0 0 9000)) p) pitch) 4096)

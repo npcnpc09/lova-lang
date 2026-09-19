@@ -192,6 +192,7 @@ python apps/tactics/tactics.py        # a tactics battle, ported out of GDScript
 python apps/model/model.py            # low-poly meshes, turned and lit in real time
 python apps/platformer/platformer.py  # Kenney's 3D platformer kit, ported out of GDScript
 python apps/citybuilder/citybuilder.py # Kenney's city builder kit, sample city and all
+python apps/fps/fps.py                # Kenney's FPS kit: two blasters, four flying enemies
 python -m core.cli run apps/cube.lova # a cube turning in three dimensions
 
 # an interactive session, with the standard library loaded
@@ -258,7 +259,7 @@ pip install -e ".[experiments]"
 
 ## What the programs show
 
-Twenty-one programs in `apps/`, each written to use the language for
+Twenty-two programs in `apps/`, each written to use the language for
 something and kept as a test. What they demonstrate:
 
 - **It runs a game.** Tank battle, in real time: eight enemies arrive
@@ -439,6 +440,35 @@ something and kept as a test. What they demonstrate:
   ```bash
   python apps/citybuilder/citybuilder.py                 # WASD, wheel, middle-drag, click, Q/E
   python apps/citybuilder/citybuilder.py --empty         # a clean grid
+  ```
+
+- **And a first-person shooter, from Kenney's third starter kit.**
+  `lib/fps.lova` holds the rules of
+  [KenneyNL/Starter-Kit-FPS](https://github.com/KenneyNL/Starter-Kit-FPS)
+  (MIT, about 1 000 stars): a player who walks at five, jumps twice,
+  looks with the mouse and fires two blasters whose cooldown, spread,
+  shot count and knockback are the kit's own resources; four flying
+  enemies that hover on a cosine, turn to face him and fire a
+  five-metre ray every quarter second; a ray test against spheres and
+  boxes in integers; a fall off the world that starts again. The
+  picture is seen from the eye: `lib/scene3d.lova` gained a
+  first-person camera, and the weapon is held where the kit's second
+  camera holds it, by the ratio of the two fields of view.
+  `tests/test_fps.py` transliterates `player.gd`, `enemy.gd` and the
+  two weapon resources and runs them beside the port for 642 ticks of
+  a scripted play -- walking, looking, jumping the gap, emptying both
+  blasters into an enemy, taking fire, sliding along a wall, falling
+  off: **the same position within four thousandths, the same yaw,
+  pitch, health, cooldown and enemies, tick for tick**. On the native
+  runtime a tick is 2 ms and a frame 20 ms (`apps/fps/README.md` has
+  the honest table); a run on both runtimes draws the same picture to
+  the byte.
+
+  ![Kenney's FPS level from the eye: the window is Python, the game is LOVA](apps/fps/screenshot.png)
+
+  ```bash
+  python apps/fps/fps.py                                 # WASD, space, mouse, E, left button
+  python apps/fps/fps.py --shot out.png                  # one frame, no window
   ```
 
 - **Logic runs right the first time.** The word count, the games, the

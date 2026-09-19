@@ -239,6 +239,20 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M35** (2026-09-19) -- **Kenney's FPS kit.** The third Godot port
+(KenneyNL/Starter-Kit-FPS, MIT): `lib/fps.lova`, `lib/fps_assets.lova`,
+`apps/fps/`, `tests/test_fps.py` (642 ticks tick for tick against a
+transliteration of `player.gd` / `enemy.gd`), a first-person path in
+`lib/scene3d.lova`. Built by two Opus agents and reviewed by an
+independent Opus agent on a fixed checklist (the owner's division of
+that day): the review found three rules errors the tick-by-tick test
+could not see because the oracle shared the port's code -- a random
+sign that was constant, no velocity slide on a wall, the weapon drawn
+at the wrong camera -- and eight smaller ones; all fixed and
+re-checked. On the native runtime a tick is 2.5 ms and a frame 21 ms:
+20-30 frames a second, the interpreter's ceiling, which is Q128.
+Tests 1094 -> 1098. `journal/README.md`, "Milestone 35".
+
 **M34** (2026-09-19) -- **the native runtime reaches the apps.**
 Q126: a session protocol (`session` / `get` / `call` / `release` /
 `close`; data as JSON, the world as a handle; `core.native.NativeSession`;
@@ -1096,8 +1110,8 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-1094 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
-24 first-class apps (the last Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
+1098 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+25 first-class apps (the last Kenney's FPS starter kit -- KenneyNL/Starter-Kit-FPS, MIT, ~1 000 stars: `lib/fps.lova` checked tick by tick against a transliteration of `player.gd` and `enemy.gd`, the picture from the eye; before it Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 
 **All 14 experiments run** as of 2026-09-09. Exp 03 and Exp 07 had
