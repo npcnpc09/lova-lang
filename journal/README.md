@@ -731,8 +731,49 @@ under a budget, the world round-tripping a multi-byte text): 43/43.
 wall-clock including the Python start; a 20M-step budget trap in 4.0 s
 against 23.4 s, with the same `position_path` and the same `hot`
 table. On programs of a few thousand steps the process start is the
-cost and the two tie. The apps' numbers (`wordfreq` at 10 000 lines,
-the city builder's ticks) are the next measurement.
+cost and the two tie.
+
+**Measured on the apps** (`tools/bench_native.py`, best of three,
+the parse-and-compile floor measured by `analyze` and subtracted, so
+the columns are the two evaluators alone; the 3D apps are driven from
+Python by closures called every tick, which the run-once protocol
+cannot serve, so `tools/bench/*.lova` stand in: the world built, N
+ticks, one frame). Every row's value, stdout and step count identical
+on both runtimes:
+
+```
+app                        steps   py eval  nat eval  ratio  nat steps/s
+tictactoe 163             225936      0.54      0.15    3.6    1 522 915
+tictactoe 0 (full)       2411809      5.08      0.85    6.0    2 835 632
+maze 0                    204591      0.35      0.12    2.9    1 680 542
+batch 300 2000            311003      0.57      0.12    4.7    2 570 277
+wordfreq 10k lines       1138974      2.60      0.57    4.6    2 006 574
+war terrain              2466307      5.10      0.67    7.7    3 700 913
+war terrain+60 ticks     3186457      6.37      0.88    7.3    3 630 762
+platformer frame          166888      0.36      0.05    6.9    3 169 179
+platformer 60t+frame      406933      0.89      0.12    7.6    3 467 423
+citybuilder frame        1039951      2.38      0.28    8.5    3 721 403
+citybuilder 60t+frame    1073556      2.48      0.30    8.4    3 630 209
+(programs under 40 000 steps: both evaluators under 0.1 s; the
+ native side pays 0.06-0.09 s to start the binary and hand the
+ program over, so there the Python runtime is the faster one)
+```
+
+The native evaluator runs at **3-4 million steps a second** against
+CPython's 0.4-0.5 million on these programs: 5-10x, the same order as
+PyPy's four million (M23). That is the honest number for a first port
+that reproduces Python's accounting node for node -- `Rc<RefCell>`
+values, a bignum check on every arithmetic node, the persistent map --
+and where the next factor is (Q124: a profile of the crate on the war
+terrain and the city frame). Two other costs now show: the Python
+parse and compile of the 3D libraries is 1-2 s a run and is the
+larger part of a native run's wall-clock (Q125: cache the compiled
+bytes by source hash; the golden set already stores them), and the 3D
+drivers cannot use the native runtime at all until the protocol can
+hold a world and call into it tick by tick (Q126: a session -- `run`
+once, then `call name args` against the kept environment). Without
+Q126 the apps that most need the speed -- a frame is 170 000 to a
+million steps -- are the ones it does not reach.
 
 **Found on integration, and the one design change of the phase:** the
 client recovered a trap's span by matching `position_path`'s ops

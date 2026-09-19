@@ -1,0 +1,5 @@
+;; a proxy for the app driver: the world built, N ticks, one frame -- tools/bench_native.py
+(use "war")
+(def go [w n] (if (eq n 0) w (go (tick w) (sub n 1))))
+(let w (go (new-war 7) {n})
+  (merge (len (sprites w)) (mul 100000 (len (terrain)))))

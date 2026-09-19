@@ -253,9 +253,13 @@ its `ping` reply declares), `lova check --native`, MCP `native`. In
 scope everything but `read` / `explain` (the Stage-1 surface) and the
 network: 989/1023, the 29 failures all one of those four operators,
 zero in-scope value or step mismatches; the evolution PRNG is
-reproduced exactly (D4 amended: contractual). A pure 8.3M-step program
-10.1 s -> 2.0 s; a 20M-step trap 23.4 s -> 4.0 s with the same
-`position_path` and `hot` table. Traps carry `position_nodes` so the
+reproduced exactly (D4 amended: contractual). On the apps
+(`tools/bench_native.py`) the native evaluator is 5-10x CPython, 3-4
+million steps a second, the order of PyPy: the war terrain 5.3 s ->
+0.6 s, a city-builder frame 2.5 s -> 0.2 s, the full tic-tac-toe tree
+5.2 s -> 0.8 s. Q124 (profile the crate), Q125 (cache compiled bytes:
+the Python parse of a 3D library is 1-2 s a run), Q126 (a session
+protocol so the tick-driven 3D apps can use it at all). Traps carry `position_nodes` so the
 client reports the same span Python does. Division of labour: Fable
 the spec, the golden set, review and judgment; Opus subagents the
 port. Tests 1009 -> 1054. `journal/README.md`, "Milestone 33".
