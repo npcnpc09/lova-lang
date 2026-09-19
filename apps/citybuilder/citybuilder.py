@@ -272,10 +272,15 @@ class City:
                     ran += 1
                 if self.behind >= TICK:
                     self.behind = 0.0
-                key = self.rules.keys_of(self.world)
-                if key != self.last_key:
-                    self.paint(key[0] != self.last_key[0])
-                    self.last_key = key
+                # Only a tick can move the view, and this loop runs
+                # every millisecond: asking the rules for the view key
+                # on every pass was a thousand calls a second for an
+                # answer that changes sixty times at most.
+                if ran:
+                    key = self.rules.keys_of(self.world)
+                    if key != self.last_key:
+                        self.paint(key[0] != self.last_key[0])
+                        self.last_key = key
             except (BudgetTrap, DeltaTrap, ValueError) as exc:
                 self.anomaly = getattr(exc, "anomaly", None) or {"kind": str(exc)}
                 self.bar.config(text=f"the rules faulted: {self.anomaly.get('kind')}")

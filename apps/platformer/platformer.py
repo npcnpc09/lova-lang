@@ -221,7 +221,13 @@ class Game:
                     self.ticks += 1
                 if self.behind >= TICK:          # too slow to keep up: drop the debt
                     self.behind = 0.0
-                self.paint()
+                # A frame is worth drawing only when something moved.
+                # This loop runs every millisecond, and painting on each
+                # pass drew the same picture sixty times over -- twenty
+                # to thirty milliseconds of it each -- which is the time
+                # the ticks then fell behind by.
+                if ran:
+                    self.paint()
             except (BudgetTrap, DeltaTrap, ValueError) as exc:
                 self.anomaly = getattr(exc, "anomaly", None) or {"kind": str(exc)}
                 self.bar.config(text=f"the rules faulted: {self.anomaly.get('kind')}")

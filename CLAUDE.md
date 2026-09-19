@@ -239,6 +239,20 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M36** (2026-09-19) -- **Q129, the renderer's own steps.** A frame
+of `lib/scene3d.lova` costs a quarter less (vertex 149 -> 98 steps,
+face 124 -> 107; the FPS `--shot` frame 153 000 -> 115 000) by writing
+the hot calls inline, folding scale and depth into per-object
+constants, a per-object near-plane cull, a cheaper depth key and the
+sine table as a map; pixels unchanged but the platformer's character,
+which rounds once (at most one pixel). The hosts painted every pass
+and the FPS host dropped the mouse on passes with no tick -- both
+fixed. Independent review found the cull's two-unit slack, a silenced
+fault (restored), unreproducible header numbers (replaced), and that
+the golden set cannot see a `lib/` change (F7). Q132: `max` / `sub`
+as macros cost 17 steps a vertex. Tests 1098 -> 1100.
+`journal/README.md`, "Milestone 36".
+
 **M35** (2026-09-19) -- **Kenney's FPS kit.** The third Godot port
 (KenneyNL/Starter-Kit-FPS, MIT): `lib/fps.lova`, `lib/fps_assets.lova`,
 `apps/fps/`, `tests/test_fps.py` (642 ticks tick for tick against a
@@ -1110,7 +1124,7 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-1098 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+1100 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 25 first-class apps (the last Kenney's FPS starter kit -- KenneyNL/Starter-Kit-FPS, MIT, ~1 000 stars: `lib/fps.lova` checked tick by tick against a transliteration of `player.gd` and `enemy.gd`, the picture from the eye; before it Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

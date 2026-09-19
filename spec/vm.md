@@ -279,6 +279,27 @@ paying for it once per **run** of nodes:
 `hot`'s `own` is `steps - mark` differences; batching does not move
 steps across a `Call` boundary, so the intervals are unchanged.
 
+### 4.1 Amended at implementation (2026-09-19)
+
+The rule above is unsound as written: an operator earlier in a run can
+trap for its own reason (`(merge (div 1 0) (foo))`) before the node
+the eager charge would trap at ever ticks, and an eager batch would
+raise `step-limit-exceeded` where the reference raises the
+`domain-error`. The implementation therefore **batches a run only when
+the whole run fits under both the step ceiling and the innermost
+budget**, and otherwise charges node by node; the rewind on a fault
+inside a fitted batch stands. The semantics spec wins; this is the
+half of the rule the first draft got wrong.
+
+Also decided there: `eval`, `conserve`, `trace`, the Evolution and
+Meta families and the out-of-scope operators are **delegated to the
+tree-walker** over a `Scope` flattened from the VM's frames, rather
+than compiled as §2.4's dynamic units -- the same values, steps,
+anomalies and `bound_names` by construction, and no second
+implementation of `eval`'s scoping, the probe or the sandbox. The
+cost, a program using them runs those subtrees at tree-walker speed
+and keeps its frames on the heap, is accepted.
+
 ## 5. Values
 
 * `Value` stays the crate's enum (`value.rs`); the `Int` fast path
@@ -409,6 +430,25 @@ because it is the part most likely to be subtly wrong.
    under **10 ms**, i.e. **15 million steps a second or better** on
    the war terrain and the city frame. Report what was reached and
    where the remaining time goes (the crate's `prof` sampler).
+
+### 8.1 What the first build reached (2026-09-19)
+
+Gates 1-5 passed on the first build (16 unit tests; 988 + the clock
+record; 3 042 programs x 4 ceilings, 12 168 runs, 0 differences; the
+drivers byte-identical; the suite green). Gate 6 was not met: 1.16x
+over the tree-walker on the apps (war terrain 7.0 -> 8.5 M steps/s,
+city frame 6.1 -> 9.1, fps 5.4 -> 6.5), 2.0x on a wide arithmetic
+body (24.7 M). The profile after the first optimisation round: the
+call path 32% (17% the reference's own hot / depth / caps bookkeeping
+in `rt::call`, 15% the VM's activation setup), dispatch 14%, loads
+10%, closures 6%, map keys 5-17%, activation teardown up to 18% on
+the city builder (dropping the lists a frame held). The next levers,
+in order: a faster allocator (every cons cell, closure and captured
+frame is a Windows `HeapAlloc`); `rt.current` and `owner` as raw
+pointers (two `Rc` clones per call); slots inline in the frame; a map
+key carrying its hash; one shared value stack; lazy per-unit
+emission for `run` (5.9 ms of compile on the platformer, which a
+session pays once).
 
 ## 9. Deliverables
 

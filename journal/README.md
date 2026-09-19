@@ -666,6 +666,82 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 36 (2026-09-19) -- Q129: a frame costs a quarter less
+
+The owner, after opening the three ports on the native runtime: still
+not smooth. Two levers, in parallel: the compiled evaluator (Q128,
+`spec/vm.md`, in flight) and the renderer's own steps, this entry.
+One Opus agent made the change, an independent Opus agent reviewed it
+against the committed tree with a pixel differ, a brute-force check of
+the cull's arithmetic and pose sweeps of every game; Fable judged.
+
+**What was cut, in `lib/scene3d.lova`, `lib/mesh3d.lova`,
+`lib/fixed.lova`.** A vertex cost 149 steps and a face 124; the
+profile put `face-in`, `place-vertex`, `placed-in`, `object-faces`
+and `scaled` at the top. Now: the projection written inside
+`placed-in`'s fold instead of a twelve-argument call (a curried call
+charges a step a node, so twelve arguments were twenty-four steps a
+vertex); the model's scale folded into the object's four sines, so
+`scaled` is gone; the depth offset folded into the zoom and the
+vertex numbering computed once in `mesh`; the face's lighting and
+back-face test written inside `object-faces`'s fold with the sun
+destructured once; `stand` and `turn` written into `shot-of`'s map
+with the camera read once a frame; a per-object near-plane cull for a
+camera standing in the scene (a model's reach measured once as its
+largest |x|+|y|+|z|, which no turn changes and no radius exceeds);
+the depth key at the head of the object tuple so the sort's
+comparator is five steps, not twelve; and the sine quarter-table as a
+map instead of a list `nth` walked thirty cells into. A vertex 149 ->
+98, a face 124 -> 107; the frame `--shot` draws: city 1 055 000 ->
+802 000, platformer 161 000 -> 122 000, FPS 153 000 -> 115 000, a
+quarter off each. `tests/test_frame_cost.py` pins the counts of
+`tools/bench/*.lova` at two per cent.
+
+**What was not cut, and why (measured, not guessed).** The world-
+space vertex cache the brief asked for saves three per cent: the
+projection already folds the object's turn and the camera's into one,
+and what remains is the camera's. Lighting once per distinct normal:
+four faces in five have a normal no other shares after decimation.
+Tighter object culling: `stand` already drops more than half the
+objects of the platformer and the FPS, and every one of the city's 123
+is in front of the camera. Off-screen faces: the test costs more than
+the `cons` it saves.
+
+**Two real bugs in the hosts, found on the way.** All three windows
+painted on every pass of the loop -- sixty identical frames a second
+at 20-30 ms each, which is exactly what the ticks then fell behind by;
+they paint only when a tick ran. And the FPS host read and zeroed the
+mouse on every pass, so motion arriving on a pass with no tick --
+fifty-nine passes in sixty -- was thrown away; the mouse is now spent
+by a tick, once.
+
+**What the review found.** The cull's claim of exact equivalence was
+an overstatement: under floor division and a sine table with two
+entries of 1024, the reach falls short by up to two depth units (six
+hundred thousand random cases), so an object whose nearest corner is
+within two units past the near plane may be dropped whole -- no pose
+of the FPS showed a face it moved; the comment now says so. The
+platformer's character, the one object with `tall` unequal to
+`scale`, rounds once where it rounded twice: on the committed
+screenshot 138 pixels move by one, and at some poses a sliver too thin
+to see changes sides in the back-face test; stated. The sine lookup's
+default had turned `nth`'s loud fault into a silent nought -- the
+lookup is unreachable, but the guard cost nothing since `map-get`
+evaluates its default only on a miss, so it is `(head (nil))` again.
+The per-face figures in the header did not reproduce from any command
+in the repository; the `--shot` counts do and are what it says now.
+And a hole in the net: `tools/conformance.py` runs each golden
+record's stored bytes, so the golden set pins nothing about `lib/`;
+the regression coverage for the libraries is the tests and the pose
+sweeps. The reviewer also found where seventeen unaccounted steps a
+vertex go: `max` is a macro that expands to a `let`, an `if`, a
+`threshold` and a `deviation` (nine steps), and `sub` to a `merge` of
+a `mul` (two each, four of them) -- Exp 13's decision to keep them
+macros, now measurable at four per cent of a city frame (Q132: should
+`max` / `min` / `sub` be one node each).
+
+Tests 1098 -> 1100.
+
 ### Milestone 35 (2026-09-19) -- Kenney's FPS kit, on the native runtime
 
 The owner's next step after M34: use the Rust-backed language for a

@@ -236,7 +236,11 @@ class Game:
         ran = 0
         if self.anomaly is None:
             try:
-                dyaw, dpitch = self.look()
+                # The mouse is spent by a tick, not by a pass of this
+                # loop: asking for it when no tick will run threw the
+                # motion since the last pass away, and this loop runs
+                # sixty times a tick.
+                dyaw, dpitch = self.look() if self.behind >= TICK else (0, 0)
                 while self.behind >= TICK and ran < MAX_CATCHUP:
                     keys = set(self.keys)
                     if self.jump_pending:
@@ -254,7 +258,13 @@ class Game:
                     ran += 1
                 if self.behind >= TICK:          # too slow to keep up: drop the debt
                     self.behind = 0.0
-                self.paint()
+                # Only a tick can change the picture, and this loop runs
+                # every millisecond: painting on every pass drew the
+                # same frame sixty times over, at twenty to thirty
+                # milliseconds each, and that is what the ticks then
+                # fell behind by.
+                if ran:
+                    self.paint()
             except (BudgetTrap, DeltaTrap, ValueError) as exc:
                 self.anomaly = getattr(exc, "anomaly", None) or {"kind": str(exc)}
                 self.bar.config(text=f"the rules faulted: {self.anomaly.get('kind')}")

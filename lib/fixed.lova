@@ -24,19 +24,36 @@
 (def ONE [] 1024)
 (def TURN [] 256)
 
-(def sin-q []
+(def sin-table []
   (list 0 25 50 75 100 125 150 175 200 224 249 273 297
         321 345 369 392 415 438 460 483 505 526 548 569 590
         610 630 650 669 688 706 724 742 759 775 792 807 822
         837 851 865 878 891 903 915 926 936 946 955 964 972
         980 987 993 999 1004 1009 1013 1016 1019 1021 1023 1024 1024))
 
+;; The quarter table as a map from k to sin, not as a list: `sin` is
+;; the most called function in a 3D frame -- four times an object in
+;; `lib/scene3d.lova`, and the FPS enemies' aim is its hottest caller
+;; -- and `nth` walks to the k'th cons cell, which for the middle of
+;; the quarter is thirty of them.  The map is built once, when the
+;; module is read (719 steps, so a program that calls `sin` fewer than
+;; eighty times pays a little more than it did), and `sin-table` is
+;; bound before it because a nought-argument definition is evaluated
+;; where it stands in the group.  A lookup past the table would be
+;; unreachable -- `k` is a floored `mod` -- and if it ever were, the
+;; default is `nth`'s own loud fault, not a silent nought: `map-get`
+;; evaluates its default only on a miss, so it costs nothing here.
+(def sin-q []
+  (fold (lambda m (lambda pr (map-put m (head (tail pr)) (head pr))))
+        (nil)
+        (zip sin-table (range 0 (len sin-table)))))
+
 (def sin [ang]
   (let k (mod ang TURN)
-    (cond (le k 64) (nth sin-q k)
-          (le k 128) (nth sin-q (sub 128 k))
-          (le k 192) (neg (nth sin-q (sub k 128)))
-          (neg (nth sin-q (sub TURN k))))))
+    (cond (le k 64) (map-get sin-q k (head (nil)))
+          (le k 128) (map-get sin-q (sub 128 k) (head (nil)))
+          (le k 192) (neg (map-get sin-q (sub k 128) (head (nil))))
+          (neg (map-get sin-q (sub TURN k) (head (nil)))))))
 
 (def cos [ang] (sin (merge ang 64)))
 

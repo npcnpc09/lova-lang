@@ -42,6 +42,31 @@
 ;;; object, a yaw the other way.  A placed vertex is a three-list
 ;;; (u v depth) and a face an eight-list, because a map costs three
 ;;; steps a field to build and a cons one.
+;;;
+;;; A frame is counted in steps, and the three loops below -- an
+;;; object, a vertex, a face -- are where nearly all of them are, so
+;;; each of the three is written as one expression: a call costs two
+;;; steps an argument, and handing eleven of the same numbers to a
+;;; twelve-argument function two thousand times was a fifth of the
+;;; cost of a picture.  What is the same for every vertex of an object
+;;; is computed by the object (the scale folded into the four sines,
+;;; `oz` folded into `zoom`), what is the same for every object is
+;;; computed by the frame (the camera's fields, the screen's edges,
+;;; `ONE` and `NEAR`, which as nought-argument definitions cost two
+;;; steps each where a local name costs one), and a model's vertex
+;;; numbering and its reach from its own centre are computed once,
+;;; when the module is read (`mesh`, in `lib/mesh3d.lova`).  That, and
+;;; dropping an object that lies wholly behind a camera standing in
+;;; the scene, took the frame `--shot` draws from 1 055 000 steps to
+;;; 802 000 for the city, 161 000 to 122 000 for the platformer and
+;;; 153 000 to 115 000 for the FPS kit: a quarter off, 406 to 308, 486
+;;; to 367 and 602 to 453 a drawn face.  Every corner of every face is
+;;; on the same pixel except the platformer's character, the one
+;;; object whose squash makes `tall` differ from `scale`: its scale is
+;;; rounded once where it was rounded twice, so a corner may move by
+;;; one pixel and, at some poses, a sliver of a face too thin to see
+;;; changes sides in the back-face test.  `tests/test_frame_cost.py`
+;;; pins the step counts of `tools/bench/*.lova`.
 
 (use "mesh3d")
 
@@ -55,134 +80,207 @@
   (rec tx tx ty ty tz tz yaw yaw pitch pitch zoom zoom focal focal
        sw sw sh sh far far))
 
-;; A vertex, turned by the object's yaw and the camera's together and
-;; tilted by the camera's pitch, pushed by where the object stands in
-;; the camera's frame, and divided by its depth: (u v depth).
-(def place-vertex [v cy sy cp sp ox oy oz zoom focal cx cyy]
-  (let x (get v x)
-    (let y (get v y)
-      (let z (get v z)
-        (let x1 (div (merge (mul x cy) (mul z sy)) ONE)
-          (let z1 (div (sub (mul z cy) (mul x sy)) ONE)
-            (let d (max NEAR (sub zoom (merge (div (merge (mul y sp) (mul z1 cp)) ONE) oz)))
-              (list (merge cx (div (mul (merge x1 ox) focal) d))
-                    (sub cyy (div (mul (merge (div (sub (mul y cp) (mul z1 sp)) ONE) oy) focal) d))
-                    d))))))))
-
-(def scaled [v s t]
-  (if (and (eq s ONE) (eq t ONE))
-    v
-    (rec x (div (mul (get v x) s) ONE)
-         y (div (mul (get v y) t) ONE)
-         z (div (mul (get v z) s) ONE))))
-
-(def placed-in [m cy sy cp sp scale tall ox oy oz zoom focal cx cyy]
-  (fold (lambda acc (lambda pr
-          (map-put acc (head (tail pr))
-                   (place-vertex (scaled (head pr) scale tall) cy sy cp sp ox oy oz
-                                 zoom focal cx cyy))))
-        (nil)
-        (zip (get m vs) (range 0 (len (get m vs))))))
+;; Every vertex of one model, turned by the object's yaw and the
+;; camera's together, tilted by the camera's pitch, pushed by where the
+;; object stands in the camera's frame and divided by its depth: a map
+;; from the vertex's own number to (u v depth).
+;;
+;; The whole projection is written out inside the fold rather than
+;; called, because a call costs two steps an argument and this one had
+;; twelve of them: a vertex was paying twenty-four steps to be handed
+;; the same eleven numbers as the vertex before it, where a closure's
+;; reference to a captured name costs one.  For the same reason the
+;; model's scale is not applied to the vertex -- `(x*s/ONE)*cy` and
+;; `x*(s*cy/ONE)` are the same number to a unit in 1024ths -- but folded
+;; into the four sines by the caller, which is two multiplications an
+;; object instead of three a vertex, and `oz` is folded into `zoom` and
+;; `ONE` and `NEAR` are bound once (a nought-argument definition costs
+;; two steps where a local name costs one).
+;;
+;;   cys sys   cos and sin of (the object's yaw less the camera's),
+;;             each already multiplied by the object's scale
+;;   cp sp     cos and sin of the camera's pitch, undone
+;;   cpt spt   the same two, multiplied by the object's height
+;;   zo        the camera's zoom less the object's depth offset
+;;   ox oy     where the object stands in the camera's frame, across
+;;             and up
+(def placed-in [m cys sys cp sp cpt spt zo ox oy focal cx cyy]
+  (let one ONE
+    (let nr NEAR
+      (fold (lambda acc (lambda v
+              (let x (get v x)
+                (let y (get v y)
+                  (let z (get v z)
+                    (let z1 (div (sub (mul z cys) (mul x sys)) one)
+                      (let d (max nr (sub zo (div (merge (mul y spt) (mul z1 cp)) one)))
+                        (map-put acc (get v i)
+                          (list (merge cx (div (mul (merge (div (merge (mul x cys) (mul z sys)) one) ox) focal) d))
+                                (sub cyy (div (mul (merge (div (sub (mul y cpt) (mul z1 sp)) one) oy) focal) d))
+                                d)))))))))
+            (nil)
+            (get m ivs)))))
 
 (def nowhere3 [] (list 0 0 0))
 
-;; A face on the screen, or the accumulator unchanged if its back is
-;; turned: the same test as mesh3d's `face-of`, with the sign the other
-;; way.  `near` is 1 for a camera standing inside the scene, and then a
-;; face whose three vertices are all at or behind the near plane is
-;; dropped as well: their depths were all clamped, so the triangle
-;; would be drawn somewhere arbitrary and could be the size of the sky.
-;; A face that only reaches behind the camera is kept -- two of its
-;; corners are pushed far off the edges, which is roughly where the
-;; ground under your feet belongs.  Nothing outside the camera ever
-;; comes that close, which is why the flag is 0 for `scene-shot`.
-(def face-in [pv sun f near acc]
-  (let p (map-get pv (get f a) nowhere3)
-    (let q (map-get pv (get f b) nowhere3)
-      (let r (map-get pv (get f c) nowhere3)
-       (let pu (head p) (let pv2 (head (tail p))
-        (let qu (head q) (let qv (head (tail q))
-         (let ru (head r) (let rv (head (tail r))
-          (if (or (ge (sub (mul (sub qu pu) (sub rv pv2)) (mul (sub ru pu) (sub qv pv2))) 0)
-                  (and near (and (le (head (tail (tail p))) NEAR)
-                                 (and (le (head (tail (tail q))) NEAR)
-                                      (le (head (tail (tail r))) NEAR)))))
-            acc
-            (cons (list pu pv2 qu qv ru rv
-                        (get f k)
-                        (merge AMBIENT
-                               (max 0 (div (merge (mul (get f nx) (get sun x))
-                                                  (merge (mul (get f ny) (get sun y))
-                                                         (mul (get f nz) (get sun z))))
-                                           ONE))))
-                  acc))))))))))))
-
-;; One object's faces in front of `acc`, or `acc` if it stands too far
-;; from the target.  `off` is where the object stands in the camera's
-;; frame, computed once by `stand`.
-(def object-faces [o off cam cp sp cx cyy near acc]
-  (let oy (get o yaw)
-    (let ocy (cos (sub oy (get cam yaw)))
-      (let osy (sin (sub oy (get cam yaw)))
-        (let m (get o m)
-          (let pv (placed-in m ocy osy cp sp (get o scale) (get o tall)
-                             (get off x) (get off y) (get off z)
-                             (get cam zoom) (get cam focal) cx cyy)
-            ;; the sun in the object's frame: the yaw undone
-            (let sun (turn SUN (cos (neg oy)) (sin (neg oy)) ONE 0)
-              (fold (lambda acc2 (lambda f (face-in pv sun f near acc2)))
-                    acc (get m fs)))))))))
+;; One object's faces in front of `acc`.  `zo` / `ox` / `oy2` are where
+;; the object stands in the camera's frame, computed once by `shot-of`.
+;;
+;; A face is kept unless its back is turned -- the same test as mesh3d's
+;; `face-of`, with the sign the other way.  `near` is 1 for a camera
+;; standing inside the scene, and then a face whose three vertices are
+;; all at or behind the near plane is dropped as well: their depths were
+;; all clamped, so the triangle would be drawn somewhere arbitrary and
+;; could be the size of the sky.  A face that only reaches behind the
+;; camera is kept -- two of its corners are pushed far off the edges,
+;; which is roughly where the ground under your feet belongs.  Nothing
+;; outside the camera ever comes that close, which is why the flag is 0
+;; for `scene-shot`.
+;;
+;; The face is written out inside the fold for the reason `placed-in`'s
+;; vertex is: it was a five-argument call, and the sun, the vertex map
+;; and the flag are the same for every face of the object.  The sun in
+;; the object's frame is `turn` with no pitch written out, which is what
+;; makes it three multiplications rather than a record and six.
+(def object-faces [o zo ox oy2 camyaw focal cp sp cx cyy near acc]
+  (let one ONE
+    (let oy (get o yaw)
+      (let dyaw (sub oy camyaw)
+        (let scale (get o scale)
+          (let m (get o m)
+            (let pv (placed-in m
+                               (div (mul (cos dyaw) scale) one)
+                               (div (mul (sin dyaw) scale) one)
+                               cp sp
+                               (div (mul cp (get o tall)) one)
+                               (div (mul sp (get o tall)) one)
+                               zo ox oy2
+                               focal cx cyy)
+              ;; the sun in the object's frame: the yaw undone
+              (let scy (cos (neg oy))
+                (let ssy (sin (neg oy))
+                  (let lx (div (merge (mul (get SUN x) scy) (mul (get SUN z) ssy)) one)
+                    (let ly (get SUN y)
+                      (let lz (div (sub (mul (get SUN z) scy) (mul (get SUN x) ssy)) one)
+                        (let nw nowhere3
+                          (let amb AMBIENT
+                            (let nr NEAR
+                              (fold (lambda acc2 (lambda f
+                                (let p (map-get pv (get f a) nw)
+                                  (let q (map-get pv (get f b) nw)
+                                    (let r (map-get pv (get f c) nw)
+                                     (let pu (head p) (let pv2 (head (tail p))
+                                      (let qu (head q) (let qv (head (tail q))
+                                       (let ru (head r) (let rv (head (tail r))
+                                        ;; twice the signed area of the
+                                        ;; triangle on the screen, as two
+                                        ;; products compared rather than
+                                        ;; subtracted and compared to nought
+                                        (if (or (ge (mul (sub qu pu) (sub rv pv2))
+                                                    (mul (sub ru pu) (sub qv pv2)))
+                                                (and near (and (le (head (tail (tail p))) nr)
+                                                               (and (le (head (tail (tail q))) nr)
+                                                                    (le (head (tail (tail r))) nr)))))
+                                          acc2
+                                          (cons (list pu pv2 qu qv ru rv
+                                                      (get f k)
+                                                      (merge amb
+                                                             (max 0 (div (merge (mul (get f nx) lx)
+                                                                                (merge (mul (get f ny) ly)
+                                                                                       (mul (get f nz) lz)))
+                                                                         one))))
+                                                acc2)))))))))))))
+                                    acc (get m fs)))))))))))))))))
 
 ;; How close an object may stand to a camera inside the scene and be
 ;; kept whatever its centre projects to: eight metres, more than the
 ;; widest thing in the kits.
 (def NEARBY [] 8192)
 
-;; Where an object stands in the camera's frame, paired with the
-;; object; nil if it is too far from the target to draw, or if its
-;; centre falls more than a screen's quarter outside the picture -- a
-;; city of a hundred cells seen from close up is mostly off the edges,
-;; and an object costs nothing that is dropped here.  A camera standing
-;; inside the scene (`near`) keeps what is around it whatever its
-;; centre projects to: the platform under your feet has its centre at
-;; no depth at all.
-(def stand [o cam cy sy cp sp near]
-  (let dx (sub (get o x) (get cam tx))
-    (let dz (sub (get o z) (get cam tz))
-      (if (gt (merge (abs dx) (abs dz)) (get cam far))
-        (nil)
-        (let off (turn (rec x dx y (sub (get o y) (get cam ty)) z dz) cy sy cp sp)
-          (let d (max NEAR (sub (get cam zoom) (get off z)))
-            (let u (div (mul (get off x) (get cam focal)) d)
-              (let v (div (mul (get off y) (get cam focal)) d)
-                (if (and (or (gt (abs u) (div (mul (get cam sw) 3) 4))
-                             (gt (abs v) (div (mul (get cam sh) 3) 4)))
-                         (or (not near)
-                             (gt (merge (abs dx) (merge (abs dz)
-                                                        (abs (sub (get o y) (get cam ty)))))
-                                 NEARBY)))
-                  (nil)
-                  (list o off))))))))))
-
+;; Where every object stands in the camera's frame, the ones that are
+;; not worth drawing dropped: (zo o ox oy) an object, where `zo` is the
+;; camera's zoom less the object's depth offset -- the number
+;; `placed-in` wants, and the sort key, since a smaller `zo` is a nearer
+;; object.  An object is dropped if it stands further from the target
+;; than `far`, or if its centre falls more than a screen's quarter
+;; outside the picture -- a city of a hundred cells seen from close up
+;; is mostly off the edges, and an object costs nothing that is dropped
+;; here.  A camera standing inside the scene (`near`) keeps what is
+;; around it whatever its centre projects to: the platform under your
+;; feet has its centre at no depth at all; but it drops an object that
+;; lies wholly on the near side of the near plane, which is to say
+;; behind you, and that drop changes nothing that can be seen: every
+;; one of its faces would have had all three depths clamped and been
+;; dropped one at a time, at sixty steps each.  (The reach is a bound
+;; under floor division and a sine table that is not quite orthonormal,
+;; and falls short by up to two units of depth -- an object whose
+;; nearest corner is within two units past the near plane may be
+;; dropped whole where the face test would have kept a face with every
+;; corner far off the screen.  Six hundred thousand random cases found
+;; the slack, and twenty-four poses of the FPS found no face it moved.)
+;;
+;; The whole of this is written inside `shot-of`'s map, and `turn` with
+;; it, because what it asks of the camera -- eight fields and two screen
+;; edges -- is the same for every object, and reading them from the
+;; record once an object cost more than the test.
 (def shot-of [objs cam near]
-  (let cy (cos (neg (get cam yaw)))
-    (let sy (sin (neg (get cam yaw)))
-      (let cp (cos (neg (get cam pitch)))
-        (let sp (sin (neg (get cam pitch)))
-          (let cx (div (get cam sw) 2)
-            (let cyy (div (get cam sh) 2)
-              (let stood (filter (lambda s (not (nil? s)))
-                                 (map (lambda o (stand o cam cy sy cp sp near)) objs))
-                ;; the nearest object (the largest z: depth is zoom minus
-                ;; z) goes into the fold first, so that consing each
-                ;; object's faces in front leaves it at the back of the
-                ;; list, painted last
-                (fold (lambda acc (lambda s
-                        (object-faces (head s) (head (tail s)) cam cp sp cx cyy near acc)))
-                      (nil)
-                      (sort-by (lambda i (lambda j
-                                 (gt (get (head (tail i)) z) (get (head (tail j)) z))))
-                               stood))))))))))
+  (let one ONE
+    (let nr NEAR
+      (let cy (cos (neg (get cam yaw)))
+        (let sy (sin (neg (get cam yaw)))
+          (let cp (cos (neg (get cam pitch)))
+            (let sp (sin (neg (get cam pitch)))
+              (let sw (get cam sw)
+                (let sh (get cam sh)
+                  (let cx (div sw 2)
+                    (let cyy (div sh 2)
+                      (let hw (div (mul sw 3) 4)
+                        (let hh (div (mul sh 3) 4)
+                          (let tx (get cam tx)
+                            (let ty (get cam ty)
+                              (let tz (get cam tz)
+                                (let far (get cam far)
+                                  (let zoom (get cam zoom)
+                                    (let focal (get cam focal)
+                                      (let nby NEARBY
+                                        (let stood (filter (lambda s (not (nil? s)))
+                                          (map (lambda o
+                                            (let dx (sub (get o x) tx)
+                                              (let dy (sub (get o y) ty)
+                                                (let dz (sub (get o z) tz)
+                                                  (if (gt (merge (abs dx) (abs dz)) far)
+                                                    (nil)
+                                                    (let z1 (div (sub (mul dz cy) (mul dx sy)) one)
+                                                      (let ox (div (merge (mul dx cy) (mul dz sy)) one)
+                                                        (let oy (div (sub (mul dy cp) (mul z1 sp)) one)
+                                                          (let zo (sub zoom (div (merge (mul dy sp) (mul z1 cp)) one))
+                                                            (let d (max nr zo)
+                                                              (if (or (and near
+                                                                           (le (merge zo (div (mul (get (get o m) rad)
+                                                                                                   (max (get o scale) (get o tall)))
+                                                                                              one))
+                                                                               nr))
+                                                                      (and (or (gt (abs (div (mul ox focal) d)) hw)
+                                                                               (gt (abs (div (mul oy focal) d)) hh))
+                                                                           (or (not near)
+                                                                               (gt (merge (abs dx) (merge (abs dz) (abs dy)))
+                                                                                   nby))))
+                                                                (nil)
+                                                                (list zo o ox oy))))))))))))
+                                            objs))
+                                          ;; the nearest object (the smallest
+                                          ;; `zo`) goes into the fold first, so
+                                          ;; that consing each object's faces in
+                                          ;; front leaves it at the back of the
+                                          ;; list, painted last
+                                          (fold (lambda acc (lambda s
+                                                  (object-faces (head (tail s)) (head s)
+                                                                (head (tail (tail s)))
+                                                                (head (tail (tail (tail s))))
+                                                                (get cam yaw) focal
+                                                                cp sp cx cyy near acc)))
+                                                (nil)
+                                                (sort-by (lambda i (lambda j (lt (head i) (head j))))
+                                                         stood)))))))))))))))))))))))
 
 ;; The picture from a camera that stands back from what it looks at --
 ;; the platformer's and the city builder's.

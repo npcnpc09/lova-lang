@@ -64,15 +64,15 @@
 ;; walk to it.
 
 (def placed [m cy sy cp sp dist cx cyy]
-  (fold (lambda acc (lambda pr
-          (let p (turn (head pr) cy sy cp sp)
+  (fold (lambda acc (lambda v
+          (let p (turn v cy sy cp sp)
             (let d (max NEAR (merge (get p z) dist))
-              (map-put acc (head (tail pr))
+              (map-put acc (get v i)
                        (rec z d
                             su (merge cx (div (mul (get p x) FOCAL) d))
                             sv (sub cyy (div (mul (get p y) FOCAL) d))))))))
         (nil)
-        (zip (get m vs) (range 0 (len (get m vs))))))
+        (get m ivs)))
 
 ;; The inverse turn.  The rotation is orthonormal, so undoing it is
 ;; applying the pitch back and then the yaw back.
@@ -128,7 +128,25 @@
 ;; corners added rather than by any one of them is what keeps a long
 ;; triangle from jumping in front of a short one beside it.
 
-(def mesh [vs fs] (rec vs vs fs fs))
+;; A model, with the one thing about it that a frame would otherwise
+;; recompute: `ivs` is the vertex list with each vertex carrying its own
+;; number, so that placing a model is a fold over `ivs` rather than a
+;; fold over a `zip` of the vertices with a fresh `range` -- three list
+;; walks an object a frame, which for a city of a hundred cells is a
+;; hundred of them.  A model is built once, when the module is read, so
+;; this costs nothing a frame at all.
+;; `rad` is how far the model reaches from its own centre, measured as
+;; |x| + |y| + |z| -- never less than the true distance, so a cull that
+;; uses it errs on the side of drawing, and no square root is needed.
+;; A turn does not change it.
+(def mesh [vs fs]
+  (rec vs vs fs fs
+       ivs (map (lambda pr (put (head pr) i (head (tail pr))))
+                (zip vs (range 0 (len vs))))
+       rad (fold (lambda r (lambda v
+                   (max r (merge (abs (get v x))
+                                 (merge (abs (get v y)) (abs (get v z)))))))
+                 0 vs)))
 
 (def shot [m yaw pitch dist sw sh]
   (let cy (cos yaw)
