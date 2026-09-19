@@ -44,7 +44,11 @@ pub struct Rt {
     /// program; ids past its end were made during the run.
     pub ordinals: Rc<Vec<u32>>,
     pub let_chain: Option<(u32, bool)>,
-    pub current: Option<Rc<ClosureData>>,
+    /// The function whose body is running, for `hot` (spec §4.5).  A
+    /// borrowed pointer for the same reason as `ClosureData::owner`:
+    /// `named` keeps every candidate alive, and a call is too hot for
+    /// two refcount pairs.
+    pub current: *const ClosureData,
     pub mark: u64,
     pub named: Vec<Rc<ClosureData>>,
     pub output: String,
@@ -60,6 +64,11 @@ pub struct Rt {
     pub lineage: Rc<RefCell<Lineage>>,
     /// The deviations `trace` reports, in emission order.
     pub surprise: Vec<Int>,
+    /// The bytecode VM's state; `vm.on` says which evaluator runs.
+    pub vm: crate::vm::VmState,
+    /// A closure the VM made carries no `Scope`; this stands in the
+    /// field the tree-walker's closures use.
+    pub empty_env: Rc<Scope>,
 }
 
 impl Rt {
@@ -74,7 +83,7 @@ impl Rt {
             path: Vec::new(),
             ordinals: Rc::new(Vec::new()),
             let_chain: None,
-            current: None,
+            current: std::ptr::null(),
             mark: 0,
             named: Vec::new(),
             output: String::new(),
@@ -87,6 +96,8 @@ impl Rt {
             scope_pool: Vec::new(),
             lineage: Rc::new(RefCell::new(Lineage::new())),
             surprise: Vec::new(),
+            vm: crate::vm::VmState::new(),
+            empty_env: Scope::root(),
         }
     }
 
@@ -103,7 +114,7 @@ impl Rt {
         self.ordinals.get(id as usize).copied()
     }
 
-    fn read_line(&mut self) -> Option<String> {
+    pub fn read_line(&mut self) -> Option<String> {
         if self.input_pos < self.input.len() {
             let line = self.input[self.input_pos].clone();
             self.input_pos += 1;
@@ -156,7 +167,7 @@ fn charge_tick(rt: &mut Rt) -> R<()> {
 }
 
 #[inline]
-fn tick(rt: &mut Rt, n: u64) -> R<()> {
+pub fn tick(rt: &mut Rt, n: u64) -> R<()> {
     rt.steps = rt.steps.saturating_add(n);
     if rt.steps > rt.max_steps {
         return Err(step_trap(rt.steps, rt.max_steps));
@@ -182,7 +193,12 @@ pub fn as_int(a: &Arena, v: &Value, ctx: &str) -> R<Int> {
             ]),
             "use `fitness` for the scores or `select` for a variant",
         )),
-        Value::Map(_) | Value::Closure(_) | Value::Loop(_) | Value::Text(_) | Value::Tail(_) => {
+        Value::Map(_)
+        | Value::Closure(_)
+        | Value::Loop(_)
+        | Value::Text(_)
+        | Value::Tail(_)
+        | Value::Unset => {
             Err(domain(
                 "type-violation",
                 format!(
@@ -384,6 +400,15 @@ pub fn map_key(a: &Arena, v: &Value, ctx: &str) -> R<MapKey> {
         // The chain is walked where it lies: a key was costing a vector
         // of cloned values and then a vector of keys (Q124).
         Value::Nil | Value::Cons(_) => {
+            // A cell of a grid is the common key, and it needs nothing
+            // on the heap.
+            if let Value::Cons(first) = v {
+                if let (Value::Int(Int::S(x)), Value::Cons(second)) = (&first.head, &first.tail) {
+                    if let (Value::Int(Int::S(y)), Value::Nil) = (&second.head, &second.tail) {
+                        return Ok(MapKey::P(*x, *y));
+                    }
+                }
+            }
             let mut out = Vec::new();
             let mut rest = v;
             while let Value::Cons(cell) = rest {
@@ -480,7 +505,7 @@ pub fn require_capability(rt: &Rt, bit: u32, name: &str) -> R<()> {
 }
 
 /// The `OSError` subclass name Python's `type(exc).__name__` would give.
-fn os_error_name(e: &std::io::Error) -> &'static str {
+pub fn os_error_name(e: &std::io::Error) -> &'static str {
     match e.kind() {
         std::io::ErrorKind::NotFound => "FileNotFoundError",
         std::io::ErrorKind::PermissionDenied => "PermissionError",
@@ -489,7 +514,7 @@ fn os_error_name(e: &std::io::Error) -> &'static str {
     }
 }
 
-fn fs_fault(op: &str, path: &str, reason: &str) -> Fault {
+pub fn fs_fault(op: &str, path: &str, reason: &str) -> Fault {
     let hint = if op == "fs-read" {
         "give `fs-read` the path of a readable UTF-8 file"
     } else {
@@ -507,7 +532,7 @@ fn fs_fault(op: &str, path: &str, reason: &str) -> Fault {
     )
 }
 
-fn not_callable(a: &Arena, fnv: &Value) -> Fault {
+pub fn not_callable(a: &Arena, fnv: &Value) -> Fault {
     domain(
         "type-violation",
         format!(
@@ -523,12 +548,18 @@ produce callable values",
 fn unbound(rt: &Rt, name_id: i64) -> Fault {
     let mut names: Vec<i64> = rt.env.flatten().keys().copied().collect();
     names.sort_unstable();
+    unbound_with(name_id, &names)
+}
+
+/// The same anomaly from a name list the VM's compiler already knows:
+/// the binders its resolver walked, which is `flatten_env`'s key set.
+pub fn unbound_with(name_id: i64, names: &[i64]) -> Fault {
     domain(
         "unbound-ref",
         format!("unbound ref: {}", name_id),
         detail(vec![
             ("name_id", J::from(name_id)),
-            ("bound_names", J::from(names)),
+            ("bound_names", J::from(names.to_vec())),
         ]),
         "bind the name with a `let`, or reference one that is bound",
     )
@@ -546,10 +577,7 @@ fn cost_by_function(rt: &Rt) -> J {
             Some(n) => n,
             None => continue,
         };
-        let same_as_current = match &rt.current {
-            Some(c) => Rc::ptr_eq(c, f),
-            None => false,
-        };
+        let same_as_current = std::ptr::eq(Rc::as_ptr(f), rt.current);
         let own = f.own.get() + if same_as_current { open_steps } else { 0 };
         if !steps.contains_key(&name) {
             order.push(name);
@@ -568,11 +596,23 @@ fn cost_by_function(rt: &Rt) -> J {
     )
 }
 
-fn enrich(rt: &Rt, t: &mut Trap) {
-    let op = rt.path.last().map(|f| f.0);
+fn enrich(a: &Arena, rt: &Rt, t: &mut Trap) {
+    if rt.vm.frames.is_empty() {
+        let path = rt.path.clone();
+        enrich_with(rt, t, &path);
+    } else {
+        // The VM is below this tree-walk: its activations' chains and
+        // the nodes on `rt.path` interleave (vm/path.rs).
+        let full = crate::vm::path::full(a, rt, None);
+        enrich_with(rt, t, &full);
+    }
+}
+
+pub fn enrich_with(rt: &Rt, t: &mut Trap, path: &[(u8, u32)]) {
+    let op = path.last().map(|f| f.0);
     let alts = op.map(suggest_alternatives).unwrap_or_default();
-    t.anomaly.position_path = rt.path.iter().map(|f| f.0).collect();
-    t.anomaly.position_nodes = rt.path.iter().map(|f| rt.ordinal(f.1)).collect();
+    t.anomaly.position_path = path.iter().map(|f| f.0).collect();
+    t.anomaly.position_nodes = path.iter().map(|f| rt.ordinal(f.1)).collect();
     t.anomaly.offending_op = op;
     t.anomaly.offending_op_name = op.map(op_name).unwrap_or("").to_string();
     t.anomaly.valid_alternatives = alts.clone();
@@ -621,7 +661,7 @@ pub fn eval(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
     let mut out = eval_node(a, rt, id, tail, op);
     if let Err(Fault::Trap(t)) = &mut out {
         if !t.anomaly.enriched {
-            enrich(rt, t);
+            enrich(a, rt, t);
         }
     }
     rt.path.pop();
@@ -882,7 +922,8 @@ fn eval_node(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool, op: u8) -> R<Value
                 name: std::cell::Cell::new(None),
                 calls: std::cell::Cell::new(0),
                 own: std::cell::Cell::new(0),
-                owner: std::cell::RefCell::new(rt.current.clone()),
+                owner: std::cell::Cell::new(rt.current),
+                vm: None,
             })))
         }
         APPLY => {
@@ -1237,12 +1278,28 @@ fn eval_generic(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
         END => Err(Fault::NotImplemented(
             "operator end (family struct) not implemented in Milestone 1 runtime".into(),
         )),
-        _ if (0x40..=0x4F).contains(&op) => text::eval_text(a, rt, id, op),
+        _ if (0x40..=0x4F).contains(&op) => eval_text_node(a, rt, id, op),
         _ if (0x50..=0x57).contains(&op) => eval_list(a, rt, id, op),
         _ => Err(Fault::NotImplemented(
             format!("operator {} is outside this runtime's phase-2 scope", op_name(op)).into(),
         )),
     }
+}
+
+/// The text family's operands, evaluated left to right with the
+/// coercions the reference performs between them (`vm::ops`), then the
+/// work -- which both evaluators share.
+fn eval_text_node(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
+    let kids = a.kids(id).to_vec();
+    let mut args: Vec<Value> = Vec::with_capacity(kids.len());
+    for (i, k) in kids.iter().enumerate() {
+        let v = eval(a, rt, *k, false)?;
+        args.push(match crate::vm::ops::coerce_after(op, i) {
+            Some(ck) => crate::vm::ops::coerce(a, v, ck, op)?,
+            None => v,
+        });
+    }
+    text::work_text(a, rt, op, &args)
 }
 
 // --- the list family (spec §5.10) -------------------------------------------
@@ -1352,7 +1409,7 @@ fn eval_list(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
 
 /// D1: the specified merge sort.  The comparator call order is the
 /// language's, not the host sort's.
-fn merge_sort(a: &mut Arena, rt: &mut Rt, xs: Vec<Value>, less: &Value) -> R<Vec<Value>> {
+pub fn merge_sort(a: &mut Arena, rt: &mut Rt, xs: Vec<Value>, less: &Value) -> R<Vec<Value>> {
     if xs.len() <= 1 {
         return Ok(xs);
     }
@@ -1420,25 +1477,18 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
         if named {
             cl.calls.set(cl.calls.get() + 1);
         }
-        let me_at: *const ClosureData = if named {
-            Rc::as_ptr(&cl)
-        } else {
-            match &*cl.owner.borrow() {
-                Some(o) => Rc::as_ptr(o),
-                None => std::ptr::null(),
-            }
-        };
-        let now_at: *const ClosureData = match &rt.current {
-            Some(c) => Rc::as_ptr(c),
-            None => std::ptr::null(),
-        };
+        let me_at: *const ClosureData =
+            if named { Rc::as_ptr(&cl) } else { cl.owner.get() };
+        let now_at: *const ClosureData = rt.current;
         let changed = me_at != now_at;
-        let mut outer: Option<Rc<ClosureData>> = None;
+        let mut outer: *const ClosureData = std::ptr::null();
         if changed {
-            let me = if named { Some(cl.clone()) } else { cl.owner.borrow().clone() };
             let s = rt.steps;
-            outer = std::mem::replace(&mut rt.current, me);
-            if let Some(o) = &outer {
+            outer = std::mem::replace(&mut rt.current, me_at);
+            if !outer.is_null() {
+                // Safety: `named` holds it, and this runtime outlives
+                // the call.
+                let o = unsafe { &*outer };
                 o.own.set(o.own.get() + (s - rt.mark));
             }
             rt.mark = s;
@@ -1455,26 +1505,34 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
 
         #[cfg(feature = "prof")]
         crate::prof::mark(crate::prof::R_CALL);
-        let scope = open_frame(rt, &cl.env);
-        scope.vars.borrow_mut().insert(cl.param, arg);
-        let saved_env = std::mem::replace(&mut rt.env, scope);
         let saved_caps = rt.caps;
         let saved_enclosed = rt.enclosed;
         rt.caps = cl.caps;
         rt.enclosed = cl.enclosed;
 
-        let result = eval(a, rt, cl.body, true);
+        // The frame is the evaluator's: a `Scope` the tree-walker looks
+        // up by name, or a slotted VM frame.
+        let result = if cl.vm.is_some() {
+            crate::vm::exec::enter_closure(a, rt, &cl, arg)
+        } else {
+            let scope = open_frame(rt, &cl.env);
+            scope.vars.borrow_mut().insert(cl.param, arg);
+            let saved_env = std::mem::replace(&mut rt.env, scope);
+            let out = eval(a, rt, cl.body, true);
+            let spent = std::mem::replace(&mut rt.env, saved_env);
+            recycle_frame(rt, spent);
+            out
+        };
         #[cfg(feature = "prof")]
         crate::prof::mark(crate::prof::R_CALL);
 
-        let spent = std::mem::replace(&mut rt.env, saved_env);
-        recycle_frame(rt, spent);
         rt.caps = saved_caps;
         rt.enclosed = saved_enclosed;
         rt.call_depth -= 1;
         if changed {
             let s = rt.steps;
-            if let Some(m) = &rt.current {
+            if !rt.current.is_null() {
+                let m = unsafe { &*rt.current };
                 m.own.set(m.own.get() + (s - rt.mark));
             }
             rt.mark = s;
@@ -1482,8 +1540,23 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
         }
 
         match result? {
-            // The marker is made fresh by `apply` and nothing else
-            // holds it, so its two values move out rather than clone.
+            // The VM's marker: the pair is on the runtime, so a tail
+            // call costs no allocation at all.
+            Value::Unset => match rt.vm.tail.take() {
+                Some((f, next)) => {
+                    fnv = f;
+                    arg = next;
+                }
+                None => {
+                    // The marker is made by `TailApply` and taken
+                    // here; an unwritten slot can never be a value.
+                    debug_assert!(false, "an unwritten slot escaped a unit as its value");
+                    return Ok(Value::Unset);
+                }
+            },
+            // The tree-walker's marker is made fresh by `apply` and
+            // nothing else holds it, so its two values move out rather
+            // than clone.
             Value::Tail(t) => match Rc::try_unwrap(t) {
                 Ok((f, next)) => {
                     fnv = f;

@@ -23,6 +23,11 @@ pub enum Value {
     /// A call in tail position, handed back to `call` (spec §4.4).
     /// Never escapes a call frame.
     Tail(Rc<(Value, Value)>),
+    /// A VM slot that has not been written yet: a binding whose value
+    /// is still being evaluated (`vm/compile.rs`).  It is never an
+    /// operand, never a result and never crosses the protocol; a read
+    /// of one is the reference's name walk missing the frame.
+    Unset,
 }
 
 pub struct ConsCell {
@@ -53,12 +58,19 @@ pub struct ClosureData {
     pub param: i64,
     pub body: u32,
     pub env: Rc<Scope>,
+    /// Set when the VM compiled the body: its unit and the frame chain
+    /// it captured.  `None` is a tree-walker closure.
+    pub vm: Option<crate::vm::VmCode>,
     pub caps: u32,
     pub enclosed: bool,
     pub name: Cell<Option<i64>>,
     pub calls: Cell<u64>,
     pub own: Cell<u64>,
-    pub owner: RefCell<Option<Rc<ClosureData>>>,
+    /// The named closure whose body made this one, for `hot`.  A
+    /// borrowed pointer: every closure that can be an owner is one a
+    /// `let` named, and `Rt::named` holds an `Rc` to each of those for
+    /// the runtime's life.  Null is "no owner".
+    pub owner: Cell<*const ClosureData>,
 }
 
 pub struct LoopFn {
@@ -218,11 +230,31 @@ impl Scope {
 /// boxed codepoints on every read -- a seventh of the city builder's
 /// frame.  `T(s)` hashes and compares exactly as `L` of its
 /// codepoints does, so the two spellings are one key.
+/// `P` is a two-element list of small integers without the vector
+/// (Q128): the 3D worlds key a map by a cell, `(list x y)`, and that
+/// was an allocation and a walk on every read.  It hashes and compares
+/// exactly as `L` of its two integers does.
 #[derive(Clone)]
 pub enum MapKey {
     I(Int),
     L(Vec<MapKey>),
     T(Rc<String>),
+    P(i64, i64),
+}
+
+/// `P` against the general spelling of the same key.
+fn pair_is_list(x: i64, y: i64, v: &[MapKey]) -> bool {
+    v.len() == 2
+        && matches!(&v[0], MapKey::I(Int::S(a)) if *a == x)
+        && matches!(&v[1], MapKey::I(Int::S(b)) if *b == y)
+}
+
+fn pair_is_text(x: i64, y: i64, s: &str) -> bool {
+    let mut chars = s.chars();
+    match (chars.next(), chars.next(), chars.next()) {
+        (Some(a), Some(b), None) => a as i64 == x && b as i64 == y,
+        _ => false,
+    }
 }
 
 fn text_is_list(s: &str, v: &[MapKey]) -> bool {
@@ -243,6 +275,13 @@ impl PartialEq for MapKey {
             (MapKey::L(a), MapKey::L(b)) => a == b,
             (MapKey::T(a), MapKey::T(b)) => Rc::ptr_eq(a, b) || a == b,
             (MapKey::T(s), MapKey::L(v)) | (MapKey::L(v), MapKey::T(s)) => text_is_list(s, v),
+            (MapKey::P(x, y), MapKey::P(p, q)) => x == p && y == q,
+            (MapKey::P(x, y), MapKey::L(v)) | (MapKey::L(v), MapKey::P(x, y)) => {
+                pair_is_list(*x, *y, v)
+            }
+            (MapKey::P(x, y), MapKey::T(s)) | (MapKey::T(s), MapKey::P(x, y)) => {
+                pair_is_text(*x, *y, s)
+            }
             _ => false,
         }
     }
@@ -275,6 +314,12 @@ impl std::hash::Hash for MapKey {
                     n += 1;
                 }
                 state.write_usize(n);
+                state.write_u8(1);
+            }
+            MapKey::P(x, y) => {
+                state.write_i64(*x);
+                state.write_i64(*y);
+                state.write_usize(2);
                 state.write_u8(1);
             }
         }
@@ -514,6 +559,10 @@ pub fn py_repr_str(text: &str) -> String {
 
 pub fn value_repr(a: &Arena, v: &Value) -> String {
     match v {
+        Value::Unset => {
+            debug_assert!(false, "an unwritten slot reached a message");
+            "<unset>".to_string()
+        }
         Value::Int(i) => i.to_string(),
         Value::Text(s) => py_repr_str(s),
         Value::Nil => "()".to_string(),
@@ -588,6 +637,10 @@ pub fn kind_of(v: &Value) -> &'static str {
 /// The Python type name, which `_map_key`'s fault quotes verbatim.
 pub fn type_name(v: &Value) -> &'static str {
     match v {
+        Value::Unset => {
+            debug_assert!(false, "an unwritten slot reached a message");
+            "NoneType"
+        }
         Value::Int(_) => "int",
         Value::Text(_) => "str",
         Value::Nil => "_Nil",

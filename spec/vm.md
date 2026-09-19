@@ -77,12 +77,13 @@ traps ──────────────────> the same Anomaly (
   live in which slots), a **node table** (instruction index -> arena
   node id, for `position_path` / `position_nodes`), and the static
   parent chain of every node in the unit.
-* **Compilation is lazy and cached on the closure**, exactly as
-  `Closure.code` is in Python: the first application of a closure
-  compiles its body; a program value (`quote`, `clone`, `mutate`,
-  `read`) is compiled when `eval`ed. The cache is keyed by arena node
-  id and lives on the `ClosureData` / in a side table for program
-  values, so a `session` compiles each body once for its life.
+* **Compilation is eager** (as built; the first draft said lazy):
+  every unit of a program is compiled at `run` / `session` before
+  evaluation starts, because the analysis -- which units are captured
+  and so live on the heap, and the depth of every load -- is
+  whole-program. A `session` compiles once for its life; a `run` of a
+  large program pays a few milliseconds (§8.1). Lazy *emission* per
+  unit is a possible later saving, measured at under 5% (§8.1).
 * **The program's root unit** is compiled at `run` / `session` before
   evaluation starts; a compile error (only malformed trees can
   produce one: a non-literal `let` name slot, etc.) is **not** raised
@@ -200,6 +201,21 @@ of a compilation unit:
 is bound by **no** lexical binder (the unbound-ref error path): the
 compiler emits `LoadDyn` so that the runtime raises the exact
 `unbound-ref` anomaly with the exact `bound_names`.
+
+**The live set (review of 2026-09-19, F1).** A region's slots stay
+physically written after the region closes when a closure captured
+the frame -- the closure must keep reading them -- but the reference
+pops the `Scope` at that point, so to the caller, and to anything the
+caller delegates (`eval`, `conserve`, `trace`, the Meta and Evolution
+families), those names **no longer exist**. The flattened environment
+a delegated subtree receives, and the `bound_names` an `unbound-ref`
+reports, are therefore built from the **lexically live** bindings at
+that point -- the compiler hands each `Delegate` (and each by-name
+load) the set of slots in scope there -- and from what is actually
+*written*, never from the compiler's visibility list alone (which
+admits a binder still pending in its own group). The first build
+conflated the two: `(let yy 5 (seq (let yy 1 (lambda q yy)) (conserve
+10 (merge yy yy))))` passed on the reference and trapped on the VM.
 
 ## 3. Calls
 

@@ -21,6 +21,18 @@ pub const R_LOOKUP: u32 = 0x101;
 pub const R_MAPKEY: u32 = 0x102;
 pub const R_REROOT: u32 = 0x103;
 pub const R_DROP: u32 = 0x104;
+/// The VM's dispatch loop: fetch, stack traffic, loads and stores.
+pub const R_VMLOOP: u32 = 0x110;
+pub const R_VM_TICK: u32 = 0x111;
+pub const R_VM_LOAD: u32 = 0x112;
+pub const R_VM_STACK: u32 = 0x113;
+pub const R_VM_CALL: u32 = 0x114;
+pub const R_VM_CLOSURE: u32 = 0x115;
+pub const R_VM_RET: u32 = 0x116;
+pub const R_VM_EXIT: u32 = 0x117;
+pub const R_VM_DROP: u32 = 0x118;
+pub const R_VM_ENTER: u32 = 0x119;
+pub const R_VM_MAPGET: u32 = 0x11A;
 
 #[inline(always)]
 pub fn mark(what: u32) {
@@ -35,6 +47,17 @@ pub fn region_name(code: u32) -> String {
         R_MAPKEY => "map key".to_string(),
         R_REROOT => "map reroot".to_string(),
         R_DROP => "value drop".to_string(),
+        R_VMLOOP => "vm: dispatch (fetch and branch)".to_string(),
+        R_VM_TICK => "vm: tick".to_string(),
+        R_VM_LOAD => "vm: load / const".to_string(),
+        R_VM_STACK => "vm: store, pop, jump, coerce".to_string(),
+        R_VM_CALL => "vm: call instruction".to_string(),
+        R_VM_CLOSURE => "vm: make closure".to_string(),
+        R_VM_RET => "vm: the return itself".to_string(),
+        R_VM_EXIT => "vm: activation teardown".to_string(),
+        R_VM_DROP => "vm: dropping the activation's values".to_string(),
+        R_VM_ENTER => "vm: activation setup".to_string(),
+        R_VM_MAPGET => "vm: map lookup (hash, probe, reroot)".to_string(),
         op if op < 0x100 => format!("{} (0x{:02x})", crate::tokens::op_name(op as u8), op),
         other => format!("region {}", other),
     }

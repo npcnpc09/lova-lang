@@ -239,6 +239,20 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M37** (2026-09-20) -- **Q128, the bytecode VM is the default.**
+`native/lova-rt` 0.4.0 compiles a program to slots, stack frames,
+batched ticks and a derived `position_path` (`spec/vm.md`), delegating
+`eval` / `conserve` / `trace` / Meta / Evolution to the tree-walker,
+which stays as `--tree`; `tools/differential.py` runs both on
+everything. 1.3-1.7x over the tree-walker (war terrain 11.2 M steps/s,
+a city frame 11.7, FPS 10.7); the 15 M target was not met and the
+owner stopped it there. The review found a silent wrong value (a
+captured `let` region still visible by name to a later `conserve` /
+`eval`) that no gate could see -- fixed with a live-slot mask -- plus
+fabricated `unbound-ref` fields and an out-of-memory heap overflow in
+the pool allocator, all fixed and re-reviewed three-way. Tests 1100.
+`journal/README.md`, "Milestone 37".
+
 **M36** (2026-09-19) -- **Q129, the renderer's own steps.** A frame
 of `lib/scene3d.lova` costs a quarter less (vertex 149 -> 98 steps,
 face 124 -> 107; the FPS `--shot` frame 153 000 -> 115 000) by writing

@@ -2,7 +2,7 @@
 //! every operator that says "characters" means codepoints.
 
 use crate::int::Int;
-use crate::rt::{as_int, as_list, as_text, as_vec, sep_of, eval, Rt};
+use crate::rt::{as_int, as_list, as_text, as_vec, sep_of, Rt};
 use crate::tokens::*;
 use crate::trap::*;
 use crate::value::*;
@@ -32,12 +32,10 @@ fn clamp(i: &Int, len: usize) -> usize {
     }
 }
 
-pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
+pub fn work_text(a: &Arena, rt: &mut Rt, op: u8, args: &[Value]) -> R<Value> {
     match op {
-        LIT_TEXT => Ok(Value::Text(a.get(id).sval.clone().unwrap())),
         TEXT_LEN => {
-            let k = a.kids(id)[0];
-            let v = eval(a, rt, k, false)?;
+            let v = args[0].clone();
             let n = match &v {
                 Value::Text(s) => s.chars().count(),
                 other => as_vec(a, other, "text-len")?.len(),
@@ -45,9 +43,8 @@ pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             Ok(Value::Int(Int::from_usize(n)))
         }
         TEXT_CAT => {
-            let (k0, k1) = (a.kids(id)[0], a.kids(id)[1]);
-            let x = eval(a, rt, k0, false)?;
-            let y = eval(a, rt, k1, false)?;
+            let x = args[0].clone();
+            let y = args[1].clone();
             if let (Value::Text(p), Value::Text(q)) = (&x, &y) {
                 let mut out = String::with_capacity(p.len() + q.len());
                 out.push_str(p);
@@ -59,11 +56,10 @@ pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             Ok(list_from(xs))
         }
         TEXT_SLICE => {
-            let (k0, k1, k2) = (a.kids(id)[0], a.kids(id)[1], a.kids(id)[2]);
-            let v = eval(a, rt, k0, false)?;
-            let start = eval(a, rt, k1, false)?;
+            let v = args[0].clone();
+            let start = args[1].clone();
             let start = as_int(a, &start, "text-slice")?;
-            let end = eval(a, rt, k2, false)?;
+            let end = args[2].clone();
             let end = as_int(a, &end, "text-slice")?;
             if let Value::Text(s) = &v {
                 let chars: Vec<char> = s.chars().collect();
@@ -76,10 +72,9 @@ pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             Ok(list_from(if j > i { xs[i..j].to_vec() } else { Vec::new() }))
         }
         TEXT_FIND => {
-            let (k0, k1) = (a.kids(id)[0], a.kids(id)[1]);
-            let v = eval(a, rt, k0, false)?;
+            let v = args[0].clone();
             let t = as_text(a, &v, "text-find")?;
-            let n = eval(a, rt, k1, false)?;
+            let n = args[1].clone();
             let needle = sep_of(a, &n, "text-find")?;
             Ok(Value::Int(match t.find(needle.as_str()) {
                 Some(byte) => Int::from_usize(t[..byte].chars().count()),
@@ -87,10 +82,9 @@ pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             }))
         }
         TEXT_SPLIT => {
-            let (k0, k1) = (a.kids(id)[0], a.kids(id)[1]);
-            let v = eval(a, rt, k0, false)?;
+            let v = args[0].clone();
             let t = as_text(a, &v, "text-split")?;
-            let s = eval(a, rt, k1, false)?;
+            let s = args[1].clone();
             let sep = sep_of(a, &s, "text-split")?;
             let parts: Vec<Value> = if sep.is_empty() {
                 t.split(is_py_space)
@@ -105,9 +99,8 @@ pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             Ok(list_from(parts))
         }
         TEXT_JOIN => {
-            let (k0, k1) = (a.kids(id)[0], a.kids(id)[1]);
-            let parts = eval(a, rt, k0, false)?;
-            let s = eval(a, rt, k1, false)?;
+            let parts = args[0].clone();
+            let s = args[1].clone();
             let sep = sep_of(a, &s, "text-join")?;
             let parts = match &parts {
                 Value::Text(s) => text_chars(s),
@@ -124,22 +117,19 @@ pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             Ok(Value::Text(Rc::new(out)))
         }
         TEXT_CHARS => {
-            let k = a.kids(id)[0];
-            let v = eval(a, rt, k, false)?;
+            let v = args[0].clone();
             match &v {
                 Value::Text(s) => Ok(text_chars(s)),
                 other => as_list(a, other, "text-chars"),
             }
         }
         TEXT_OF_CHARS => {
-            let k = a.kids(id)[0];
-            let v = eval(a, rt, k, false)?;
+            let v = args[0].clone();
             Ok(Value::Text(as_text(a, &v, "text-of-chars")?))
         }
         TEXT_CMP => {
-            let (k0, k1) = (a.kids(id)[0], a.kids(id)[1]);
-            let x = eval(a, rt, k0, false)?;
-            let y = eval(a, rt, k1, false)?;
+            let x = args[0].clone();
+            let y = args[1].clone();
             if let (Value::Text(p), Value::Text(q)) = (&x, &y) {
                 // Python compares strings by code point; UTF-8 byte
                 // order is the same order.
@@ -158,8 +148,7 @@ pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             })))
         }
         TEXT_INT => {
-            let k = a.kids(id)[0];
-            let v = eval(a, rt, k, false)?;
+            let v = args[0].clone();
             let raw = as_text(a, &v, "text-int")?;
             let t = py_strip(&raw);
             let body = t.strip_prefix('-').unwrap_or(t);
@@ -180,28 +169,24 @@ pub fn eval_text(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
             Ok(Value::Int(parse_int(t)))
         }
         INT_TEXT => {
-            let k = a.kids(id)[0];
-            let v = eval(a, rt, k, false)?;
+            let v = args[0].clone();
             let n = as_int(a, &v, "int-text")?;
             Ok(Value::Text(Rc::new(n.to_string())))
         }
         IS_TEXT => {
-            let k = a.kids(id)[0];
-            let v = eval(a, rt, k, false)?;
+            let v = args[0].clone();
             Ok(Value::Int(Int::from_i64(if matches!(v, Value::Text(_)) { 1 } else { 0 })))
         }
         TEXT_TRIM => {
-            let k = a.kids(id)[0];
-            let v = eval(a, rt, k, false)?;
+            let v = args[0].clone();
             let s = as_text(a, &v, "text-trim")?;
             Ok(Value::Text(Rc::new(py_strip(&s).to_string())))
         }
         TEXT_MATCH | TEXT_MATCH_ALL => {
             let ctx = op_name(op);
-            let (k0, k1) = (a.kids(id)[0], a.kids(id)[1]);
-            let v = eval(a, rt, k0, false)?;
+            let v = args[0].clone();
             let t = as_text(a, &v, ctx)?;
-            let p = eval(a, rt, k1, false)?;
+            let p = args[1].clone();
             let pat = as_text(a, &p, ctx)?;
             let re = compile_pattern(rt, &pat, ctx)?;
             if op == TEXT_MATCH {

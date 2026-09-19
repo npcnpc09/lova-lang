@@ -1,6 +1,7 @@
 //! `spec/native-runtime-protocol.md`: one JSON request per line in, one
 //! JSON reply per line out.  Nothing else goes on stdout.
 
+mod alloc;
 mod conserve;
 mod evolve;
 mod fx;
@@ -18,6 +19,7 @@ mod tokens;
 mod tokens_table;
 mod trap;
 mod value;
+mod vm;
 
 use serde_json::{json, Map as JMap, Value as J};
 use session::Session;
@@ -26,7 +28,12 @@ use std::io::{BufRead, Write};
 use tokens::*;
 use trap::Fault;
 
-const VERSION: &str = "lova-rt 0.3.0";
+const VERSION: &str = "lova-rt 0.4.0";
+
+/// Small allocations -- a cons cell, a closure, a frame -- go through
+/// a size-class free list instead of the system heap (`alloc.rs`).
+#[global_allocator]
+static ALLOCATOR: alloc::Pooled = alloc::Pooled;
 
 /// D7, phase 3: everything but `read` / `explain`, which need the
 /// Stage-1 surface, and the network.
@@ -36,7 +43,46 @@ fn unsupported(op: u8) -> bool {
     UNSUPPORTED.contains(&op)
 }
 
+/// Which evaluator runs: the bytecode VM (`vm/`) or the tree-walker
+/// (`rt.rs`).  `--tree` / `--vm` on the command line, `LOVA_RT_EVAL`
+/// in the environment, otherwise the default below.
+const DEFAULT_VM: bool = true;
+static USE_VM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(DEFAULT_VM);
+
+fn use_vm() -> bool {
+    USE_VM.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn choose_evaluator() {
+    let mut on = DEFAULT_VM;
+    if let Ok(v) = std::env::var("LOVA_RT_EVAL") {
+        match v.as_str() {
+            "tree" => on = false,
+            "vm" => on = true,
+            _ => {}
+        }
+    }
+    for arg in std::env::args() {
+        match arg.as_str() {
+            "--tree" => on = false,
+            "--vm" => on = true,
+            _ => {}
+        }
+    }
+    USE_VM.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// One run of a decoded program, on the evaluator this process chose.
+fn evaluate(arena: &mut Arena, state: &mut rt::Rt, root: u32) -> Result<value::Value, Fault> {
+    if state.vm.on {
+        vm::exec::run_program(arena, state, root)
+    } else {
+        rt::eval(arena, state, root, false)
+    }
+}
+
 fn main() {
+    choose_evaluator();
     // A LOVA call is several Rust frames, and the depth ceiling is ten
     // thousand calls; the main thread's stack is not enough.
     #[cfg(feature = "prof")]
@@ -71,6 +117,7 @@ fn serve() -> i32 {
                 Some("ping") => json!({
                     "ok": true,
                     "version": VERSION,
+                    "eval": if use_vm() { "vm" } else { "tree" },
                     "unsupported": UNSUPPORTED.iter().map(|o| op_name(*o))
                         .collect::<Vec<&str>>(),
                 }),
@@ -140,6 +187,7 @@ fn prepare(request: &J, id: &J) -> Result<Ready, J> {
     let max_depth = request.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(10_000) as u32;
 
     let mut state = rt::Rt::new(max_steps, max_depth, allow, stdin_text);
+    state.vm.on = use_vm();
     state.ordinals = std::rc::Rc::new(preorder_ordinals(&arena, root));
     Ok(Ready { arena, root, state, max_steps })
 }
@@ -153,7 +201,7 @@ fn run(request: &J) -> J {
     let (arena, state) = (&mut ready.arena, &mut ready.state);
     let root = ready.root;
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        rt::eval(arena, state, root, false)
+        evaluate(arena, state, root)
     }));
 
     let mut reply = JMap::new();
@@ -196,7 +244,7 @@ fn open(request: &J, sessions: &mut HashMap<u64, Session>, next: &mut u64) -> J 
     let outcome = {
         let (arena, state) = (&mut ready.arena, &mut ready.state);
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            rt::eval(arena, state, root, false)
+            evaluate(arena, state, root)
         }))
     };
 

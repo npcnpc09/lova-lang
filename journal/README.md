@@ -666,6 +666,76 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 37 (2026-09-20) -- Q128: the bytecode VM is the default evaluator
+
+`native/lova-rt` 0.4.0 carries two evaluators. The VM compiles a
+program once to a flat instruction stream with variables resolved to
+slots (§2 of `spec/vm.md`), frames on the VM stack where nothing
+captures them, the `let` chain rule mapped statically, step charges
+batched per straight-line run when the run fits under both ceilings
+and charged node by node otherwise, `position_path` derived on a trap
+from the node table and the frame stack, a constant pool with
+pre-hashed record keys, fused two-operand instructions, and `eval` /
+`conserve` / `trace` / the Meta and Evolution families delegated to
+the tree-walker over a flattened environment. The tree-walker stays,
+as `--tree` / `LOVA_RT_EVAL=tree`, and `tools/differential.py` runs
+both on every program in the repository plus two thousand generated
+ones at four ceilings.
+
+**Built in three rounds by one Opus agent, reviewed twice by another.**
+Round one: conformant on the first run but 1.16x, the profile being
+calls, allocation and map keys, not dispatch; and the spec's batching
+rule was unsound as written (an earlier operator's own fault must win
+over the ceiling the eager charge would trap at) -- amended, §4.1.
+Round two: mimalloc cannot be built here (a `windows-gnu` toolchain
+with no C compiler), so a size-class pool allocator in Rust;
+`rt.current` / `owner` as borrowed pointers kept alive by `rt.named`;
+a pair key with no vector; regions released where the reference pops
+them. 1.3-1.7x over the tree-walker: war terrain 8.5 -> 11.2 M
+steps/s, a city frame 7.5 -> 11.7, the FPS 300 ticks 6.7 -> 10.7, a
+wide arithmetic body 14 -> 30. Not the 15 M the spec asked for: what
+remains is freeing the cons cells an activation built (18% of a city
+frame), the map's hash and probe (18%), and the reference's own call
+bookkeeping -- a different value representation, not a faster loop.
+
+**What the review found that no gate could.** Every claimed gate
+reproduced. Then a hundred adversarial programs run three ways --
+the Python reference, the tree-walker, the VM -- found a **wrong
+value, silently**: a `let` region a closure had captured kept its
+names visible to a later `eval` / `conserve` / `trace` in the same
+unit, where the reference has popped the `Scope`; `(let yy 5 (seq
+(let yy 1 (lambda q yy)) (conserve 10 (merge yy yy))))` passed on the
+reference and trapped on the VM. No program in the repository has
+that shape and the generator cannot make it. Two diagnostic fields
+of `unbound-ref` were fabricated; the allocator's out-of-memory path
+recycled a system block onto a pool free list (a heap overflow for
+sizes under eight); a `&mut` to the pool lived across the lock; two
+paths turned a fault into a silent value. Fixed: a live-slot mask
+carried on `Delegate` and `MakeClosure` and recorded per frame, so
+the closure keeps reading and the by-name view forgets; `bound_names`
+from the written slots at fault time; null on chunk failure, a lock
+guard, faults propagated; eleven unit tests from the reproductions
+and a fixed corpus in the differential harness. The re-review ran 134
+programs three-way, reverted the mask in a scratch copy and showed the
+corpus catches exactly the original defect and nothing else in 5 048
+runs, stressed the allocator across four threads, and ran the
+differential on a debug build with the invariant assertions live. One
+residual, documented: a program that delegates nowhere and raises an
+`unbound-ref` under a stack-framed ancestor lists a subset of the
+names in the hint; nothing else differs. A session retains every
+named closure for its life (138 bytes a call; the pointer invariant
+depends on it).
+
+**Gates on the shipped binary:** 27 unit tests; conformance 989
+(988 + the clock record), the whole output byte-identical between the
+evaluators; 12 248 differential runs, 0 differences; the drivers'
+`--shot` byte-identical between evaluators and to the committed
+screenshots; the suite 1 100. The owner's ruling before the last
+round: finish what makes it correct and safe, then stop -- no session
+arm, no generator layer, no third round. So the VM is the default at
+1.3-1.7x, with Q129's quarter off the frame multiplying in: the FPS
+frame is 115 000 steps at ~10 M a second, twelve milliseconds.
+
 ### Milestone 36 (2026-09-19) -- Q129: a frame costs a quarter less
 
 The owner, after opening the three ports on the native runtime: still

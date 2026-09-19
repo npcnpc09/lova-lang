@@ -195,6 +195,16 @@ fn scan_body_offender(
         let observed = values.get(&c.path).cloned();
         for alt in alts {
             let kids = a.kids(c.node).to_vec();
+            // A swap that changes the arity (`threshold` for
+            // `deviation`) builds a node no handler can read.  The
+            // reference probes it anyway and records the exception as
+            // "unknown"; a port with indexed children would fault, so
+            // the candidate is skipped -- which is the same outcome,
+            // since such a probe never returns the expected value.
+            if !matches!(sig(alt).map(|s| &s.arity), Some(Arity::N(n)) if *n as usize == kids.len())
+            {
+                continue;
+            }
             let (ival, sval) = {
                 let n = a.get(c.node);
                 (n.ival.clone(), n.sval.clone())

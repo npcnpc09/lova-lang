@@ -763,8 +763,9 @@ Stated plainly, because the list is short and the omissions are large:
 - **It is an interpreter.** The tree is compiled to closures (M23)
   and runs at ~700 000 steps a second on CPython, ~4 million under
   PyPy (journal M22, M23 and M25 have the profiles); the native
-  runtime (M33, M34) runs the same programs at 4-5 million steps a
-  second, 8-11x CPython, and the tick-driven 3D apps run on it. Tens of thousands of lines of
+  runtime (M33-M37: a Rust tree-walker, then a bytecode VM) runs the
+  same programs at 10-12 million steps a second, 20x CPython, and the
+  tick-driven 3D apps run on it. Tens of thousands of lines of
   input are seconds; millions are not this language yet (Q76).
 - **IO is whole values.** `fs-read` reads a whole file, `net-recv` one
   datagram: there are no handles and no streams (Q72). The terminal is

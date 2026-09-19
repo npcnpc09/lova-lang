@@ -116,6 +116,10 @@ impl Session {
                 J::Array(out)
             }
             other => {
+                debug_assert!(
+                    !matches!(other, Value::Unset),
+                    "an unwritten slot reached the protocol"
+                );
                 let id = self.ref_for(other);
                 json!({ "ref": id })
             }
@@ -290,7 +294,7 @@ pub fn call(sessions: &mut HashMap<u64, Session>, request: &J) -> J {
     // and no function in flight from the call before it.
     s.rt.steps = 0;
     s.rt.mark = 0;
-    s.rt.current = None;
+    s.rt.current = std::ptr::null();
     s.rt.output.clear();
     s.rt.path.clear();
 
