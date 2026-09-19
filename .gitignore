@@ -36,3 +36,6 @@ scratch/
 corpus/finetune/chat_card_*.jsonl
 experiments/results_17/reference.json
 .playwright-mcp/
+
+# Rust
+native/lova-rt/target/

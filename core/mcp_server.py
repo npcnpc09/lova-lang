@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import os
 import sys
 from dataclasses import asdict
@@ -111,6 +112,14 @@ TOOLS: List[Dict[str, Any]] = [
                           "description": "lines the program may read with (stdin)"},
                 "max_steps": {"type": "integer", "default": 20000000},
                 "max_depth": {"type": "integer", "default": 10000},
+                "native": {"type": "string", "enum": ["auto", "on", "off"],
+                           "default": "auto",
+                           "description": "run on the native runtime when "
+                                          "there is one and the program stays "
+                                          "inside what it implements (`auto`), "
+                                          "require it (`on`), or use the "
+                                          "Python runtime (`off`).  The result "
+                                          "says which ran, in `runtime`"},
             },
             "required": ["source"],
         },
@@ -336,6 +345,13 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
     except ValueError as exc:
         return _failure("grant", exc)
     stdin_text = params.get("stdin") or ""
+
+    mode = str(params.get("native", "auto"))
+    if mode != "off":
+        answer = _execute_native(params, tree, source, granted, stdin_text, mode)
+        if answer is not None:
+            return answer
+
     runtime = Runtime(
         max_steps=int(params.get("max_steps", CLI_MAX_STEPS)),
         max_call_depth=int(params.get("max_depth", CLI_MAX_DEPTH)),
@@ -349,6 +365,7 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
         result = _failure("run", exc, source)
         result["output"] = runtime.written()
         result["steps"] = runtime.steps
+        result["runtime"] = "python"
         return result
     return {
         "ok": True,
@@ -357,7 +374,106 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
         "steps": runtime.steps,
         "surprise_events": len(runtime.surprise.events),
         "caught": _jsonable(runtime.caught),
+        "runtime": "python",
     }
+
+
+def _execute_native(params: Dict[str, Any], tree: Any, source: str,
+                    granted: int, stdin_text: str,
+                    mode: str) -> Optional[Dict[str, Any]]:
+    """`lova_execute` on a native runtime, or ``None`` for "Python's".
+
+    A trap comes back as the trap class the Python runtime would have
+    raised, carrying the native anomaly with its span already recovered
+    from the tree -- so `_failure` fills `excerpt`, `line` and `col` from
+    the source exactly as it does for a Python trap.
+    """
+    from core.native import NativeUnavailable, NativeUnsupported, choose
+
+    try:
+        # Shared: one process for the life of the server, because a host
+        # asks this tool once per attempt and starting a binary each
+        # time is what the persistent protocol exists to avoid.
+        native = choose(tree, mode, shared=True)
+    except (NativeUnavailable, NativeUnsupported) as exc:
+        return {"ok": False, "stage": "native", "runtime": "native",
+                "anomaly": {"kind": "error", "message": str(exc)}}
+    if native is None:
+        return None
+    try:
+        result = native.run(
+            tree, stdin=stdin_text, allow=granted,
+            max_steps=int(params.get("max_steps", CLI_MAX_STEPS)),
+            max_call_depth=int(params.get("max_depth", CLI_MAX_DEPTH)))
+    except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError) as exc:
+        name_anomaly(getattr(exc, "anomaly", None), getattr(tree, "symbols", None))
+        failure = _failure("run", exc, source)
+        failure["output"] = getattr(exc, "stdout", "")
+        failure["steps"] = getattr(exc, "steps", 0)
+        failure["runtime"] = "native"
+        return failure
+    except (NativeUnavailable, NativeUnsupported) as exc:
+        if mode == "on":
+            return {"ok": False, "stage": "native", "runtime": "native",
+                    "anomaly": {"kind": "error", "message": str(exc)}}
+        return None
+    out = _printed_value_fields(result.value_text)
+    out.update({
+        "ok": True,
+        "output": result.stdout,
+        "steps": result.steps,
+        "runtime": "native",
+    })
+    return out
+
+
+_PRINTED_INT = re.compile(r"-?\d+\Z")
+_PRINTED_INT_LIST = re.compile(r"\((-?\d+(?: -?\d+)*)?\)(?:  \".*)?\Z", re.S)
+_TEXT_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\"}
+
+
+def _printed_value_fields(text: str) -> Dict[str, Any]:
+    """`_value_fields` read off the printed form the native runtime returns.
+
+    The protocol carries the value as `format_value` prints it, and on
+    the three shapes the Python path types -- an integer, a text, a flat
+    list of integers -- that printing is one-to-one: a text is
+    `quote_text`, whose four escapes are undone here; a list of integers
+    is its elements in parentheses, with the text they spell after two
+    spaces when they are all codepoints.  Anything else (a nested list,
+    a map, a record, a closure) keeps only `value`, as the Python path
+    does.  Nothing is guessed: a printed form that does not match one
+    of the three exactly is left as it is.
+    """
+    out: Dict[str, Any] = {"value": text}
+    if _PRINTED_INT.match(text):
+        out["value_int"] = int(text)
+        return out
+    if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
+        body, chars, i = text[1:-1], [], 0
+        while i < len(body):
+            ch = body[i]
+            if ch == "\\" and i + 1 < len(body) and body[i + 1] in _TEXT_ESCAPES:
+                chars.append(_TEXT_ESCAPES[body[i + 1]])
+                i += 2
+            else:
+                chars.append(ch)
+                i += 1
+        value = "".join(chars)
+        out["value_text"] = value
+        out["value_list"] = [ord(ch) for ch in value]
+        return out
+    m = _PRINTED_INT_LIST.match(text)
+    if m:
+        items = [int(w) for w in m.group(1).split()] if m.group(1) else []
+        out["value_list"] = items
+        if items and all(32 <= i <= 0x10FFFF for i in items):
+            try:
+                out["value_text"] = "".join(chr(i) for i in items)
+            except ValueError:
+                pass
+        return out
+    return out
 
 
 def tool_patch(params: Dict[str, Any]) -> Dict[str, Any]:

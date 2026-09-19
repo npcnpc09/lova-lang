@@ -56,11 +56,14 @@ def _shown(value: Any) -> Any:
     return format_value(value)
 
 
-def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
-          max_call_depth: Optional[int] = None, granted: int = 0,
-          locate_budget_s: float = 2.0) -> List[Dict[str, Any]]:
-    """Run every example; one result per example, in source order."""
-    from core.cli import build, format_value
+def _prepared(source: str, prelude: bool):
+    """The source as the parser saw it, its examples, and how to put an
+    expression where the program's own body was.
+
+    Shared by the Python check and the native one, because the two must
+    run the same text: a native pass that ran a different program would
+    be worth nothing.
+    """
     # A `(use "name")` is textual inclusion, and the spans the parser
     # records are offsets into the included text -- so a library's own
     # examples run too, once the source is what the parser saw.
@@ -68,9 +71,8 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
     tree = parse_with_prelude(source) if prelude else parse(source)
     examples = list(getattr(tree, "examples", []))
     body_span = getattr(tree, "body_span", None)
-    results: List[Dict[str, Any]] = []
     if not examples:
-        return results
+        return source, [], None, None
     if body_span is None:
         raise ValueError("check: the program's expression has no source span")
     # Blank every example form: same length, so every other span holds.
@@ -83,6 +85,39 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
 
     def with_body(text: str) -> str:
         return blanked_source[:body_span[0]] + text + blanked_source[body_span[1]:]
+
+    return source, examples, with_body, body_span
+
+
+def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
+          max_call_depth: Optional[int] = None, granted: int = 0,
+          locate_budget_s: float = 2.0,
+          runtime: str = "python") -> List[Dict[str, Any]]:
+    """Run every example; one result per example, in source order.
+
+    ``runtime="native"`` runs them on a native runtime (one process for
+    the whole check, because an example is a small tree run twice and
+    starting a binary per example costs more than the example).  It is
+    the fast answer to "do they all pass": the moment one misses, or
+    traps, or the program is outside the native runtime's phase, the
+    whole check is re-run in Python, because the located fault, the
+    reach sets and the named anomaly are the Python side's and a
+    half-native report would be two reports.
+    """
+    from core.cli import build, format_value
+
+    if runtime == "native":
+        fast = _check_native(source, prelude=prelude, max_steps=max_steps,
+                             max_call_depth=max_call_depth, granted=granted)
+        if fast is not None:
+            return fast
+    elif runtime != "python":
+        raise ValueError(f"check: runtime is 'python' or 'native', not {runtime!r}")
+
+    source, examples, with_body, body_span = _prepared(source, prelude)
+    results: List[Dict[str, Any]] = []
+    if not examples:
+        return results
 
     kwargs: Dict[str, Any] = {"granted": granted}
     if max_steps is not None:
@@ -162,6 +197,67 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
     if failed and locate_budget_s > 0:
         _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwargs, locate_budget_s,
                     body_span[0], expr_spans)
+    return results
+
+
+def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
+                  max_call_depth: Optional[int],
+                  granted: int) -> Optional[List[Dict[str, Any]]]:
+    """Every example on a native runtime, or ``None``.
+
+    ``None`` means "Python has to do this one": no native runtime on the
+    machine, a program outside its phase, or -- the load-bearing case --
+    an example that did not pass, whose report is worth more than the
+    speed.  Nothing here compares values: the protocol carries the
+    printed form, so what is compared is the two strings, which is what
+    the golden set guarantees the Python runtime would have printed.
+    """
+    from core.cli import build
+    from core.native import (
+        NativeUnavailable, NativeUnsupported, default_runtime, supports,
+    )
+
+    prepared_source, examples, with_body, _body_span = _prepared(source, prelude)
+    if not examples:
+        return []
+    native = default_runtime()
+    if native is None:
+        return None
+    limits = {"max_steps": max_steps if max_steps is not None else 1_000_000,
+              "max_call_depth": max_call_depth if max_call_depth is not None else 10_000}
+    results: List[Dict[str, Any]] = []
+    try:
+        for index, ex in enumerate(examples):
+            if ex["span"] is None:
+                continue
+            a, b = ex["span"]
+            expr_span, expected_span = ex["expr"].span, ex["expected"].span
+            expr_text = prepared_source[expr_span[0]:expr_span[1]]
+            expected_text = prepared_source[expected_span[0]:expected_span[1]]
+            try:
+                want_tree, _ = build(with_body(expected_text), prelude=prelude)
+                got_tree, _ = build(with_body(expr_text), prelude=prelude)
+            except Exception:              # noqa: BLE001 -- Python reports it
+                return None
+            if not (supports(want_tree) and supports(got_tree)):
+                return None
+            want = native.run(want_tree, allow=granted, **limits)
+            got = native.run(got_tree, allow=granted, **limits)
+            if got.value_text != want.value_text:
+                return None
+            results.append({
+                "index": index, "span": [a, b], "excerpt": prepared_source[a:b],
+                "line": line_col(prepared_source, a)[0],
+                "col": line_col(prepared_source, a)[1],
+                "passed": True, "value": got.value_text, "steps": got.steps,
+                "reaches": [],
+            })
+    except (NativeUnavailable, NativeUnsupported):
+        return None
+    except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError):
+        return None                        # a trap: the report is Python's
+    finally:
+        native.close()
     return results
 
 

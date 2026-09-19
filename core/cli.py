@@ -440,6 +440,59 @@ def report_error(exc: Exception, source: Optional[str] = None) -> int:
 
 # --- commands ----------------------------------------------------------------
 
+def _run_native(args: argparse.Namespace, tree: Any, source: str,
+                granted: int) -> Optional[int]:
+    """Run this program on a native runtime, or say it is Python's.
+
+    ``None`` means "not run here": under ``--native auto`` there is no
+    native runtime, or the program uses an operator outside its phase.
+    Under ``--native on`` either of those is an error instead, because a
+    host that asked for the native runtime wants to be told.
+    """
+    from core.native import (
+        NativeUnavailable, NativeUnsupported, choose, operators_of,
+    )
+    from core.tokens import STDIN
+
+    try:
+        native = choose(tree, args.native)
+    except (NativeUnavailable, NativeUnsupported) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if native is None:
+        return None
+    # The protocol carries the whole of stdin up front, where the Python
+    # runtime reads it a line at a time -- so it is read only when the
+    # program has a `stdin` in it.
+    feed = sys.stdin.read() if STDIN in operators_of(tree) else ""
+    try:
+        with native:
+            result = native.run(tree, stdin=feed, allow=granted,
+                                max_steps=args.max_steps,
+                                max_call_depth=args.max_depth)
+    except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError) as trap:
+        name_anomaly(getattr(trap, "anomaly", None), getattr(tree, "symbols", None))
+        sys.stdout.write(getattr(trap, "stdout", "") or "")
+        sys.stdout.flush()
+        return report_error(trap, source)
+    except (NativeUnavailable, NativeUnsupported) as exc:
+        if args.native == "on":
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        # Fall back to the Python runtime.  A program that had already
+        # read its input falls back without it, which is the one thing
+        # this hand-over cannot undo; `--native off` is the way to be
+        # sure, and `on` the way to be told.
+        return None
+    sys.stdout.write(result.stdout)
+    sys.stdout.flush()
+    if not args.quiet:
+        print(f"=> {result.value_text}", file=sys.stderr)
+        if args.stats:
+            print(f"   [{result.steps} steps, native]", file=sys.stderr)
+    return EXIT_OK
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     source = substitute(read_source(args.file), args.args)
     try:
@@ -454,6 +507,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         send_to, listen_on = parse_net_allow(args.allow)
     except ValueError as exc:
         return report_error(exc, source)
+
+    if getattr(args, "native", "off") != "off":
+        code = _run_native(args, tree, source, granted)
+        if code is not None:
+            return code
+
     runtime = Runtime(out_stream=sys.stdout,
                       input_source=sys.stdin.readline,
                       max_steps=args.max_steps,
@@ -516,7 +575,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         return report_error(exc)
     try:
         results = check(source, prelude=not args.no_prelude, granted=granted,
-                        max_steps=args.max_steps, max_call_depth=args.max_depth)
+                        max_steps=args.max_steps, max_call_depth=args.max_depth,
+                        runtime="native" if getattr(args, "native", False) else "python")
     except (CompileError, ValueError) as exc:
         return report_error(exc, source)
     if not results:
@@ -726,6 +786,16 @@ def build_parser() -> argparse.ArgumentParser:
                      help="do not print the result value")
     run.add_argument("--stats", action="store_true",
                      help="report steps and surprise events")
+    run.add_argument("--native", choices=("auto", "on", "off"), default="auto",
+                     nargs="?", const="on",
+                     help="run on the native runtime (LOVA_NATIVE, or "
+                          "native/lova-rt/target/release/lova-rt): `auto` "
+                          "(the default) uses it when there is one and the "
+                          "program stays inside what it implements, `on` "
+                          "requires it and reports why it could not be used, "
+                          "`off` is the Python runtime.  The value printed is "
+                          "the same either way -- that is what the golden set "
+                          "guarantees")
     run.set_defaults(func=cmd_run)
 
     emit = common(subparsers.add_parser(
@@ -741,6 +811,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     check = common(subparsers.add_parser(
         "check", help="run the program's own (example expr expected) forms"))
+    check.add_argument("--native", action="store_true",
+                       help="run the examples on the native runtime, in one "
+                            "process; a miss re-runs the whole check in "
+                            "Python, where the located fault is")
     check.set_defaults(func=cmd_check)
 
     repl = common(subparsers.add_parser("repl", help="interactive session"),
