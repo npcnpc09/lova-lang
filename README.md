@@ -1,5 +1,7 @@
 # LOVA
 
+**English** · [中文](README.zh-CN.md)
+
 **An AI-native integer-sequence programming language.**
 
 **Site:** [npcnpc09.github.io/lova-lang](https://npcnpc09.github.io/lova-lang/) — the language in one page, on a field of a quarter million particles (`docs/`).
