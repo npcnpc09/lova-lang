@@ -84,7 +84,7 @@
 
 <div class="chapter hero center on" data-from="0" data-to="0.08"><div class="box"><p class="t" data-decode>LOVA</p><p class="c" data-i18n="hero.c">A language born for AI</p></div></div>
 <div class="chapter" data-from="0.10" data-to="0.24"><div class="box"><p class="n">I</p><p class="t" data-decode data-i18n="c1.t">A base<br><em>defined by<br>mathematics.</em></p><p class="c" data-i18n="c1.c">a program is an integer; its rules are arithmetic</p></div></div>
-<div class="chapter right" data-from="0.27" data-to="0.41"><div class="box"><p class="n">II</p><p class="t" data-decode data-i18n="c2.t">Let AI<br><em>spend less,<br>go further.</em></p><p class="c" data-i18n="c2.c">no spare brackets, no spare names: one byte, one step</p></div></div>
+<div class="chapter right" data-from="0.27" data-to="0.41"><div class="box"><p class="n">II</p><p class="t" data-decode data-i18n="c2.t">Let AI<br><em>spend less,<br>do it faster.</em></p><p class="c" data-i18n="c2.c">no spare brackets, no spare names: one byte, one step</p></div></div>
 <div class="chapter" data-from="0.44" data-to="0.58"><div class="box"><p class="n">III</p><p class="t" data-decode data-i18n="c3.t">Written for<br><em>AI to understand.</em></p><p class="c" data-i18n="c3.c">the fault and the fix: the language says it, the AI does it</p></div></div>
 <div class="chapter right" data-from="0.61" data-to="0.75"><div class="box"><p class="n">IV</p><p class="t" data-decode data-i18n="c4.t">The age of AI:<br>one word<br><em>creates<br>one world.</em></p><p class="c" data-i18n="c4.c">the game on this screen: every rule of it written in LOVA</p></div></div>
 <div class="chapter center" data-from="0.80" data-to="1.01"><div class="box"><p class="n" data-i18n="c5.n">Three stages, this is the first</p><p class="t" data-decode data-i18n="c5.t">The age of code<br><em>defined by numbers<br>is here.</em></p><a class="cta" href="https://github.com/npcnpc09/lova-lang" data-i18n="c5.cta">See the source</a></div></div>
@@ -108,7 +108,7 @@ const I18N = {
     "sound.on": "Sound on", "sound.off": "Sound off", "lang.other": "中文",
     "hero.c": "A language born for AI",
     "c1.t": "A base<br><em>defined by<br>mathematics.</em>", "c1.c": "a program is an integer; its rules are arithmetic",
-    "c2.t": "Let AI<br><em>spend less,<br>go further.</em>", "c2.c": "no spare brackets, no spare names: one byte, one step",
+    "c2.t": "Let AI<br><em>spend less,<br>do it faster.</em>", "c2.c": "no spare brackets, no spare names: one byte, one step",
     "c3.t": "Written for<br><em>AI to understand.</em>", "c3.c": "the fault and the fix: the language says it, the AI does it",
     "c4.t": "The age of AI:<br>one word<br><em>creates<br>one world.</em>", "c4.c": "the game on this screen: every rule of it written in LOVA",
     "c5.n": "Three stages, this is the first", "c5.t": "The age of code<br><em>defined by numbers<br>is here.</em>", "c5.cta": "See the source",
@@ -120,7 +120,7 @@ const I18N = {
     "sound.on": "声音 开", "sound.off": "声音 关", "lang.other": "EN",
     "hero.c": "为 AI 而生的语言",
     "c1.t": "语言的底座，<br><em>以数学定义。</em>", "c1.c": "程序即整数，规则即算术",
-    "c2.t": "让 AI<br><em>用更少，想更远。</em>", "c2.c": "没有多余的括号和名字，一个字节，就是一步",
+    "c2.t": "让 AI<br><em>消耗更少，<br>做得更快。</em>", "c2.c": "没有多余的括号和名字，一个字节，就是一步",
     "c3.t": "为 AI 的<em>理解</em>而写。", "c3.c": "错在哪、怎么改，它自己说清，AI 自己修好",
     "c4.t": "AI 时代，<br>一句话，<br><em>创造一个世界。</em>", "c4.c": "屏幕里这个游戏，规则全部由 LOVA 写成",
     "c5.n": "三个阶段，这是第一个", "c5.t": "由数字定义代码的时代<br><em>到来。</em>", "c5.cta": "去看源码",
@@ -306,9 +306,21 @@ const spark = canvasTexture(1024, 576, (c, w, h) => {
   c.fillText(L("p.points"), 40, h - 44);
 });
 // IV: the game, playing
+// The element sits in the document (hidden) with the attributes spelled
+// out, which is what every browser's autoplay rule reads; a detached
+// element with the properties set stayed on its first frame in some.
+// Same origin, so no CORS mode: with it, the file opened from disk shows
+// nothing at all.
 const video = document.createElement("video");
-video.src = "assets/demo.mp4"; video.muted = true; video.loop = true; video.playsInline = true; video.preload = "auto"; video.crossOrigin = "anonymous";
+video.setAttribute("muted", ""); video.setAttribute("playsinline", ""); video.setAttribute("loop", ""); video.setAttribute("preload", "auto");
+video.muted = true; video.defaultMuted = true; video.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none";
+video.src = "assets/demo.mp4"; document.body.appendChild(video);
 const videoTex = new THREE.VideoTexture(video); videoTex.colorSpace = THREE.SRGBColorSpace;
+let videoWanted = false;
+function videoPlay() { if (videoWanted && video.paused) video.play().catch(() => {}); }
+// if the browser refused the first play, the first gesture is the retry
+["pointerdown", "keydown", "touchstart", "wheel"].forEach(ev => addEventListener(ev, videoPlay, { passive: true }));
+document.addEventListener("visibilitychange", videoPlay);
 
 applyLang(false);
 const P1 = panel(-13, 1, 4.6, digits.tex, 0x8ff3ff);
@@ -359,7 +371,11 @@ function chaptersAt(p) {
     const on = p >= ch.from && p < ch.to;
     if (on !== ch.shown) { ch.el.classList.toggle("on", on); ch.shown = on; if (on && !ch.decoded && !reduced) { ch.decoded = true; ch.el.querySelectorAll("[data-decode]").forEach(decode); } }
   });
-  if (p > 0.58 && p < 0.8) { if (video.paused) video.play().catch(() => {}); } else if (!video.paused) video.pause();
+  // the game plays whenever its panel is on screen, not on a fixed band:
+  // the panel was visible from 0.55 to 0.84 and played only 0.58 to 0.8,
+  // so the largest view of it was a frozen frame
+  videoWanted = P4.visible;
+  if (videoWanted) videoPlay(); else if (!video.paused) video.pause();
 }
 
 // ---------- sound: a slow pad, made here, off until asked ------------------
