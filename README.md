@@ -2,6 +2,8 @@
 
 **An AI-native integer-sequence programming language.**
 
+**Site:** [npcnpc09.github.io/lova-lang](https://npcnpc09.github.io/lova-lang/) — the language in one page, on a field of a quarter million particles (`docs/`).
+
 *Status: **1.0 — the language is complete, and initially usable.**
 All ten design axioms are realised inside the language and measured by
 an experiment. The 64-operator table is spent (63 operators and `END`):

@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOVA — programs are integers</title>
+<meta name="description" content="LOVA is a programming language built for an AI to write, check, run, repair and leave evidence in. Its programs are integers; the text is a projection.">
+<meta property="og:title" content="LOVA — programs are integers">
+<meta property="og:description" content="An AI-native language: a typed integer sequence with budgets, boundaries, structured faults, examples carried by the program, and a native VM that runs inside Godot.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #04050a;
+    --ink: #e9ecf5;
+    --ink-2: #9aa3b8;
+    --ink-3: #5c657a;
+    --line: rgba(233, 236, 245, 0.10);
+    --accent: #7df9ff;
+    --accent-2: #b28dff;
+    --accent-3: #ff7ab6;
+    --panel: rgba(10, 12, 22, 0.55);
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --serif: "Instrument Serif", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-weight: 300; line-height: 1.55;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  #field { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
+  #grain {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: .06; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  #vignette { position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0) 40%, rgba(4,5,10,.75) 100%); }
+
+  header.top {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 28px; background: linear-gradient(rgba(4,5,10,.85), rgba(4,5,10,0)); pointer-events: none;
+  }
+  header.top a { pointer-events: auto; }
+  .wordmark { font-family: var(--mono); font-weight: 500; letter-spacing: .32em; font-size: 13px; color: var(--ink); text-decoration: none; }
+  .wordmark b { color: var(--accent); font-weight: 500; }
+  nav a { color: var(--ink-2); text-decoration: none; font-size: 13px; margin-left: 22px; letter-spacing: .02em; }
+  nav a:hover { color: var(--ink); }
+  @media (max-width: 720px) { nav a:not(.gh) { display: none; } }
+
+  main { position: relative; z-index: 2; }
+  section { min-height: 100vh; display: flex; align-items: center; padding: 120px 28px; }
+  .wrap { width: min(1120px, 100%); margin: 0 auto; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .28em; text-transform: uppercase; color: var(--accent); margin: 0 0 22px; }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(52px, 9vw, 128px); line-height: .98; letter-spacing: -.01em; margin: 0 0 28px; }
+  h1 em { font-style: italic; color: var(--accent); }
+  h1, h2, .lead, .eyebrow { text-shadow: 0 2px 28px rgba(4,5,10,.95), 0 0 2px rgba(4,5,10,.8); }
+  h2 { font-family: var(--serif); font-weight: 400; font-size: clamp(36px, 5vw, 64px); line-height: 1.05; margin: 0 0 22px; letter-spacing: -.01em; }
+  h2 em { font-style: italic; color: var(--accent-2); }
+  .lead { font-size: clamp(17px, 1.6vw, 21px); color: var(--ink-2); max-width: 46ch; margin: 0 0 36px; }
+  .lead strong { color: var(--ink); font-weight: 500; }
+  .cta { display: inline-flex; align-items: center; gap: 10px; padding: 13px 20px; border: 1px solid var(--line);
+    border-radius: 999px; color: var(--ink); text-decoration: none; font-size: 14px; backdrop-filter: blur(8px); background: var(--panel); transition: border-color .2s, transform .2s; }
+  .cta:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .cta.primary { background: var(--ink); color: #05060a; border-color: var(--ink); font-weight: 500; }
+  .cta.primary:hover { background: var(--accent); border-color: var(--accent); }
+  .ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  .hero .wrap { max-width: 900px; margin-left: 0; }
+  .hero-int {
+    margin-top: 64px; font-family: var(--mono); font-size: 11px; line-height: 1.7; color: var(--ink-3);
+    max-width: 640px; word-break: break-all; letter-spacing: .04em; opacity: .9;
+  }
+  .hero-int span { color: var(--accent); }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; backdrop-filter: blur(14px); padding: 26px 28px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 860px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+  .forms { display: grid; gap: 12px; }
+  .form { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: rgba(6,8,16,.55); backdrop-filter: blur(12px); }
+  .form .k { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .form .k span { color: var(--accent-2); letter-spacing: .05em; text-transform: none; }
+  .form pre { margin: 0; font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--ink); white-space: pre-wrap; word-break: break-all; }
+  .form.stage1 pre { color: var(--ink); }
+  .form.core pre { color: var(--ink-2); }
+  .form.stage2 pre { color: #d9c6ff; }
+  .form.bytes pre { color: #8fe3ff; letter-spacing: .06em; }
+  .form.int pre { color: var(--accent); }
+
+  .ops { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; font-family: var(--mono); font-size: 11px; }
+  .op { border: 1px solid var(--line); border-radius: 8px; padding: 9px 6px; text-align: center; color: var(--ink-2); background: rgba(6,8,16,.45); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color .2s, border-color .2s; }
+  .op:hover { color: var(--accent); border-color: var(--accent); }
+  .op.fam { grid-column: span 8; color: var(--ink-3); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; border: 0; background: none; text-align: left; padding-left: 2px; }
+  .ops-note { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 14px; letter-spacing: .04em; }
+  @media (max-width: 720px) { .ops { grid-template-columns: repeat(4, 1fr); } .op.fam { grid-column: span 4; } }
+
+  .steps { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  @media (max-width: 1000px) { .steps { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 600px) { .steps { grid-template-columns: repeat(2, 1fr); } }
+  .step { border: 1px solid var(--line); border-radius: 14px; padding: 18px 16px 16px; background: rgba(6,8,16,.5); backdrop-filter: blur(12px); min-height: 190px; }
+  .step .n { font-family: var(--mono); color: var(--accent); font-size: 12px; letter-spacing: .2em; }
+  .step h3 { margin: 10px 0 8px; font-weight: 500; font-size: 16px; }
+  .step p { margin: 0; font-size: 13px; color: var(--ink-2); }
+  .step code { font-family: var(--mono); font-size: 12px; color: var(--accent-2); }
+
+  .nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 860px) { .nums { grid-template-columns: repeat(2, 1fr); } }
+  .num { border-top: 1px solid var(--line); padding-top: 16px; }
+  .num .v { font-family: var(--serif); font-size: clamp(38px, 4.6vw, 62px); line-height: 1; color: var(--ink); }
+  .num .v small { font-size: .45em; color: var(--ink-2); font-family: var(--sans); margin-left: 6px; }
+  .num .l { color: var(--ink-2); font-size: 14px; margin-top: 8px; }
+
+  .video { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: #000; aspect-ratio: 16 / 9; }
+  .video video { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .video .tag { position: absolute; left: 14px; top: 12px; font-family: var(--mono); font-size: 11px; letter-spacing: .16em; color: var(--accent); background: rgba(4,5,10,.6); padding: 6px 10px; border-radius: 999px; }
+
+  .final { align-items: flex-start; padding-top: 80px; }
+  .final .wrap { text-align: center; }
+  .final .lead { font-size: 17px; margin-bottom: 26px; }
+  h2.narrow { max-width: 12ch; }
+  .final h2 { font-size: clamp(44px, 8vw, 110px); }
+  footer { position: relative; z-index: 2; padding: 40px 28px 60px; color: var(--ink-3); font-size: 13px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 24px; }
+  footer a { color: var(--ink-2); text-decoration: none; margin-right: 18px; }
+  footer a:hover { color: var(--ink); }
+
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .8s ease, transform .8s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { transition: none; opacity: 1; transform: none; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<canvas id="field" aria-hidden="true"></canvas>
+<div id="grain"></div>
+<div id="vignette"></div>
+
+<header class="top">
+  <a class="wordmark" href="#top">L<b>O</b>VA</a>
+  <nav>
+    <a href="#forms">Forms</a>
+    <a href="#operators">Operators</a>
+    <a href="#loop">The loop</a>
+    <a href="#godot">Inside Godot</a>
+    <a class="gh" href="https://github.com/npcnpc09/lova-lang">GitHub ↗</a>
+  </nav>
+</header>
+
+<main id="top">
+
+<section class="hero" data-mode="flow">
+  <div class="wrap">
+    <p class="eyebrow reveal">An AI-native programming language</p>
+    <h1 class="reveal">Programs<br>are <em>integers.</em></h1>
+    <p class="lead reveal">LOVA is built for an AI to <strong>write, check, run, repair and leave evidence</strong> in, with no person reading. Every program is a typed integer sequence. The text is a projection; the number is the program.</p>
+    <div class="ctas reveal">
+      <a class="cta primary" href="https://github.com/npcnpc09/lova-lang">Read the code</a>
+      <a class="cta" href="#godot">Watch it run a game ↓</a>
+    </div>
+    <div class="hero-int reveal" id="heroint"></div>
+  </div>
+</section>
+
+<section id="forms" data-mode="digits">
+  <div class="wrap grid-2">
+    <div>
+      <p class="eyebrow reveal">One function, five forms</p>
+      <h2 class="reveal">The same <em>pad</em>, all the way down.</h2>
+      <p class="lead reveal">Stage-1 text is what a person or a current model writes. It expands to the core, prints as a one-byte-per-character surface, encodes to bytes, and <strong>is</strong> one integer. Every form is lossless; every tool works on the integer.</p>
+    </div>
+    <div class="forms reveal">
+      <div class="form stage1"><div class="k">Stage-1 text <span>what you write</span></div><pre>(def pad [s n]
+  (if (ge (len s) n) s
+      (text-cat s (text-of-chars (repeat 32 (sub n (len s)))))))</pre></div>
+      <div class="form core"><div class="k">Core s-expression <span>macros expanded, names interned</span></div><pre>(let 0 (lambda 1 (lambda 2 (lambda 3 (apply (loop-until (ref 2) (ref 3)) (ref 1))))) (let 4 (lambda 5 (text-len (ref 5))) (let 31 (lambda 8 (lambda 20 (tail (apply (ref 0) …</pre></div>
+      <div class="form stage2"><div class="k">Stage-2 surface <span>one character a byte</span></div><pre>W0\1\2\3$@rvL;W4\5ΒxW31\8\20_$A:&amp;20~\32!&gt;d^&amp;32 0 0 1\32:+^&amp;32-1:|_&amp;32;W67\32\20!!&gt;d&amp;20$w&amp;32;0 1&amp;32Γ&amp;32Ι$&amp;31 32+&amp;20*-1$w&amp;32;;$&amp;67"ab"5;</pre></div>
+      <div class="form bytes"><div class="k">Bytes <span>the token sequence</span></div><pre>2e 01 01 00 2c 01 01 01 2c 01 01 02 2c 01 01 03 2d 2b 2f 01 01 02 2f 01 01 03 2f 01 01 01 00 2e 01 01 04 2c 01 01 05 41 2f 01 01 05 2e 01 01 1f 2c 01 01 08 2c 01 01 14 06 2d 2f 01 01 00 04 2f 01 01 14 15 2c 01 01 20 2a 1b 1f 05 …</pre></div>
+      <div class="form int"><div class="k">The integer <span>identity, storage, transport</span></div><pre>5236340526486686477338404983010635694500647689052305876906148730770053659357209638518213293823373727735246357251760864509287008373876019185618829188812074617107386505825165356818554246876487315374142413908311266012530310018822471738924522525641286728135879591191454222133763511146630068721533964671396714762635712455170687666191093369401831078373358009903151777566153527768229008108258254480813467334</pre></div>
+    </div>
+  </div>
+</section>
+
+<section id="operators" data-mode="grid">
+  <div class="wrap">
+    <p class="eyebrow reveal">Sixty-four operators, one byte each</p>
+    <h2 class="reveal narrow">Eight families of eight, <em>and the types follow position.</em></h2>
+    <p class="lead reveal">An operator's arguments are typed by their slot, so for any partial program the set of well-typed next tokens is computable. <strong>A generated program cannot be ill-formed.</strong> Two families were added past the core when a measured number asked for them: text and lists.</p>
+    <div class="panel reveal">
+      <div class="ops" id="ops"></div>
+      <div class="ops-note">0x00–0x3F the core · 0x40–0x4F text · 0x50–0x57 lists · 88 tokens in all · <code>lova_valid_next</code> answers which may come next</div>
+    </div>
+  </div>
+</section>
+
+<section id="loop" data-mode="ring">
+  <div class="wrap">
+    <p class="eyebrow reveal">What an unsupervised AI actually does</p>
+    <h2 class="reveal narrow">Six operations. <em>Every primitive serves one.</em></h2>
+    <p class="lead reveal">Nothing enters the language because another language has it. A feature earns its byte with an experiment showing an AI needs it for one of these.</p>
+    <div class="steps reveal">
+      <div class="step"><div class="n">01</div><h3>Write</h3><p>Emit tokens under the type constraint. <code>valid_next</code> at every position; scope kept; unbound names unrepresentable.</p></div>
+      <div class="step"><div class="n">02</div><h3>Check</h3><p>A program carries its own <code>(example …)</code> forms. <code>lova check</code> runs them as contracts, with a lint pass.</p></div>
+      <div class="step"><div class="n">03</div><h3>Run</h3><p>Under a step and depth budget, inside a declared <code>boundary</code>. A host needs a function call, not a sandbox.</p></div>
+      <div class="step"><div class="n">04</div><h3>Observe</h3><p>No stack traces. A deviation is a structured anomaly with kind, operator, position path and source span.</p></div>
+      <div class="step"><div class="n">05</div><h3>Repair</h3><p>Patch by span. A failed example locates its fault: every single-node edit is tried, scored against the rest.</p></div>
+      <div class="step"><div class="n">06</div><h3>Evidence</h3><p>Programs are values with lineage: <code>hash</code>, <code>uid</code>, <code>why</code>, <code>ancestor-of</code>. The integer is the identity.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="numbers" data-mode="flow">
+  <div class="wrap">
+    <p class="eyebrow reveal">Measured, not promised</p>
+    <h2 class="reveal">A native VM, <em>step for step</em> with the reference.</h2>
+    <p class="lead reveal">The Python interpreter defines the semantics. A Rust bytecode VM reproduces it on a golden set, exact step counts included, and is the default runtime. The same runtime loads into Godot 4 as an extension class.</p>
+    <div class="nums reveal">
+      <div class="num"><div class="v">10–12<small>M steps / s</small></div><div class="l">the native VM, twenty times CPython</div></div>
+      <div class="num"><div class="v">1 023</div><div class="l">golden records, value + anomaly + exact steps</div></div>
+      <div class="num"><div class="v">0.6<small>ms</small></div><div class="l">a tick of a shooter's rules, inside Godot</div></div>
+      <div class="num"><div class="v">1 104</div><div class="l">tests, on CPython and PyPy</div></div>
+      <div class="num"><div class="v">60<small>fps</small></div><div class="l">three Kenney kits, rules in LOVA, tick for tick against their GDScript</div></div>
+      <div class="num"><div class="v">0</div><div class="l">syntax or type errors reachable by valid generation</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="godot" data-mode="flow">
+  <div class="wrap grid-2">
+    <div>
+      <p class="eyebrow reveal">Inside Godot</p>
+      <h2 class="reveal">The engine draws. <em>LOVA decides.</em></h2>
+      <p class="lead reveal">Kenney's FPS starter kit, its own scene untouched, with <code>player.gd</code> and <code>enemy.gd</code> replaced by scripts that call the LOVA rules once a physics tick. Movement, jumps, both weapons, the enemies' timers and rays, health, restart: <strong>704 lines of LOVA</strong>, checked tick for tick against the kit's GDScript.</p>
+      <div class="ctas reveal">
+        <a class="cta" href="https://github.com/npcnpc09/lova-lang/tree/main/apps/godot/fps">The port ↗</a>
+        <a class="cta" href="https://github.com/npcnpc09/lova-lang/tree/main/native/lova-godot">The extension ↗</a>
+      </div>
+    </div>
+    <div class="video reveal">
+      <video src="assets/demo.mp4" poster="assets/godot-fps.png" controls muted playsinline preload="metadata"></video>
+      <div class="tag">RULES: LOVA · PICTURE: GODOT</div>
+    </div>
+  </div>
+</section>
+
+<section class="final" data-mode="lova">
+  <div class="wrap">
+    <p class="eyebrow reveal">Stage 1 of 3</p>
+    <h2 class="reveal">Text is a <em>bootstrap.</em><br>The number is the language.</h2>
+    <p class="lead reveal" style="margin: 0 auto 36px;">Today a model writes the s-expression and the machine keeps the integer. The experiments that decide what comes next are in the journal, NULL results included.</p>
+    <div class="ctas reveal" style="justify-content:center">
+      <a class="cta primary" href="https://github.com/npcnpc09/lova-lang">github.com/npcnpc09/lova-lang</a>
+      <a class="cta" href="https://github.com/npcnpc09/lova-lang/blob/main/journal/README.md">The journal ↗</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>LOVA · MIT · built with Claude</div>
+    <div>
+      <a href="https://github.com/npcnpc09/lova-lang/blob/main/spec/axioms.md">Axioms</a>
+      <a href="https://github.com/npcnpc09/lova-lang/blob/main/spec/tokens.md">Token table</a>
+      <a href="https://github.com/npcnpc09/lova-lang/blob/main/spec/ai-convenience.md">The yardstick</a>
+      <a href="https://github.com/npcnpc09/lova-lang/blob/main/corpus/language_card.md">Language card</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ---------- content -------------------------------------------------------
+const TOKENS = [[0,"end"],[1,"lit"],[2,"partition"],[3,"merge"],[4,"cons"],[5,"head"],[6,"tail"],[7,"identity"],[8,"p"],[9,"tau"],[10,"sigma"],[11,"mul"],[12,"mod"],[13,"div"],[14,"gcd"],[15,"mobius"],[16,"budget"],[17,"conserve"],[18,"signal"],[19,"map-put"],[20,"map-get"],[21,"nil"],[22,"map-pairs"],[23,"violate"],[24,"surprise"],[25,"nil?"],[26,"when-anomaly"],[27,"threshold"],[28,"eval"],[29,"trace-surprise"],[30,"read"],[31,"deviation"],[32,"defpop"],[33,"variant"],[34,"evolve"],[35,"select"],[36,"mutate"],[37,"clone"],[38,"fitness"],[39,"retire"],[40,"seq"],[41,"quote"],[42,"if-surprise"],[43,"loop-until"],[44,"lambda"],[45,"apply"],[46,"let"],[47,"ref"],[48,"boundary"],[49,"net-send"],[50,"net-recv"],[51,"fs-read"],[52,"fs-write"],[53,"stdout"],[54,"stdin"],[55,"clock"],[56,"lineage-query"],[57,"why"],[58,"trace"],[59,"explain"],[60,"hash"],[61,"uid"],[62,"ancestor-of"],[63,"generation"],[64,"text"],[65,"text-len"],[66,"text-cat"],[67,"text-slice"],[68,"text-find"],[69,"text-split"],[70,"text-join"],[71,"text-chars"],[72,"text-of-chars"],[73,"text-cmp"],[74,"text-int"],[75,"int-text"],[76,"text?"],[77,"text-trim"],[78,"text-match"],[79,"text-match-all"],[80,"map"],[81,"filter"],[82,"fold"],[83,"reverse"],[84,"range"],[85,"any"],[86,"sort-by"],[87,"zip"]];
+const FAMILIES = ["structural","number","conservation","surprise","evolution","composition","effects / io","meta / lineage","text","text","list"];
+const INTEGER = "5236340526486686477338404983010635694500647689052305876906148730770053659357209638518213293823373727735246357251760864509287008373876019185618829188812074617107386505825165356818554246876487315374142413908311266012530310018822471738924522525641286728135879591191454222133763511146630068721533964671396714762635712455170687666191093369401831078373358009903151777566153527768229008108258254480813467334";
+
+(function content() {
+  const ops = document.getElementById("ops");
+  let fam = -1;
+  TOKENS.forEach(([b, n]) => {
+    const f = Math.floor(b / 8);
+    if (f !== fam) {
+      fam = f;
+      const h = document.createElement("div");
+      h.className = "op fam"; h.textContent = "0x" + (f * 8).toString(16).padStart(2, "0") + " · " + FAMILIES[f];
+      ops.appendChild(h);
+    }
+    const d = document.createElement("div");
+    d.className = "op"; d.title = "0x" + b.toString(16).padStart(2, "0"); d.textContent = n;
+    ops.appendChild(d);
+  });
+  const hi = document.getElementById("heroint");
+  hi.innerHTML = '<span>pad = </span>' + INTEGER.slice(0, 220) + '…';
+  const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) e.target.classList.add("in"); }), { threshold: 0.15 });
+  document.querySelectorAll(".reveal").forEach(el => io.observe(el));
+})();
+
+// ---------- the field -----------------------------------------------------
+(function field() {
+  const canvas = document.getElementById("field");
+  const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+  if (!gl) { canvas.style.background = "radial-gradient(ellipse at 30% 20%, #101a2e, #04050a 60%)"; return; }
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const SIDE = 512, N = SIDE * SIDE;             // 262 144 particles
+  let W = 1, H = 1, aspect = 1, dpr = Math.min(devicePixelRatio || 1, 2);
+  // how many particles a view this size gets: the full quarter million
+  // on a desktop, a fraction on a phone, so the dust stays dust
+  let active = N;
+
+  const NOISE = `
+    vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+    vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+    vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+    vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+    float snoise(vec3 v){
+      const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+      vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+      vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+      vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+      i=mod289(i);
+      vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+      float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+      vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+      vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+      vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+      vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+      vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+      vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+      vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+      p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;
+      vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+      return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+    }
+    vec2 curl(vec3 p){
+      float e=0.02;
+      float n1=snoise(p+vec3(0.0,e,0.0)), n2=snoise(p-vec3(0.0,e,0.0));
+      float n3=snoise(p+vec3(e,0.0,0.0)), n4=snoise(p-vec3(e,0.0,0.0));
+      return vec2(n1-n2, -(n3-n4))/(2.0*e);
+    }`;
+
+  const UPDATE_VS = `#version 300 es
+    precision highp float;
+    in vec2 a_pos; in vec2 a_vel; in vec2 a_seed;
+    out vec2 v_pos; out vec2 v_vel;
+    uniform float u_time, u_dt, u_attract, u_aspect;
+    uniform vec2 u_mouse; uniform float u_mouseOn;
+    uniform sampler2D u_targets;
+    ${NOISE}
+    void main(){
+      int id = gl_VertexID;
+      ivec2 tc = ivec2(id % ${SIDE}, id / ${SIDE});
+      vec4 t = texelFetch(u_targets, tc, 0);
+      vec2 p = a_pos, v = a_vel;
+      float scale = 0.55 + a_seed.x * 0.25;
+      vec2 flow = curl(vec3(p * scale, u_time * 0.06 + a_seed.y * 3.0));
+      float free = 1.0 - u_attract * t.z;
+      v += flow * 0.18 * u_dt * (0.012 + 0.988 * free);
+      // the spring to the target, when the section has one
+      vec2 tp = t.xy + (a_seed - 0.5) * 0.004;
+      v += (tp - p) * (6.0 + 2.0 * a_seed.x) * u_attract * t.z * u_dt;
+      // the pointer pushes
+      vec2 dm = p - u_mouse; float r2 = dot(dm, dm);
+      v += dm / (r2 + 0.02) * 0.012 * u_mouseOn * u_dt * smoothstep(0.35, 0.0, sqrt(r2));
+      // damping: heavy on the way home, light when free
+      v *= mix(0.985, 0.86, u_attract * t.z);
+      p += v * u_dt * 60.0 * 0.0125;
+      // stay in the world
+      if (p.x >  u_aspect + 0.05) p.x = -u_aspect - 0.04;
+      if (p.x < -u_aspect - 0.05) p.x =  u_aspect + 0.04;
+      if (p.y >  1.05) p.y = -1.04;
+      if (p.y < -1.05) p.y =  1.04;
+      v_pos = p; v_vel = v;
+    }`;
+  const UPDATE_FS = `#version 300 es
+    precision highp float; out vec4 o; void main(){ o = vec4(0.0); }`;
+
+  const DRAW_VS = `#version 300 es
+    precision highp float;
+    in vec2 a_pos; in vec2 a_vel; in vec2 a_seed;
+    uniform float u_aspect, u_attract, u_dpr;
+    uniform sampler2D u_targets;
+    out vec4 v_col;
+    void main(){
+      int id = gl_VertexID;
+      vec4 t = texelFetch(u_targets, ivec2(id % ${SIDE}, id / ${SIDE}), 0);
+      float held = u_attract * t.z;
+      gl_Position = vec4(a_pos.x / u_aspect, a_pos.y, 0.0, 1.0);
+      float sp = clamp(length(a_vel) * 6.0, 0.0, 1.0);
+      vec3 cold = vec3(0.30, 0.62, 1.00);
+      vec3 cyan = vec3(0.49, 0.98, 1.00);
+      vec3 violet = vec3(0.70, 0.55, 1.00);
+      vec3 rose = vec3(1.00, 0.48, 0.71);
+      vec3 c = mix(cold, cyan, sp);
+      c = mix(c, mix(violet, rose, a_seed.y), held * 0.75);
+      float a = mix((0.07 + 0.16 * sp) * (1.0 - 0.5 * u_attract), 0.42, held) * (0.6 + 0.4 * a_seed.x);
+      v_col = vec4(c, a);
+      gl_PointSize = (1.0 + 0.9 * held + 0.6 * sp) * u_dpr;
+    }`;
+  const DRAW_FS = `#version 300 es
+    precision highp float; in vec4 v_col; out vec4 o;
+    void main(){ o = vec4(v_col.rgb * v_col.a, v_col.a); }`;
+  // the fade: the last frame, dimmed, is this frame's background, so a
+  // moving particle leaves a trail
+  const FADE_VS = `#version 300 es
+    void main(){ vec2 p = vec2((gl_VertexID == 1) ? 3.0 : -1.0, (gl_VertexID == 2) ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }`;
+  const FADE_FS = `#version 300 es
+    precision highp float; uniform float u_fade; out vec4 o;
+    void main(){ o = vec4(0.016, 0.02, 0.04, u_fade); }`;
+
+  function shader(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  function program(vs, fs, tf) {
+    const p = gl.createProgram();
+    gl.attachShader(p, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+    if (tf) gl.transformFeedbackVaryings(p, tf, gl.SEPARATE_ATTRIBS);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return p;
+  }
+  let update, draw, fade;
+  try { update = program(UPDATE_VS, UPDATE_FS, ["v_pos", "v_vel"]); draw = program(DRAW_VS, DRAW_FS); fade = program(FADE_VS, FADE_FS); }
+  catch (e) { console.warn(e); return; }
+  const fadeVAO = gl.createVertexArray();
+  const F = { fade: gl.getUniformLocation(fade, "u_fade") };
+  let cleared = false;
+
+  // buffers: two sets for ping-pong
+  const seed = new Float32Array(N * 2), pos0 = new Float32Array(N * 2), vel0 = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) {
+    seed[2*i] = Math.random(); seed[2*i+1] = Math.random();
+    pos0[2*i] = (Math.random() * 2 - 1) * 1.8; pos0[2*i+1] = Math.random() * 2 - 1;
+    vel0[2*i] = 0; vel0[2*i+1] = 0;
+  }
+  const seedBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, seedBuf); gl.bufferData(gl.ARRAY_BUFFER, seed, gl.STATIC_DRAW);
+  const sets = [0, 1].map(() => {
+    const pos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, pos); gl.bufferData(gl.ARRAY_BUFFER, pos0, gl.DYNAMIC_COPY);
+    const vel = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vel); gl.bufferData(gl.ARRAY_BUFFER, vel0, gl.DYNAMIC_COPY);
+    return { pos, vel };
+  });
+  function vao(prog, set) {
+    const v = gl.createVertexArray(); gl.bindVertexArray(v);
+    const ap = gl.getAttribLocation(prog, "a_pos"), av = gl.getAttribLocation(prog, "a_vel"), as = gl.getAttribLocation(prog, "a_seed");
+    gl.bindBuffer(gl.ARRAY_BUFFER, set.pos); gl.enableVertexAttribArray(ap); gl.vertexAttribPointer(ap, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, set.vel); gl.enableVertexAttribArray(av); gl.vertexAttribPointer(av, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, seedBuf); gl.enableVertexAttribArray(as); gl.vertexAttribPointer(as, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    return v;
+  }
+  const updateVAO = sets.map(s => vao(update, s)), drawVAO = sets.map(s => vao(draw, s));
+  const tfs = sets.map(s => {
+    const tf = gl.createTransformFeedback(); gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, s.pos); gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, s.vel);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+    return tf;
+  });
+
+  // the target texture: where each particle goes when a section asks
+  const targets = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, targets);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const tdata = new Float32Array(N * 4);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, SIDE, SIDE, 0, gl.RGBA, gl.FLOAT, tdata);
+
+  // rasterise a shape into pixels, then hand each particle one
+  const scratch = document.createElement("canvas"), sctx = scratch.getContext("2d", { willReadFrequently: true });
+  function rasterise(paint) {
+    const RW = 960, RH = Math.round(RW / aspect);
+    scratch.width = RW; scratch.height = RH;
+    sctx.clearRect(0, 0, RW, RH); sctx.fillStyle = "#fff"; sctx.textBaseline = "middle"; sctx.textAlign = "center";
+    paint(sctx, RW, RH);
+    const img = sctx.getImageData(0, 0, RW, RH).data, pts = [];
+    for (let y = 0; y < RH; y++) for (let x = 0; x < RW; x++) if (img[(y * RW + x) * 4 + 3] > 100) pts.push(x, y);
+    const M = pts.length / 2;
+    if (M === 0) { tdata.fill(0); }
+    else {
+      const share = Math.min(1, M * 3.2 / active);   // how many particles a shape can hold
+      for (let i = 0; i < N; i++) {
+        const k = (i * 40503) % M, o = i * 4;
+        const jx = (Math.random() - 0.5) * 0.9, jy = (Math.random() - 0.5) * 0.9;
+        tdata[o]     = ((pts[2*k] + jx) / RW * 2 - 1) * aspect;
+        tdata[o + 1] = 1 - (pts[2*k+1] + jy) / RH * 2;
+        tdata[o + 2] = (i % 1000) / 1000 < share ? 1 : 0;
+        tdata[o + 3] = 0;
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, targets);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SIDE, SIDE, gl.RGBA, gl.FLOAT, tdata);
+  }
+  const SHAPES = {
+    flow: null,
+    digits(c, w, h) {
+      // a wall of the integer's digits, on the right half of the view
+      const cols = 22, size = Math.min(w, h) * 0.052;
+      c.font = `500 ${size}px "JetBrains Mono", monospace`; c.textAlign = "left";
+      const x0 = w * 0.50, lines = Math.floor((h * 0.72) / (size * 1.25));
+      for (let l = 0; l < lines; l++) c.fillText(INTEGER.slice(l * cols, (l + 1) * cols), x0, h * 0.16 + l * size * 1.25);
+    },
+    grid(c, w, h) {
+      const cell = Math.min(w, h) * 0.058, gap = cell * 0.34, x0 = w * 0.76 - 4 * (cell + gap) + gap / 2, y0 = h * 0.40 - 4 * (cell + gap) + gap / 2;
+      for (let r = 0; r < 8; r++) for (let q = 0; q < 8; q++) {
+        const x = x0 + q * (cell + gap), y = y0 + r * (cell + gap);
+        c.beginPath(); c.roundRect(x, y, cell, cell, cell * 0.18); c.fill();
+      }
+    },
+    ring(c, w, h) {
+      const R = Math.min(w, h) * 0.19, cx = w * 0.77, cy = h * 0.33;
+      c.lineWidth = Math.max(2, R * 0.012); c.strokeStyle = "#fff"; c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.stroke();
+      const words = ["WRITE", "CHECK", "RUN", "OBSERVE", "REPAIR", "EVIDENCE"];
+      c.font = `500 ${R * 0.13}px "JetBrains Mono", monospace`; c.textAlign = "center";
+      words.forEach((wd, i) => {
+        const a = -Math.PI / 2 + i * Math.PI / 3, x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R;
+        c.beginPath(); c.arc(x, y, R * 0.06, 0, Math.PI * 2); c.fill();
+        c.fillText(wd, cx + Math.cos(a) * R * 1.32, cy + Math.sin(a) * R * 1.32);
+      });
+    },
+    lova(c, w, h) {
+      c.font = `400 ${Math.min(w * 0.26, h * 0.36)}px "Instrument Serif", Georgia, serif`;
+      c.fillText("LOVA", w * 0.5, h * 0.84);
+    },
+  };
+  let mode = "flow", shapeBuilt = null, attract = 0, attractTarget = 0;
+  function setMode(m) {
+    if (m === mode && shapeBuilt === m) return;
+    mode = m;
+    // a narrow screen has no room beside the text for a shape
+    if (SHAPES[m] && W >= 860) { rasterise(SHAPES[m]); shapeBuilt = m; attractTarget = 1; }
+    else attractTarget = 0;
+  }
+
+  function resize() {
+    W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    aspect = W / H; gl.viewport(0, 0, canvas.width, canvas.height); cleared = false;
+    active = Math.round(N * Math.min(1, Math.max(0.2, (W * H) / 1.15e6)));
+    if (SHAPES[mode] && W >= 860) { rasterise(SHAPES[mode]); shapeBuilt = mode; attractTarget = 1; }
+    else attractTarget = 0;
+  }
+  addEventListener("resize", resize); resize();
+
+  // sections choose the shape
+  const secObs = new IntersectionObserver(es => {
+    es.forEach(e => { if (e.isIntersecting) setMode(e.target.dataset.mode || "flow"); });
+  }, { threshold: 0.45 });
+  document.querySelectorAll("section[data-mode]").forEach(s => secObs.observe(s));
+
+  // the pointer, in world units
+  const mouse = { x: 0, y: 0, on: 0 };
+  function point(cx, cy) { mouse.x = (cx / W * 2 - 1) * aspect; mouse.y = 1 - cy / H * 2; mouse.on = 1; }
+  addEventListener("pointermove", e => point(e.clientX, e.clientY), { passive: true });
+  addEventListener("pointerleave", () => { mouse.on = 0; });
+  addEventListener("touchmove", e => { const t = e.touches[0]; if (t) point(t.clientX, t.clientY); }, { passive: true });
+
+  const uU = n => gl.getUniformLocation(update, n), uD = n => gl.getUniformLocation(draw, n);
+  const U = { time: uU("u_time"), dt: uU("u_dt"), attract: uU("u_attract"), aspect: uU("u_aspect"), mouse: uU("u_mouse"), mouseOn: uU("u_mouseOn"), targets: uU("u_targets") };
+  const D = { aspect: uD("u_aspect"), attract: uD("u_attract"), dpr: uD("u_dpr"), targets: uD("u_targets") };
+
+  const mix = (a, b, k) => a + (b - a) * k;
+  let cur = 0, last = performance.now(), t = 0, hidden = false;
+  document.addEventListener("visibilitychange", () => { hidden = document.hidden; });
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (hidden) return;
+    let dt = Math.min((now - last) / 1000, 0.05); last = now;
+    if (reduced) dt *= 0.35;
+    t += dt;
+    attract += (attractTarget - attract) * Math.min(1, dt * 2.2);
+    const src = cur, dst = 1 - cur;
+
+    // simulate
+    gl.useProgram(update);
+    gl.uniform1f(U.time, t); gl.uniform1f(U.dt, dt * 60 / 60); gl.uniform1f(U.attract, attract); gl.uniform1f(U.aspect, aspect);
+    gl.uniform2f(U.mouse, mouse.x, mouse.y); gl.uniform1f(U.mouseOn, mouse.on);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets); gl.uniform1i(U.targets, 0);
+    gl.bindVertexArray(updateVAO[src]);
+    gl.enable(gl.RASTERIZER_DISCARD);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tfs[dst]);
+    gl.beginTransformFeedback(gl.POINTS); gl.drawArrays(gl.POINTS, 0, active); gl.endTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+    gl.disable(gl.RASTERIZER_DISCARD);
+
+    // draw: dim the last frame, then the particles over it
+    if (!cleared) { gl.clearColor(0.016, 0.02, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT); cleared = true; }
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(fade); gl.uniform1f(F.fade, mix(0.20, 0.30, attract)); gl.bindVertexArray(fadeVAO); gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(draw);
+    gl.uniform1f(D.aspect, aspect); gl.uniform1f(D.attract, attract); gl.uniform1f(D.dpr, dpr);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, targets); gl.uniform1i(D.targets, 0);
+    gl.bindVertexArray(drawVAO[dst]);
+    gl.drawArrays(gl.POINTS, 0, active);
+    gl.bindVertexArray(null);
+    cur = dst;
+  }
+  document.fonts && document.fonts.ready.then(() => { if (SHAPES[mode]) { rasterise(SHAPES[mode]); } });
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
