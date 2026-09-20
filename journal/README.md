@@ -666,6 +666,73 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 39 (2026-09-20) -- LOVA inside Godot
+
+The owner's question, after the three Kenney ports: why are the
+models so simple, and could real ones be used?  The answer was that
+the models are the kits' own .glb files, decimated to a budget because
+the renderer is written in LOVA and draws about 1 500 triangles a
+frame; and that anything that looks like a real game needs the picture
+handed to a GPU, which LOVA cannot reach and was never meant to.  The
+direction that followed, in one afternoon's conversation: Godot is
+MIT and its scripting layer is pluggable, so link the engine and make
+LOVA one of its scripting languages -- the engine draws, LOVA rules.
+Every port so far had already rewritten only the GDScript; the engine
+parts were the ones being replaced by hand-written small versions.
+
+Built the same day, the first of the two depths discussed (a runtime
+embedded as a node class; a `ScriptLanguageExtension` is the second):
+
+- **`native/lova-rt` is a library.** The protocol handlers moved from
+  `main.rs` to `server.rs` (`handle`, `handle_line`, `Sessions`); the
+  binary is the stdio carrier and nothing else.  Conformance
+  1023/1023 after the split.
+- **`native/lova-godot`**, a GDExtension (godot-rust 0.5.5, `api-4-6`)
+  with one class, `LovaRuntime`: `open(hex, max_steps, max_depth)`,
+  `get(name)`, `get_in(map, key)`, `call(fn, args)`, `release`,
+  `close`, `steps`, `error`, `anomaly`, and `request(json)` for the
+  protocol raw.  The evaluator runs on its own thread with a
+  gigabyte of stack, as the binary does, so a deep program cannot
+  overflow Godot's main thread; a request is a channel round trip.
+  Values cross as the protocol encodes them -- int, String, Array,
+  null, `{"ref": id}` -- and a float is refused by name, because the
+  one leak Godot invites is a Vector3 arriving unconverted.
+- **`apps/godot/fps`**: the FPS kit's own project with its
+  `player.gd` and `enemy.gd` replaced by scripts that read the keys,
+  call `lib/fps.lova` once a physics tick and put the answer into the
+  kit's nodes.  `fps_godot.lova` is `lib/fps.lova` and a `scene`
+  function (player, enemies, impacts, as integer lists in F and A);
+  `build.py` compiles it to hex, assembles the project from the kit
+  and the overlay, imports its resources headlessly, and can run the
+  smoke script, the game, or a scripted `--shot`.  The picture is
+  Godot's -- the kit's sky, models, muzzle flashes, impact sprites
+  and HUD -- and `apps/godot/fps/screenshot.png` is it.
+
+**Measured, this machine, inside Godot:** a tick of the rules 3 900-
+6 700 steps, **0.56-0.70 ms** including the three channel round
+trips; 300 ticks headless 210 ms.  The Vulkan driver here cannot
+build Godot's Forward+ shaders (an old AMD driver), so `--gl` runs
+the compatibility renderer; that is the machine, not the bridge.
+`tests/test_godot.py`: the program's shape in Python, the same
+through a native session (Python and Rust agree on the scene after
+thirty ticks), and the extension inside `godot --headless` (300
+ticks, a float refused, a trap reported by kind).  Suite 1 100 ->
+1 104.
+
+**What it means for the roadmap.** The rules of a game are the part
+an AI writes, checks and repairs; the picture never was.  With the
+engine as host, a port is only its GDScript rewritten, and the same
+task can be given to a model in LOVA and in GDScript on the same
+engine -- the first head-to-head the four numbers have had with an
+identical host (Q135).  Two costs stand: the rules count in fixed
+point while the engine counts in floats, so every script carries F
+and A (Q136: is a number type the four numbers call for?); and the
+bridge is data in, data out -- no engine API from inside a program --
+which keeps the boundary static and is the design, until a program
+needs to say "play this animation" and has to say it as a list
+(Q137).  Q134 (a pure-Rust player) is superseded for the games: the
+player is Godot.
+
 ### Milestone 38 (2026-09-20) -- The stutter was the window
 
 The owner, with the VM and the lighter renderer in place: still not

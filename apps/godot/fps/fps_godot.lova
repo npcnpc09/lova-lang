@@ -1,0 +1,46 @@
+;;; fps_godot.lova  --  the FPS kit's rules, as Godot asks for them
+;;;
+;;; The program `apps/godot/fps/build.py` compiles for the Godot
+;;; project: `lib/fps.lova` unchanged, and one function Godot calls
+;;; after every tick to learn what to draw.  Nothing about the picture
+;;; is here -- Godot draws the kit's own scene -- so `scene` hands
+;;; over positions and states and not faces.
+;;;
+;;; Units are the rules' own: a length in 65 536ths of a metre (`F`),
+;;; an angle in 16 384ths of a turn (`A`).  The script divides.
+;;;
+;;;   (scene w)   ; (player enemies impacts)
+;;;               ;   player:  (x y z yaw pitch dip health weapon shot t restarts)
+;;;               ;            `shot` is 1 on the tick a weapon fired
+;;;               ;   enemies: ((x y z yaw alive health fired) ...)
+;;;               ;            `fired` is 1 on the tick its timer went off
+;;;               ;   impacts: ((x y z fresh) ...), `fresh` 1 on the tick it was made
+
+(use "fps")
+
+(def player-scene [w]
+  (let p (get w p)
+    (list (get p x) (get p y) (get p z) (get p yaw) (get p pitch) (get p dip)
+          (get p health) (get p weapon)
+          (if (eq (get p cool) (sub (w-cool (get p weapon)) 1)) 1 0)
+          (get w t) (get w restarts))))
+
+(def enemy-scene [e]
+  (list (get e x) (get e y) (get e z) (get e yaw) (get e alive) (get e health)
+        (if (eq (get e fire) E-TIMER) 1 0)))
+
+;; A mark is made with IMPACT-LIFE ticks to live and aged once in the
+;; same tick, so the one Godot has not seen yet is one under it.
+(def impact-scene [m]
+  (list (get m x) (get m y) (get m z) (if (eq (get m life) (sub IMPACT-LIFE 1)) 1 0)))
+
+(def scene [w]
+  (list (player-scene w)
+        (map enemy-scene (get w enemies))
+        (map impact-scene (get w impacts))))
+
+(example (len (scene new-game)) 3)
+(example (len (head (tail (scene new-game)))) 4)
+(example (nth (head (scene new-game)) 6) 100)
+
+(rec new new-game tick tick input input scene scene)

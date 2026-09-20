@@ -239,6 +239,27 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M39** (2026-09-20) -- **LOVA inside Godot.** The owner's question
+-- why are the ports' models so simple, could real ones be used -- had
+one honest answer: the renderer is LOVA's, 1 500 triangles a frame,
+and a real picture needs a GPU the language cannot reach. So the
+engine is the host: `native/lova-rt` split into a library
+(`server.rs`, conformance 1023/1023 after) and a stdio binary;
+`native/lova-godot`, a GDExtension (godot-rust 0.5.5) with one class,
+`LovaRuntime` -- `open` / `get` / `call` / `release` / `close`, the
+protocol in-process on its own gigabyte-stack thread, values as
+int / String / Array / `{"ref": id}`, a float refused by name;
+`apps/godot/fps`, the FPS kit's own Godot project with `player.gd` and
+`enemy.gd` replaced by scripts that call `lib/fps.lova` once a physics
+tick and write the answer into the kit's nodes (`fps_godot.lova` adds
+a `scene` function; `build.py` compiles, assembles, imports, runs,
+`--shot`). The picture is Godot's; a tick of the rules is 0.56-0.70 ms
+inside it. Q135 (LOVA against GDScript on the same engine, the first
+identical-host comparison), Q136 (fixed point against the engine's
+floats: a number type?), Q137 (data in, data out, until a program has
+to ask for an animation). Q134 superseded for the games. Tests
+1100 -> 1104. `journal/README.md`, "Milestone 39".
+
 **M38** (2026-09-20) -- **the stutter was the window.** On the VM a
 tick is 2 ms and a frame 3-8 ms of LOVA; the Tk canvas took 21 ms with
 250 ms spikes to redraw. `apps/sdlhost.py` and `--host sdl|tk` in the
@@ -1147,7 +1168,7 @@ the four numbers call for it, and M27 is the second time they did. See
 `spec/token-budget.md` for the ledger.
 
 **Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-1100 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
+1104 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
 25 first-class apps (the last Kenney's FPS starter kit -- KenneyNL/Starter-Kit-FPS, MIT, ~1 000 stars: `lib/fps.lova` checked tick by tick against a transliteration of `player.gd` and `enemy.gd`, the picture from the eye; before it Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
 1 telemetry DB (19 KB).
 

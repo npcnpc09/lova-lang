@@ -20,6 +20,12 @@ line on stdout (`spec/native-runtime-protocol.md`): `ping`, `run`,
 stdout. `core/native.py` is the Python client; `--native on` on the
 CLI and in the drivers uses it.
 
+The crate is also a library (`src/lib.rs`): the protocol is
+`server::handle(request, sessions, next)`, one request to one reply,
+and `main.rs` is only the stdio carrier around it. A host that links
+the crate -- `native/lova-godot`, the runtime as a Godot class -- calls
+`handle` in its own process with the same requests and replies.
+
 ## Two evaluators
 
 | | `rt.rs` — the tree-walker | `vm/` — the bytecode VM |

@@ -1,0 +1,18 @@
+[package]
+name = "lova-godot"
+version = "0.1.0"
+edition = "2021"
+description = "LOVA inside Godot: the native runtime as a GDExtension class, the protocol in-process."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+lova-rt = { path = "../lova-rt" }
+godot = { version = "0.5.5", features = ["api-4-6"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
