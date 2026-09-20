@@ -631,6 +631,18 @@ def cmd_check(args: argparse.Namespace) -> int:
             print(line)
     except (CompileError, ValueError):
         pass
+    if getattr(args, "strength", False) and all(r["passed"] for r in results):
+        # M40: would the examples notice if a def were wrong?
+        from core.strength import strength
+        from core.strength import summary as strength_summary
+        try:
+            report = strength(source, prelude=not args.no_prelude, granted=granted,
+                              max_steps=args.max_steps, max_call_depth=args.max_depth,
+                              budget_s=args.strength_budget, only=args.only or None)
+        except (CompileError, ValueError) as exc:
+            return report_error(exc, source)
+        print("  strength: what the examples would not see")
+        print(strength_summary(report))
     return EXIT_OK if all(r["passed"] for r in results) else EXIT_TRAP
 
 
@@ -857,6 +869,13 @@ def build_parser() -> argparse.ArgumentParser:
                        help="run the examples on the native runtime, in one "
                             "process; a miss re-runs the whole check in "
                             "Python, where the located fault is")
+    check.add_argument("--strength", action="store_true",
+                       help="then try every single-node edit of every def "
+                            "and report the ones no example notices (M40)")
+    check.add_argument("--strength-budget", type=float, default=20.0, metavar="S",
+                       help="seconds to spend on --strength (default 20)")
+    check.add_argument("--only", action="append", metavar="DEF",
+                       help="with --strength: probe this def only (repeatable)")
     check.set_defaults(func=cmd_check)
 
     repl = common(subparsers.add_parser("repl", help="interactive session"),

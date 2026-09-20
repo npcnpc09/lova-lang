@@ -666,6 +666,105 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 40 (2026-09-20) -- What the examples would not see
+
+The owner's question that morning, after the portal: did writing the
+games show the language convenient?  The honest answer named two
+things that had cost more than they should: a well-typed program with
+a wrong value in it, which nothing reports (Q106), and the fixed-point
+arithmetic every 3D port carries by hand (Q136).  Asked for the plan,
+then for a better one, then which one first principles chose: the
+root of the first is that an integer carries no meaning, so a program
+holds no information a checker could judge a value against -- the
+only holder of the specification is the writer, and the cheapest thing
+the language can do is let the writer state it and check it every run.
+So B before A: examples that state *relations*, and a tool that says
+which defs the examples cannot see; `Fix` as a value kind (A) waits on
+Q135's numbers.  The owner: "就从B开始做，用FPS那三个错误验证".
+
+**The verification, first.** M35's review had found three rules of
+the FPS port broken while 487 ticks of a tick-by-tick test agreed --
+the oracle carried the same understanding.  The expected side of an
+`(example expr expected)` was already any expression over the
+program's own defs (`core/examples.py` builds it with the defs in
+scope), so a relation needed no language change.  Three were written
+into `lib/fps.lova`, each from the kit's rule and not from the code:
+the knockback's sideways kick shows both signs over twenty-four seeds;
+thirty moves pressing at a wall leave no more velocity than one; the
+weapon's origin lands, through the one camera of 357, where the kit's
+second camera of 824 puts the container offset (359 px right, 329
+below, to the pixel -- the two divisions floor apart).  Then each fault
+was put back by hand and the check run: **3 of 3 caught, each by the
+relation written for it, with all nine value examples passing on all
+three** -- the M35 finding reproduced as a measurement.  The lib's
+examples are 22 (`tests/test_fps.py`).
+
+**The tool: `lova check FILE --strength` (`core/strength.py`).** The
+locator's question backwards: the locator tries every single-node edit
+of a def to make a failing example pass; this tries the same edits --
+operands or branches swapped, a minus or a `not` dropped, a comparison
+or an operator for its sibling, a literal nudged, a reference for
+another name in scope -- on a passing program and counts, def by def,
+the ones no example notices.  The machinery is the locator's: one
+program holds every example, a def's closure is rebuilt with the edited
+body and installed in the letrec frame, the examples that reach the def
+(the calls counter before and after each) are evaluated again, the
+closure put back.  Only the author's own nodes are edited (a field id
+inside `(get w base)` or the `deviation` inside `eq` is not a place the
+author was wrong in), `merge` and `mul` are not swapped (they commute:
+the same program), and a def nothing mentions -- dropped by the
+compiler -- is reported as unreached from the parse.  Round-robin over
+the defs under a time budget, so a budget that runs out leaves every
+def some coverage.  `--only DEF` narrows it; the MCP `lova_check` takes
+`strength`, `strength_budget`, `only` and returns the report and its
+text.  A survivor's report line: `222:11  (le (get w left) 0)  -- the
+two branches are the wrong way round`.
+
+**What it says about the programs.** The tank game (18 examples, 30 s,
+2 285 of 2 302 edits): `spawn` 217 of 226 unseen, `enemies-act` 7 of
+7, and `enemy-act`, `kill-enemy`, `rand`, `next-seed` reached by no
+example at all -- the enemies' whole behaviour is untested by the
+program's own examples, which the 18/18 never said.  The FPS rules,
+the three relations' own defs (`--only`, 87 s): `rand-coin` 6 of 35
+unseen, `knock` 32 of 240, `push-out` 495 of 1 076, `weapon-obj` 122
+of 194 -- a relation catches the fault it was written for and little
+beside it; and most of `weapon-obj`'s survivors are equivalent at the
+one input (the player at the origin, where `(div x 64)` for `(mul x
+64)` is the same number), which is the card's new line: choose inputs
+away from 0 and 1.  The whole FPS library (22 examples, 600 s, 6 386 of 6 490 edits over
+every def): the shooting path -- `one-shot`, `ray-sphere`, `ray-box`,
+`hit-solids`, `hit-enemies`, `damaged`, `sees?` -- is reached by no
+example: the program's examples never fire a shot at an enemy; the
+repeater's five constants (`w-knock`, `w-kx-lo` ...) are 100% unseen
+because the one example that reaches them holds the blaster;
+`bump` 118 of 126, `gravity` 118 of 132, `land` 100 of 133 -- the
+value examples fall one tick and never land or bump.  Every one of
+these is a rule the tick-by-tick test in Python covers and the
+program's own examples do not, which is what the tool is for.  A
+constant is reached by mention -- a def an example ran through names
+it -- since a value is not called; a first run listed every constant
+as unreached, and the tank game's `W` and `H` now show every edit
+caught.
+
+**The card.** One paragraph after the fault line: the one mistake
+nothing above can catch is a well-typed wrong value, so state what a
+def must satisfy, not only what it returns -- `(example (gap a b) (gap
+b a))` -- since a relation comes from the rule and catches what a value
+copied from the code cannot; then `--strength` says which defs the
+examples would not see.  `tests/test_strength.py` (5), the FPS count,
+and `test_card` regenerated.  Tests 1100 -> 1105 on this machine (the four the toolchain adds aside).
+
+**Not done, by design.** The `Fix` value kind (A): it removes the
+forgotten-rescale class outright and keeps the two runtimes byte-
+identical where f64 would not, but it enters on Q135's numbers or not
+at all.  Q106 is answered in its second half: the compiler still cannot
+see a swapped reference, and now the writer can see whether the
+examples would.  Q138: the `operator` edit describes a macro's
+expansion (`sub` reported as `merge` -> `gcd`).  Q139: equivalent
+mutants -- an edit that is the same program at every input, not only
+at the example's -- inflate a def's count; a second input the tool
+picks itself would separate them from the unguarded.
+
 ### Milestone 39 (2026-09-20) -- LOVA inside Godot
 
 The owner's question, after the three Kenney ports: why are the
@@ -2925,6 +3024,20 @@ the corpus grows again.
   8" four times of four -- but both sessions say the prompt still
   vouched (sixteen cells, 3^6), so a constant with no arithmetic
   story is still to plant (Q122).
+- **Q138** *(M40)*: the `operator` edit describes a macro's expansion
+  -- `(sub a b)` reported as "`merge` should be `gcd`" -- where the
+  author wrote `sub`; the description should be in the author's own
+  spelling, as the replacement text already is.
+- **Q139** *(M40)*: equivalent mutants.  An edit that is the same
+  program at every input -- not only at the example's -- inflates a
+  def's unseen count (`weapon-obj` at the origin, where `(div x 64)`
+  and `(mul x 64)` agree).  A second input the tool draws itself, or
+  the M30 perturbation set, would separate them from the unguarded.
+- **Q140** *(M40)*: `Fix` as a value kind -- fixed point with the
+  scale in the runtime, `mul` rescaling, int and Fix mixed a
+  DomainTrap, both runtimes still byte-identical -- to enter on Q135's
+  numbers if the AI's attempts still go to scale arithmetic after the
+  relation examples, and not otherwise.
 - **Q122** *(Exp 29 run 2)*: a constant with no arithmetic story -- a
   threshold, a weight -- planted where the prompt says nothing, so
   that "fixes all N examples" is the only oracle; the confident-
@@ -2946,7 +3059,7 @@ the corpus grows again.
 - **Q111**: allow one retraction. Exp 24's F7 says the write-once rule
   is what forced the tree-holding; letting a session un-emit the last
   token is the control that would test it.
-- ~~**Q106**~~ *(answered in part by M32's lint pass: unread parameters and locals, shadowing parameters)*: a diagnostic for the silent reference error -- can the
+- ~~**Q106**~~ *(answered in part by M32's lint pass: unread parameters and locals, shadowing parameters; the other half by M40: the compiler cannot see it, `check --strength` says whether the examples would)*: a diagnostic for the silent reference error -- can the
   compiler flag a reference whose binder is plausibly wrong (a shadow,
   an out-of-scope number, a binding never used)? It is the one mistake
   the substrate form invites and the one Axiom 3 cannot catch.

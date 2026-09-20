@@ -239,6 +239,27 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M40** (2026-09-20) -- **what the examples would not see.** The
+owner asked whether the games had shown the language convenient; the
+honest answer named the well-typed wrong value (Q106) and hand-carried
+fixed point (Q136), and the first-principles choice was to let the
+writer state what a def must satisfy and check it every run, before
+making any mistake unrepresentable. An `(example expr expected)`'s
+expected side was already any expression over the program's defs, so
+a relation costs no language change: three were written into
+`lib/fps.lova` from the kit's rules -- both kick signs occur, pressing
+at a wall stores no speed, the weapon lands where the kit's second
+camera puts it -- and each of M35's three faults, put back by hand,
+was **caught by exactly its relation while all nine value examples
+passed** (3/3). `lova check FILE --strength` (`core/strength.py`, MCP
+`lova_check` with `strength`) is the locator backwards: every
+single-node edit of every def on a passing program, and the ones no
+example notices, def by def, plus the defs no example reaches -- the
+tank game's enemies turned out untested by its 18/18 examples. The
+card says to write relations and choose inputs away from 0 and 1.
+`Fix` as a value kind waits on Q135. Q138, Q139. Tests 1104 -> 1109.
+`journal/README.md`, "Milestone 40".
+
 **M39** (2026-09-20) -- **LOVA inside Godot.** The owner's question
 -- why are the ports' models so simple, could real ones be used -- had
 one honest answer: the renderer is LOVA's, 1 500 triangles a frame,

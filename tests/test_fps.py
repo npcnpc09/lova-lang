@@ -743,7 +743,7 @@ class Examples(unittest.TestCase):
             code = main(["check", "tools/bench/fps.lova", "n=1"])
         text = out.getvalue() + err.getvalue()
         self.assertEqual(code, 0, text)
-        self.assertIn("19/19 examples pass", text)
+        self.assertIn("22/22 examples pass", text)
 
 
 if __name__ == "__main__":

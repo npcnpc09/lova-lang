@@ -702,3 +702,57 @@
 ;; stops at a quarter turn
 (example (get (get (tick new-game (input 0 0 0 0 0 100 0)) p) yaw) 100)
 (example (get (get (tick new-game (input 0 0 0 0 0 0 9000)) p) pitch) 4096)
+
+;; --- relations: what the rules must satisfy whatever the numbers -----
+;;
+;; The nine examples above state values.  These three state relations,
+;; each one a rule of the kit that the M35 review found broken while
+;; 487 ticks of a tick-by-tick test agreed -- the oracle carried the
+;; same mistake, because the same understanding wrote both.  A relation
+;; comes from the rule, not from the code, so it stands on its own.
+
+;; The knockback's sideways kick goes both ways.  Over the first
+;; twenty-four seeds both signs must occur; the fault drew the sign as
+;; `(rand s 0 1)`, which is 1 four times in 200 000, so the aim always
+;; kicked one way.
+(def kick-sign [seed]
+  (let y (get (get (knock (put new-game rng seed)) p) yaw)
+    (if (gt y (div A 2)) -1 1)))
+(example (let signs (map kick-sign (range 1 25))
+           (and (any (lambda s (eq s 1)) signs) (any (lambda s (eq s -1)) signs)))
+         1)
+
+;; Pressing into a wall stores up no speed.  Thirty moves at a wall
+;; leave no more velocity than one does; the fault kept the whole of
+;; it pressing into the face, so stepping clear flung the player.
+(def WALL [] (rec x 0 y 0 z (mul 2 F) yaw 0 hx 72090 hz 35560 cz 12634 top 65536))
+(def pressing [n]
+  (let p0 (put (put new-player z 88000) lz MOVE)
+    (iterate (list 0 p0)
+             (lambda st (eq (head st) n))
+             (lambda st (list (inc (head st)) (move (head (tail st)) (list WALL)))))))
+(example (le (abs (get (head (tail (pressing 30))) vz))
+             (abs (get (head (tail (pressing 1))) vz)))
+         1)
+
+;; The weapon is seen where the kit's second camera puts it.  The kit
+;; draws it through a camera of 40 degrees, whose focal length at a
+;; 600-pixel screen is 824 where the world camera's (80 degrees) is
+;; 357, so the container origin (1.2, -1.1, -2.75) lands 824*1.2/2.75
+;; pixels right of centre and 824*1.1/2.75 below; seen through the one
+;; camera of 357 it must land at the same two numbers, to the pixel
+;; (the two divisions floor differently).  The fault
+;; carried the offset through the world camera unscaled and put it
+;; mid-frame, small.
+(def weapon-screen [p focal]
+  (let o (weapon-obj p)
+    (let dx (sub (get o x) (div (get p x) 64))
+      (let dy (sub (get o y) (div (eye-y p) 64))
+        (let dz (sub (get o z) (div (get p z) 64))
+          (list (div (mul focal dx) (neg dz)) (div (mul focal (neg dy)) (neg dz))))))))
+(def within-px [got want]
+  (and (le (abs (sub (head got) (head want))) 1)
+       (le (abs (sub (head (tail got)) (head (tail want)))) 1)))
+(example (within-px (weapon-screen new-player 357)
+                    (list (div (mul 824 1229) 2816) (div (mul 824 1126) 2816)))
+         1)

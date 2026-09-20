@@ -188,7 +188,11 @@ TOOLS: List[Dict[str, Any]] = [
             "Run the examples a LOVA program declares about itself -- "
             "`(example expr expected)` forms beside its defs. Each is run as "
             "a conservation contract; a miss reports expected, got, the "
-            "example's span and the sub-expression at fault when one is found."
+            "example's span and the sub-expression at fault when one is found. "
+            "With `strength` true and every example passing, also tries every "
+            "single-node edit of every def and reports, def by def, the edits "
+            "no example would notice and the defs no example reaches -- where "
+            "to write the relation that would (M40)."
         ),
         "inputSchema": {
             "type": "object",
@@ -197,6 +201,11 @@ TOOLS: List[Dict[str, Any]] = [
                 "allow": {"type": "array", "items": {"type": "string"}},
                 "max_steps": {"type": "integer", "default": 20000000},
                 "max_depth": {"type": "integer", "default": 10000},
+                "strength": {"type": "boolean", "default": False},
+                "strength_budget": {"type": "number", "default": 20.0,
+                                    "description": "seconds to spend probing"},
+                "only": {"type": "array", "items": {"type": "string"},
+                         "description": "probe these defs only"},
             },
             "required": ["source"],
         },
@@ -553,8 +562,22 @@ def tool_check(params: Dict[str, Any]) -> Dict[str, Any]:
     except (CompileError, ValueError, SystemExit) as exc:
         return _failure("compile", exc, params.get("source"))
     passed = sum(1 for r in results if r["passed"])
-    return {"ok": passed == len(results), "passed": passed, "total": len(results),
-            "examples": _jsonable(results)}
+    out = {"ok": passed == len(results), "passed": passed, "total": len(results),
+           "examples": _jsonable(results)}
+    if params.get("strength") and passed == len(results):
+        from core.strength import strength, summary
+        try:
+            report = strength(source, prelude=params.get("prelude", True),
+                              granted=parse_allow(allow),
+                              max_steps=int(params.get("max_steps", CLI_MAX_STEPS)),
+                              max_call_depth=int(params.get("max_depth", CLI_MAX_DEPTH)),
+                              budget_s=float(params.get("strength_budget", 20.0)),
+                              only=params.get("only") or None)
+        except (CompileError, ValueError, SystemExit) as exc:
+            return _failure("compile", exc, params.get("source"))
+        out["strength"] = _jsonable(report)
+        out["strength_text"] = summary(report)
+    return out
 
 
 def tool_static_analyze(params: Dict[str, Any]) -> Dict[str, Any]:

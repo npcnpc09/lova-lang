@@ -30,6 +30,19 @@ example's own expression, that makes it pass, scored against the other
 examples ("fixes every example" is a repair; "the fault may be
 elsewhere" is a lead). Patch the span it names.
 
+The one mistake nothing above can catch is a well-typed wrong value --
+a reference swapped, a scale forgotten, a sign always the same -- and
+only an example can, so state what a def must satisfy, not only what
+it returns: the expected side is any expression over the program's own
+defs, so an example can be a relation -- `(example (dist a b) (dist b
+a))`, `(example (le (speed (press 30)) (speed (press 1))) 1)`, `(example
+(both-signs? (map kick (range 1 25))) 1)`. A relation comes from the
+rule, not from the code, so it catches what a value copied from the
+code cannot; and choose inputs away from 0 and 1, where most wrong
+programs give the right answer. `lova check FILE --strength` then says,
+def by def, which single-node edits the examples would not notice and
+which defs no example reaches: write the relation that would.
+
 ## Arithmetic (integers only)
 
 ```
