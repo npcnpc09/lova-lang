@@ -321,6 +321,10 @@ video.muted = true; video.defaultMuted = true; video.style.cssText = "position:f
 // phone on a slow link gets past the first frame
 video.src = "assets/demo-480.mp4"; document.body.appendChild(video);
 const videoTex = new THREE.VideoTexture(video); videoTex.colorSpace = THREE.SRGBColorSpace;
+// the same frame as a picture: what the panel shows until the video has a
+// frame of its own, and for good if the browser cannot play it at all
+const stillTex = new THREE.TextureLoader().load("assets/godot-fps.png"); stillTex.colorSpace = THREE.SRGBColorSpace;
+let videoFailed = false; video.addEventListener("error", () => { videoFailed = true; });
 let videoWanted = false, videoStillSince = 0;
 function videoPlay() { if (videoWanted && video.paused) video.play().catch(() => {}); }
 // A phone in low-power or data-saver mode, and the in-app browsers, refuse
@@ -337,7 +341,7 @@ document.addEventListener("visibilitychange", videoPlay);
 // the chapter says so when the picture has been wanted and still for a while
 const tap = document.getElementById("tap");
 function videoHint(now) {
-  const still = videoWanted && (video.paused || video.readyState < 3);
+  const still = videoWanted && !videoFailed && (video.paused || video.readyState < 3);
   if (!still) videoStillSince = 0; else if (!videoStillSince) videoStillSince = now;
   const show = still && now - videoStillSince > 1500;
   if (show) tap.textContent = L(video.paused ? "c4.tap" : "c4.wait");
@@ -399,6 +403,8 @@ function chaptersAt(p) {
   videoWanted = P4.visible;
   if (videoWanted) videoPlay(); else if (!video.paused) video.pause();
   videoHint(performance.now());
+  const screen = P4.children[0].material, want = !videoFailed && video.readyState >= 2 ? videoTex : stillTex;
+  if (screen.map !== want) { screen.map = want; screen.needsUpdate = true; }
 }
 
 // ---------- sound: a slow pad, made here, off until asked ------------------
