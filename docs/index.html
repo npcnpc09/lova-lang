@@ -315,7 +315,7 @@ const spark = canvasTexture(1024, 576, (c, w, h) => {
 // nothing at all.
 const video = document.createElement("video");
 video.setAttribute("muted", ""); video.setAttribute("playsinline", ""); video.setAttribute("webkit-playsinline", ""); video.setAttribute("loop", ""); video.setAttribute("preload", "auto");
-video.setAttribute("x5-video-player-type", "h5-page"); video.setAttribute("disablepictureinpicture", "");
+video.setAttribute("x5-video-player-type", "h5-page"); video.setAttribute("disablepictureinpicture", ""); video.setAttribute("autoplay", "");
 video.muted = true; video.defaultMuted = true; video.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:.01;pointer-events:none";
 // 480p, 30 fps, no sound track: 0.4 MB where the recording is 2 MB, so a
 // phone on a slow link gets past the first frame
@@ -325,18 +325,16 @@ const videoTex = new THREE.VideoTexture(video); videoTex.colorSpace = THREE.SRGB
 // frame of its own, and for good if the browser cannot play it at all
 const stillTex = new THREE.TextureLoader().load("assets/godot-fps.png"); stillTex.colorSpace = THREE.SRGBColorSpace;
 let videoFailed = false; video.addEventListener("error", () => { videoFailed = true; });
+// The clip loops from the moment the browser lets it and is never paused:
+// a muted 480p loop costs a phone nothing, and pausing it was how a browser
+// that allows one play and refuses the next left a frozen frame.  Where a
+// muted play is refused until a gesture (low-power and data-saver modes,
+// the in-app browsers), every tap or key retries it until one is honoured
+// -- a scroll on a phone ends in touchcancel, not touchend, so a scroll is
+// not a tap and the chapter has to ask for one.
 let videoWanted = false, videoStillSince = 0;
-function videoPlay() { if (videoWanted && video.paused) video.play().catch(() => {}); }
-// A phone in low-power or data-saver mode, and the in-app browsers, refuse
-// even a muted play until a gesture has touched the element once.  The
-// first tap or key anywhere plays it (and pauses it again if its chapter
-// is not on screen); after that the scroll may start and stop it freely.
-function videoUnlock() {
-  const p = video.play();
-  if (p && p.then) p.then(() => { if (!videoWanted) video.pause(); }).catch(() => {});
-  ["touchend", "pointerup", "click", "keydown"].forEach(ev => removeEventListener(ev, videoUnlock));
-}
-["touchend", "pointerup", "click", "keydown"].forEach(ev => addEventListener(ev, videoUnlock, { passive: true }));
+function videoPlay() { if (video.paused && !videoFailed) { const p = video.play(); if (p && p.catch) p.catch(() => {}); } }
+["touchend", "pointerup", "click", "keydown"].forEach(ev => addEventListener(ev, videoPlay, { passive: true }));
 document.addEventListener("visibilitychange", videoPlay);
 // the chapter says so when the picture has been wanted and still for a while
 const tap = document.getElementById("tap");
@@ -401,7 +399,7 @@ function chaptersAt(p) {
   // the panel was visible from 0.55 to 0.84 and played only 0.58 to 0.8,
   // so the largest view of it was a frozen frame
   videoWanted = P4.visible;
-  if (videoWanted) videoPlay(); else if (!video.paused) video.pause();
+  if (frameN % 30 === 0) videoPlay();
   videoHint(performance.now());
   const screen = P4.children[0].material, want = !videoFailed && video.readyState >= 2 ? videoTex : stillTex;
   if (screen.map !== want) { screen.map = want; screen.needsUpdate = true; }
