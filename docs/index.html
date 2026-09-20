@@ -60,7 +60,7 @@
   /* the Chinese projection: a CJK face where Bebas Neue has no glyphs, and the line-height it needs */
   html[lang="zh"] body, html[lang="zh"] .ui, html[lang="zh"] .c, html[lang="zh"] .cta { font-family: "Space Mono", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", ui-monospace, monospace; }
   html[lang="zh"] .ui, html[lang="zh"] .cta, html[lang="zh"] .n { letter-spacing: .2em; }
-  html[lang="zh"] .c { letter-spacing: .14em; max-width: 36ch; }
+  html[lang="zh"] .c { letter-spacing: .14em; max-width: 44ch; }
   html[lang="zh"] .chapter:not(.hero) .t { font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 900;
        font-size: clamp(32px, 4vw, 64px); line-height: 1.22; letter-spacing: .06em; }
   html[lang="zh"] .chapter.center:not(.hero) .t { font-size: clamp(30px, 3.8vw, 60px); }
@@ -116,14 +116,14 @@ const I18N = {
   zh: {
     "nav.source": "源码", "hint": "往下滑", "side.head": "去哪儿", "side.source": "源码", "side.journal": "研究日志", "side.game": "那个游戏", "side.card": "语言速查卡",
     "sound.on": "声音 开", "sound.off": "声音 关", "lang.other": "EN",
-    "hero.c": "写它的不是人，读它的也不是",
-    "c1.t": "它不写代码，<br><em>它写一个数。</em>", "c1.c": "一个程序，从头到尾，就是一个整数",
-    "c2.t": "每写一步，<br>都知道<br><em>下一步能写什么。</em>", "c2.c": "语法错误、类型错误，根本写不出来",
-    "c3.t": "出了错，<br>不是一屏报错，<br><em>而是指给你看。</em>", "c3.c": "错在哪，怎么改，一行说完",
-    "c4.t": "它<br><em>已经在跑游戏了。</em>", "c4.c": "一个 3D 游戏，规则全部是用它写的",
-    "c5.n": "三个阶段，现在是第一个", "c5.t": "文字只是给人看的窗口。<br><em>它本来的样子，是一个数。</em>", "c5.cta": "去看源码",
+    "hero.c": "为 AI 而生的语言",
+    "c1.t": "语言的底座，<br><em>以数学定义。</em>", "c1.c": "程序即整数，规则即算术",
+    "c2.t": "让 AI<br><em>用更少，想更远。</em>", "c2.c": "没有多余的括号和名字，一个字节，就是一步",
+    "c3.t": "为 AI 的理解而写，<br><em>报错，不再经人手。</em>", "c3.c": "错在哪、怎么改，它自己说清，AI 自己修好",
+    "c4.t": "一句话，<br>就是一个世界。<br><em>这个时代到了。</em>", "c4.c": "屏幕里这个游戏，规则全部由 LOVA 写成",
+    "c5.n": "三个阶段，这是第一个", "c5.t": "今天，文字是窗。<br><em>明天，只剩那个数。</em>", "c5.cta": "去看源码",
     "p.number": "一个数", "p.next": "下一步能写什么", "p.here": "这里", "p.points": "错在这儿",
-    "meta": "写它的不是人，读它的也不是。LOVA，一门给 AI 用的语言。",
+    "meta": "LOVA，为 AI 而生的语言。",
   },
 };
 let lang = "en";
