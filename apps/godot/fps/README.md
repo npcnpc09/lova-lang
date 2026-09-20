@@ -4,8 +4,17 @@
     python apps/godot/fps/build.py [path/to/Starter-Kit-FPS] --run
     python apps/godot/fps/build.py --shot=apps/godot/fps/screenshot.png
     python apps/godot/fps/build.py --smoke          # headless, no window
+    python apps/godot/fps/build.py --movie=apps/godot/fps/demo.mp4   # the recording
 
 ![Kenney's FPS kit drawn by Godot, its rules run by LOVA](screenshot.png)
+
+[`demo.mp4`](demo.mp4) is seven seconds of the demo playing itself
+in Godot's movie-maker mode -- a frame a tick, the sound with it: it
+walks in, jumps, looks round, then turns to the nearest enemy and
+takes three of the four with the repeater and the blaster.  The aim is
+computed from the enemies' places the rules report each tick; what it
+hits is decided by the rules' own ray.  The fourth enemy stands
+seventeen metres away, beyond the ten-metre shot, so the demo ends.
 
 The same port as [`apps/fps`](../../fps/README.md), the other way
 round.  There, LOVA draws the picture too, through `lib/scene3d.lova`,

@@ -262,7 +262,7 @@ pip install -e ".[experiments]"
 
 ## What the programs show
 
-Twenty-two programs in `apps/`, each written to use the language for
+Twenty-three programs in `apps/`, each written to use the language for
 something and kept as a test. What they demonstrate:
 
 - **It runs a game.** Tank battle, in real time: eight enemies arrive
@@ -472,6 +472,26 @@ something and kept as a test. What they demonstrate:
   ```bash
   python apps/fps/fps.py                                 # WASD, space, mouse, E, left button
   python apps/fps/fps.py --shot out.png                  # one frame, no window
+  ```
+
+- **The same rules, inside Godot.** `native/lova-godot` is the native
+  runtime as a Godot 4 extension class, and `apps/godot/fps` is the
+  kit's own Godot project with `player.gd` and `enemy.gd` replaced by
+  scripts that call `lib/fps.lova` once a physics tick and put the
+  answer into the kit's nodes. Godot draws its own scene -- the sky,
+  the models, the muzzle flashes, the impact sprites, the HUD -- and
+  LOVA decides everything that happens in it, in 0.6 ms a tick.
+  **[A seven-second recording](apps/godot/fps/demo.mp4)** (with the
+  sound), made by `build.py --movie`, shows the demo walk in, look
+  round and take three of the four enemies with both weapons; the
+  corner reads the rules' cost every tick.
+
+  ![Kenney's FPS kit drawn by Godot, every rule LOVA](apps/godot/fps/screenshot.png)
+
+  ```bash
+  cargo build --release --manifest-path native/lova-godot/Cargo.toml
+  python apps/godot/fps/build.py path/to/Starter-Kit-FPS --run     # play it
+  python apps/godot/fps/build.py --movie=demo.mp4                  # record the demo
   ```
 
 - **Logic runs right the first time.** The word count, the games, the

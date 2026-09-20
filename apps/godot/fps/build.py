@@ -1,6 +1,6 @@
 """Assemble the Godot project: the kit, the LOVA rules, the runtime.
 
-    python apps/godot/fps/build.py [path/to/Starter-Kit-FPS] [--smoke | --run | --shot=out.png] [--gl]
+    python apps/godot/fps/build.py [path/to/Starter-Kit-FPS] [--smoke | --run | --shot=out.png | --movie=out.mp4] [--gl]
 
 What it makes, in `apps/godot/fps/project/` (not tracked):
 
@@ -17,7 +17,9 @@ What it makes, in `apps/godot/fps/project/` (not tracked):
 
 `--smoke` then runs `lova_smoke.gd` under `godot --headless`; `--run`
 plays the game; `--shot=out.png` plays a scripted two seconds with
-nobody at the keys, saves the picture and quits.  `--gl` runs Godot on
+nobody at the keys, saves the picture and quits; `--movie=out.mp4`
+records fifteen scripted seconds in Godot's movie-maker mode (a frame a
+tick, the sound with it) and converts with ffmpeg.  `--gl` runs Godot on
 the OpenGL compatibility renderer, for a machine whose Vulkan driver
 cannot build the Forward+ shaders.  The Godot binary is `$GODOT` or
 the one in `D:/game/godot`; the project's resources are imported once,
@@ -106,6 +108,38 @@ def import_resources(exe: Path) -> None:
     print("  resources imported")
 
 
+MOVIE_TICKS = 900          # fifteen seconds at sixty
+
+
+def record(exe: Path, out: Path, renderer: list[str]) -> int:
+    """Godot's movie-maker mode: every tick a frame, sixty a second
+    whatever the machine manages, with the sound; then ffmpeg to the
+    file asked for (mp4, webm, gif...) when there is one."""
+    avi = out.with_suffix(".avi")
+    cmd = [str(exe), "--path", str(PROJECT), "--write-movie", str(avi), "--fixed-fps", "60"] + renderer
+    cmd += ["--", f"--movie={MOVIE_TICKS}"]
+    print("  " + " ".join(cmd))
+    code = subprocess.call(cmd)
+    if code != 0 or not avi.exists():
+        return code or 1
+    if avi == out:
+        return 0
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        print(f"  no ffmpeg: the recording is {avi}")
+        return 0
+    if out.suffix == ".gif":
+        conv = [ffmpeg, "-y", "-i", str(avi), "-vf", "fps=20,scale=640:-1:flags=lanczos", str(out)]
+    else:
+        conv = [ffmpeg, "-y", "-i", str(avi), "-c:v", "libx264", "-preset", "slow", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)]
+    code = subprocess.call(conv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if code == 0:
+        avi.unlink()
+        print(f"  recorded: {out} ({out.stat().st_size // 1024} KB)")
+    return code
+
+
 def main(argv: list[str]) -> int:
     args = [a for a in argv if not a.startswith("--")]
     flags = {a for a in argv if a.startswith("--")}
@@ -127,6 +161,11 @@ def main(argv: list[str]) -> int:
         if exe is None:
             raise SystemExit("no Godot binary: set $GODOT")
         return subprocess.call([str(exe), "--path", str(PROJECT)] + renderer)
+    movie = next((a for a in flags if a.startswith("--movie=")), None)
+    if movie:
+        if exe is None:
+            raise SystemExit("no Godot binary: set $GODOT")
+        return record(exe, Path(movie[8:]).resolve(), renderer)
     shot = next((a for a in flags if a.startswith("--shot=")), None)
     if shot:
         if exe is None:

@@ -51,7 +51,11 @@ var tick_steps := 0
 var tick_usec := 0
 var readout: Label
 var shot_path := ""           # --shot=<png>: a scripted run, a picture, quit
+var movie_ticks := 0          # --movie=<ticks>: a longer scripted run, then quit
 var ticks := 0
+var last_scene: Array = []
+var caption: Label
+var done_at := 0              # the tick the demo ran out of reachable enemies
 
 
 func _ready():
@@ -70,6 +74,9 @@ func _ready():
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot="):
 			shot_path = a.substr(7)
+		if a.begins_with("--movie="):
+			movie_ticks = int(a.substr(8))
+			_add_caption()
 
 
 # The enemy nodes are ready after this one, so they are matched to the
@@ -131,6 +138,15 @@ func _physics_process(delta):
 		shoot = 1 if ticks >= 60 else 0
 		jump = 1 if ticks == 20 else 0
 		toggle = 0
+	elif movie_ticks > 0:
+		var plan := _movie_input()
+		mx = plan[0]
+		mz = plan[1]
+		jump = plan[2]
+		shoot = plan[3]
+		toggle = plan[4]
+		dyaw = plan[5]
+		dpitch = plan[6]
 	ticks += 1
 
 	var held = rt.call(fn["input"], [mx, mz, jump, shoot, toggle, int(round(dyaw)), int(round(dpitch))])
@@ -151,7 +167,101 @@ func _physics_process(delta):
 		return
 	if not bound:
 		_bind_enemies(scene)
+	last_scene = scene
 	_apply(scene, delta)
+	if movie_ticks > 0 and (ticks >= movie_ticks or (done_at > 0 and ticks >= done_at + 150)):
+		print("movie: ", ticks, " ticks")
+		get_tree().quit()
+
+
+# The demo's choreography, a tick at a time: walk in, jump, look round,
+# then turn to the nearest standing enemy and shoot until none stands,
+# changing weapon on the way.  The aim is computed from what the rules
+# reported last tick -- the enemies' places in F -- so the demo's hand
+# on the mouse is steadier than a person's, and everything it hits is
+# hit by the rules' own ray.
+func _movie_input() -> Array:
+	var turn := 120.0 * A / 360.0 / 60.0
+	var max_turn := 4.0 * A / 360.0          # degrees a tick the aim may move
+	var mx := 0
+	var mz := 0
+	var jump := 0
+	var shoot := 0
+	var toggle := 0
+	var dyaw := 0.0
+	var dpitch := 0.0
+	if last_scene.size() != 3:
+		return [0, 0, 0, 0, 0, 0.0, 0.0]
+	var p: Array = last_scene[0]
+	var px: float = p[0] / F
+	var pz: float = p[2] / F
+	# The home platform is five metres across at the origin; the demo
+	# never leaves it, because the rules' shots reach ten metres and
+	# the blaster's knockback of forty would throw it off the edge.
+	var at_home := absf(px) < 2.0 and absf(pz) < 2.0
+	if ticks < 30:
+		mz = -1 if pz > -1.2 else 0                # a few steps in
+		jump = 1 if ticks == 12 else 0
+	elif ticks < 150:
+		dyaw = turn * 0.5                          # a look round
+	else:
+		var eye := Vector3(px, p[1] / F + 1.0 + p[5] / F, pz)
+		var target = null
+		var best := INF
+		var standing := 0
+		for e in last_scene[1]:
+			if e[4] != 1:
+				continue
+			standing += 1
+			var at := Vector3(e[0] / F, e[1] / F + 0.25, e[2] / F)
+			var d := eye.distance_to(at)
+			if d < best:
+				best = d
+				target = at
+		if target != null:
+			var d: Vector3 = target - eye
+			var want_yaw := atan2(-d.x, -d.z)
+			var have_yaw: float = p[3] * TAU / A
+			var err_yaw := wrapf(want_yaw - have_yaw, -PI, PI)
+			var want_pitch := atan2(d.y, Vector2(d.x, d.z).length())
+			var have_pitch: float = p[4] * TAU / A
+			var err_pitch: float = want_pitch - have_pitch
+			dyaw = clampf(err_yaw * A / TAU, -max_turn, max_turn)
+			dpitch = clampf(err_pitch * A / TAU, -max_turn, max_turn)
+			var aligned := absf(err_yaw) < deg_to_rad(2.5) and absf(err_pitch) < deg_to_rad(2.5)
+			var reachable := best < 10.5           # the rules' shot is ten metres
+			shoot = 1 if aligned and reachable and ticks > 170 else 0
+			if aligned and best > 6.5 and at_home:
+				mz = -1                            # closer, while the platform lasts
+			if not reachable and not at_home and done_at == 0:
+				done_at = ticks                    # the rest are out of range: the end
+		elif done_at == 0:
+			done_at = ticks
+		# the repeater for the first two (knockback ten), the blaster --
+		# three shots a trigger and a kick of forty -- for the third
+		toggle = 1 if ticks == 155 or (standing == 2 and p[7] == 1) else 0
+	return [mx, mz, jump, shoot, toggle, dyaw, dpitch]
+
+
+func _add_caption():
+	var hud = get_parent().get_node_or_null("HUD")
+	if hud == null:
+		return
+	caption = Label.new()
+	caption.text = "rules: lib/fps.lova, 704 lines of LOVA, in the LOVA VM inside Godot   |   picture: Kenney's FPS kit, drawn by Godot"
+	caption.add_theme_font_size_override("font_size", 18)
+	caption.add_theme_color_override("font_color", Color(1, 1, 1, 0.9))
+	caption.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	caption.add_theme_constant_override("shadow_offset_x", 1)
+	caption.add_theme_constant_override("shadow_offset_y", 1)
+	caption.anchor_top = 1.0
+	caption.anchor_bottom = 1.0
+	caption.anchor_left = 0.0
+	caption.anchor_right = 1.0
+	caption.offset_top = -40
+	caption.offset_bottom = -12
+	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hud.add_child(caption)
 
 
 # The rules' answer, into the kit's nodes.
@@ -207,7 +317,11 @@ func _apply(scene: Array, delta: float):
 				_impact(Vector3(m[0] / F, m[1] / F, m[2] / F))
 
 	if readout:
-		readout.text = "LOVA tick %s steps / %.2f ms" % [_group(tick_steps), tick_usec / 1000.0]
+		var standing := 0
+		for e in es:
+			if e[4] == 1:
+				standing += 1
+		readout.text = "LOVA tick %s steps / %.2f ms     enemies standing %d" % [_group(tick_steps), tick_usec / 1000.0, standing]
 	if shot_path != "" and ticks == 120:
 		_take_shot()
 
@@ -255,6 +369,10 @@ func _add_readout():
 		return
 	readout = Label.new()
 	readout.position = Vector2(16, 16)
+	readout.add_theme_font_size_override("font_size", 18)
+	readout.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	readout.add_theme_constant_override("shadow_offset_x", 1)
+	readout.add_theme_constant_override("shadow_offset_y", 1)
 	readout.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
 	hud.add_child(readout)
 
