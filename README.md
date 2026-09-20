@@ -10,10 +10,15 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 781 tests. It is an
-interpreter in Python, with a stdlib-only core that runs under PyPy
-as well, and it has no floats, no namespaces and no concurrency. The
-"What LOVA still cannot do" section below is kept honest.*
+LOVA, modules, a CLI, an MCP server for agents, and 1 104 tests. The
+reference implementation is a stdlib-only Python interpreter; the
+programs run on a native Rust runtime -- a bytecode VM at 10-12
+million steps a second, checked against the interpreter step for step
+on a golden set of 1 023 records -- which is the default, and the same
+runtime loads into Godot 4 as an extension class, so a game's rules can
+be LOVA under the engine's own picture. It has no floats, no namespaces
+and no concurrency. The "What LOVA still cannot do" section below is
+kept honest.*
 
 ## The one-paragraph pitch
 
@@ -145,9 +150,9 @@ semantics.
 ## Quick start
 
 Requires Python ≥ 3.10. The core has **no dependencies**, so it also
-runs under PyPy, where long runs are about six times faster. With
-Rust installed, `cargo build --release` in `native/lova-rt` builds the
-native runtime, and `lova run` uses it by itself for every program it
+runs under PyPy. With Rust installed, `cargo build --release` in
+`native/lova-rt` builds the native runtime -- 10-12 million steps a
+second, twenty times CPython -- and `lova run` uses it by itself for every program it
 implements (`--native off` for the Python runtime, `--native on` to be
 told why it could not be used): the same values, the same anomalies,
 the same step counts, checked record by record against
@@ -211,7 +216,7 @@ python -m core.cli analyze apps/collatz.lova 27
 # run the examples a program declares about itself
 python -m core.cli check apps/tictactoe.lova 0
 
-# run the test suite (781 tests, stdlib unittest only)
+# run the test suite (1 104 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # the same under PyPy, where the whole suite is also expected to pass
@@ -463,9 +468,9 @@ something and kept as a test. What they demonstrate:
   blasters into an enemy, taking fire, sliding along a wall, falling
   off: **the same position within four thousandths, the same yaw,
   pitch, health, cooldown and enemies, tick for tick**. On the native
-  runtime a tick is 2 ms and a frame 20 ms (`apps/fps/README.md` has
-  the honest table); a run on both runtimes draws the same picture to
-  the byte.
+  runtime a tick is 2 ms and a frame 8 ms, and the SDL window holds
+  60 frames a second (`apps/fps/README.md` has the table); a run on
+  both runtimes draws the same picture to the byte.
 
   ![Kenney's FPS level from the eye: the window is Python, the game is LOVA](apps/fps/screenshot.png)
 
@@ -542,9 +547,10 @@ something and kept as a test. What they demonstrate:
   a session met was fixed at its next submission, and the sessions
   called the diagnostics "excellent"; a step budget now reports which
   functions it went to (`journal/experiment_19.md`).
-- **It runs anywhere Python does.** The core has no dependencies, so
-  the same programs run under CPython and PyPy, and the 781 tests pass
-  on both.
+- **It runs anywhere Python does, and fast where Rust does.** The core
+  has no dependencies, so the same programs run under CPython and PyPy,
+  and the 1 104 tests pass on both; the native runtime runs the same
+  byte sequence at 10-12 million steps a second and inside Godot.
 - **Text is a value.** A string literal is one node; `words`, `split`,
   `join`, `parse-int` and the rest are one operator each; a word count
   of 10 000 lines runs in 5.5 s on CPython where it took 28 (M25).
@@ -611,7 +617,7 @@ How LOVA does each, in the order of the table:
 9. `conserve` states the contract, `surprise` measures the miss,
    `mutate` proposes; three targets repaired in 39, 37 and 20 attempts,
    reproducibly.
-10. The core is stdlib-only; 727 tests pass on both interpreters.
+10. The core is stdlib-only; 1 104 tests pass on both interpreters.
 
 And the measurement behind the claim that it costs a model nothing: a
 fresh Claude session given one page of LOVA wrote 79 of 80 benchmark
@@ -776,20 +782,19 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         781 unit tests, stdlib only
+tests/         1 104 unit tests, stdlib only
+native/        the Rust runtime (lova-rt) and its Godot extension (lova-godot)
 ```
 
 ## What LOVA still cannot do
 
 Stated plainly, because the list is short and the omissions are large:
 
-- **It is an interpreter.** The tree is compiled to closures (M23)
-  and runs at ~700 000 steps a second on CPython, ~4 million under
-  PyPy (journal M22, M23 and M25 have the profiles); the native
-  runtime (M33-M37: a Rust tree-walker, then a bytecode VM) runs the
-  same programs at 10-12 million steps a second, 20x CPython, and the
-  tick-driven 3D apps run on it. Tens of thousands of lines of
-  input are seconds; millions are not this language yet (Q76).
+- **It is not a data language.** The native VM does 10-12 million
+  steps a second and a game's tick in under a millisecond; a word
+  count of tens of thousands of lines is seconds. Millions of lines,
+  or arithmetic that wants a vector unit, are not this language yet
+  (Q76).
 - **IO is whole values.** `fs-read` reads a whole file, `net-recv` one
   datagram: there are no handles and no streams (Q72). The terminal is
   ambient rather than declared (Q68).
