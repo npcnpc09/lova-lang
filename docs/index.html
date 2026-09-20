@@ -9,7 +9,7 @@
 <meta property="og:description" content="A language for something that writes and will never read.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
   :root { --ink: #eef3f5; --dim: #8fa3ab; --glow: #8ff3ff; --violet: #b78bff; --gold: #ffd58a; --rose: #ff8fb8; }
   * { box-sizing: border-box; }
@@ -57,6 +57,13 @@
   .cta { pointer-events: auto; display: inline-block; margin-top: 30px; padding: 13px 24px; border: 1px solid rgba(143,243,255,.4); border-radius: 999px; color: var(--ink); text-decoration: none;
     font-size: 10px; letter-spacing: .3em; text-transform: uppercase; background: rgba(5,10,12,.35); backdrop-filter: blur(8px); transition: box-shadow .3s, border-color .3s; }
   .cta:hover { border-color: var(--glow); box-shadow: 0 0 30px rgba(143,243,255,.2); }
+  /* the Chinese projection: a CJK face where Bebas Neue has no glyphs, and the line-height it needs */
+  html[lang="zh"] body, html[lang="zh"] .ui, html[lang="zh"] .c, html[lang="zh"] .cta { font-family: "Space Mono", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", ui-monospace, monospace; }
+  html[lang="zh"] .ui, html[lang="zh"] .cta, html[lang="zh"] .n { letter-spacing: .2em; }
+  html[lang="zh"] .c { letter-spacing: .14em; max-width: 36ch; }
+  html[lang="zh"] .chapter:not(.hero) .t { font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 900;
+       font-size: clamp(34px, 4.6vw, 72px); line-height: 1.22; letter-spacing: .06em; }
+  html[lang="zh"] .chapter.center:not(.hero) .t { font-size: clamp(30px, 4vw, 64px); }
   @media (max-width: 720px) { .side, .progress { display: none; } .nav i { width: 18px; } .chapter { align-items: flex-end; } .chapter .box { padding: 0 22px 12vh; } .chapter.right { justify-content: flex-start; } .chapter.center { align-items: center; } }
 </style>
 </head>
@@ -67,17 +74,17 @@
 <div id="track"></div>
 
 <a class="ui mark" href="#">LOVA</a>
-<nav class="ui nav"><button id="audio" type="button">Sound off</button><i></i><a href="https://github.com/npcnpc09/lova-lang">Source</a></nav>
-<div class="ui hint" id="hint">Scroll down</div>
-<div class="ui side"><b>Where to</b><a href="https://github.com/npcnpc09/lova-lang">the source</a><a href="https://github.com/npcnpc09/lova-lang/blob/main/journal/README.md">the journal</a><a href="https://github.com/npcnpc09/lova-lang/tree/main/apps/godot/fps">the game</a><a href="https://github.com/npcnpc09/lova-lang/blob/main/corpus/language_card.md">the card</a></div>
+<nav class="ui nav"><button id="lang" type="button" aria-label="Switch language">中文</button><i></i><button id="audio" type="button">Sound off</button><i></i><a href="https://github.com/npcnpc09/lova-lang" data-i18n="nav.source">Source</a></nav>
+<div class="ui hint" id="hint" data-i18n="hint">Scroll down</div>
+<div class="ui side"><b data-i18n="side.head">Where to</b><a href="https://github.com/npcnpc09/lova-lang" data-i18n="side.source">the source</a><a href="https://github.com/npcnpc09/lova-lang/blob/main/journal/README.md" data-i18n="side.journal">the journal</a><a href="https://github.com/npcnpc09/lova-lang/tree/main/apps/godot/fps" data-i18n="side.game">the game</a><a href="https://github.com/npcnpc09/lova-lang/blob/main/corpus/language_card.md" data-i18n="side.card">the card</a></div>
 <div class="ui progress"><i id="bar"></i></div>
 
-<div class="chapter hero center on" data-from="0" data-to="0.08"><div class="box"><p class="t" data-decode>LOVA</p><p class="c">a language for something that writes and will never read</p></div></div>
-<div class="chapter" data-from="0.10" data-to="0.24"><div class="box"><p class="n">I</p><p class="t" data-decode>It does not<br>write words.<br><em>It writes one number.</em></p><p class="c">the whole program, a single integer, carried whole</p></div></div>
-<div class="chapter right" data-from="0.27" data-to="0.41"><div class="box"><p class="n">II</p><p class="t" data-decode>Every step<br>knows what<br><em>may come next.</em></p><p class="c">nothing malformed can be written into it</p></div></div>
-<div class="chapter" data-from="0.44" data-to="0.58"><div class="box"><p class="n">III</p><p class="t" data-decode>When it goes<br>wrong, it does<br>not shout. <em>It points.</em></p><p class="c">the fault, the place, the way back</p></div></div>
-<div class="chapter right" data-from="0.61" data-to="0.75"><div class="box"><p class="n">IV</p><p class="t" data-decode>It is<br><em>already playing.</em></p><p class="c">a game, every rule of it written in the language</p></div></div>
-<div class="chapter center" data-from="0.80" data-to="1.01"><div class="box"><p class="n">Stage one of three</p><p class="t" data-decode>The text is how we look in.<br><em>The number is where it lives.</em></p><a class="cta" href="https://github.com/npcnpc09/lova-lang">Enter the source</a></div></div>
+<div class="chapter hero center on" data-from="0" data-to="0.08"><div class="box"><p class="t" data-decode>LOVA</p><p class="c" data-i18n="hero.c">a language for something that writes and will never read</p></div></div>
+<div class="chapter" data-from="0.10" data-to="0.24"><div class="box"><p class="n">I</p><p class="t" data-decode data-i18n="c1.t">It does not<br>write words.<br><em>It writes one number.</em></p><p class="c" data-i18n="c1.c">the whole program, a single integer, carried whole</p></div></div>
+<div class="chapter right" data-from="0.27" data-to="0.41"><div class="box"><p class="n">II</p><p class="t" data-decode data-i18n="c2.t">Every step<br>knows what<br><em>may come next.</em></p><p class="c" data-i18n="c2.c">nothing malformed can be written into it</p></div></div>
+<div class="chapter" data-from="0.44" data-to="0.58"><div class="box"><p class="n">III</p><p class="t" data-decode data-i18n="c3.t">When it goes<br>wrong, it does<br>not shout. <em>It points.</em></p><p class="c" data-i18n="c3.c">the fault, the place, the way back</p></div></div>
+<div class="chapter right" data-from="0.61" data-to="0.75"><div class="box"><p class="n">IV</p><p class="t" data-decode data-i18n="c4.t">It is<br><em>already playing.</em></p><p class="c" data-i18n="c4.c">a game, every rule of it written in the language</p></div></div>
+<div class="chapter center" data-from="0.80" data-to="1.01"><div class="box"><p class="n" data-i18n="c5.n">Stage one of three</p><p class="t" data-decode data-i18n="c5.t">The text is how we look in.<br><em>The number is where it lives.</em></p><a class="cta" href="https://github.com/npcnpc09/lova-lang" data-i18n="c5.cta">Enter the source</a></div></div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
@@ -90,6 +97,55 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 
 const INTEGER = "5236340526486686477338404983010635694500647689052305876906148730770053659357209638518213293823373727735246357251760864509287008373876019185618829188812074617107386505825165356818554246876487315374142413908311266012530310018822471738924522525641286728135879591191454222133763511146630068721533964671396714762635712455170687666191093369401831078373358009903151777566153527768229008108258254480813467334";
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------- two languages, one page ----------------------------------------
+const I18N = {
+  en: {
+    "nav.source": "Source", "hint": "Scroll down", "side.head": "Where to", "side.source": "the source", "side.journal": "the journal", "side.game": "the game", "side.card": "the card",
+    "sound.on": "Sound on", "sound.off": "Sound off", "lang.other": "中文",
+    "hero.c": "a language for something that writes and will never read",
+    "c1.t": "It does not<br>write words.<br><em>It writes one number.</em>", "c1.c": "the whole program, a single integer, carried whole",
+    "c2.t": "Every step<br>knows what<br><em>may come next.</em>", "c2.c": "nothing malformed can be written into it",
+    "c3.t": "When it goes<br>wrong, it does<br>not shout. <em>It points.</em>", "c3.c": "the fault, the place, the way back",
+    "c4.t": "It is<br><em>already playing.</em>", "c4.c": "a game, every rule of it written in the language",
+    "c5.n": "Stage one of three", "c5.t": "The text is how we look in.<br><em>The number is where it lives.</em>", "c5.cta": "Enter the source",
+    "p.number": "ONE NUMBER", "p.next": "WHAT MAY COME NEXT", "p.here": "HERE", "p.points": "IT POINTS",
+    "meta": "A language for something that writes and will never read.",
+  },
+  zh: {
+    "nav.source": "源码", "hint": "向下滚动", "side.head": "去往", "side.source": "源码", "side.journal": "研究日志", "side.game": "那个游戏", "side.card": "语言卡",
+    "sound.on": "声音 开", "sound.off": "声音 关", "lang.other": "EN",
+    "hero.c": "一门语言，为那只写、从不读的东西而造",
+    "c1.t": "它不写文字。<br><em>它写一个数。</em>", "c1.c": "整个程序，就是一个整数，整个地带着",
+    "c2.t": "每一步都知道<br><em>下一步可以是什么。</em>", "c2.c": "任何畸形的东西都写不进去",
+    "c3.t": "出错的时候，<br>它不喊叫。<br><em>它指出来。</em>", "c3.c": "故障、位置，和回去的路",
+    "c4.t": "它<em>已经在玩了。</em>", "c4.c": "一个游戏，每一条规则都用这门语言写成",
+    "c5.n": "三个阶段的第一个", "c5.t": "文本是我们看进去的窗。<br><em>数才是它住的地方。</em>", "c5.cta": "进入源码",
+    "p.number": "一个数", "p.next": "下一步可以是什么", "p.here": "这里", "p.points": "它指出来",
+    "meta": "一门语言，为那只写、从不读的东西而造。",
+  },
+};
+let lang = "en";
+try { lang = localStorage.getItem("lova.lang") || ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en"); } catch (e) {}
+if (!I18N[lang]) lang = "en";
+const L = key => I18N[lang][key];
+const PANEL_FONT = "700 16px 'Space Mono', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif";
+let decodeGen = 0, audio = null;
+function applyLang(animate) {
+  document.documentElement.lang = lang;
+  document.querySelector('meta[name="description"]').content = L("meta");
+  document.querySelector('meta[property="og:description"]').content = L("meta");
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.innerHTML = L(el.dataset.i18n); });
+  document.getElementById("lang").textContent = L("lang.other");
+  const a = document.getElementById("audio"); a.textContent = L(audio && audio.on ? "sound.on" : "sound.off");
+  decodeGen++;
+  if (animate && !reduced) document.querySelectorAll(".chapter.on [data-decode]").forEach(decode);
+}
+document.getElementById("lang").addEventListener("click", () => {
+  lang = lang === "zh" ? "en" : "zh";
+  try { localStorage.setItem("lova.lang", lang); } catch (e) {}
+  applyLang(true);
+});
 
 // ---------- the rail --------------------------------------------------------
 const DEPTH = 64;                              // how far the camera travels
@@ -211,7 +267,7 @@ const digits = canvasTexture(1024, 576, (c, w, h) => {
     c.fillStyle = l % 5 === 2 ? "#8ff3ff" : "rgba(143,243,255,.42)";
     c.fillText(s, 40, l * lh - off + 20);
   }
-  c.fillStyle = "rgba(255,255,255,.9)"; c.font = "700 16px 'Space Mono', monospace"; c.fillText("ONE NUMBER", 40, h - 44);
+  c.fillStyle = "rgba(255,255,255,.9)"; c.font = PANEL_FONT; c.fillText(L("p.number"), 40, h - 44);
 });
 // II: a path of steps, each lit as the next is chosen
 const path = canvasTexture(1024, 576, (c, w, h) => {
@@ -229,7 +285,7 @@ const path = canvasTexture(1024, 576, (c, w, h) => {
   // the branches not taken, faint
   c.strokeStyle = "rgba(143,243,255,.16)"; c.lineWidth = 1;
   for (let i = 0; i < n - 1; i++) for (let k = -1; k <= 1; k += 2) { c.beginPath(); c.moveTo(pts[i][0], pts[i][1]); c.lineTo(pts[i + 1][0], pts[i + 1][1] + k * 70); c.stroke(); }
-  c.fillStyle = "rgba(255,255,255,.9)"; c.font = "700 16px 'Space Mono', monospace"; c.textBaseline = "top"; c.fillText("WHAT MAY COME NEXT", 40, h - 44);
+  c.fillStyle = "rgba(255,255,255,.9)"; c.font = PANEL_FONT; c.textBaseline = "top"; c.fillText(L("p.next"), 40, h - 44);
 });
 // III: a field of marks and one that points
 const spark = canvasTexture(1024, 576, (c, w, h) => {
@@ -243,14 +299,15 @@ const spark = canvasTexture(1024, 576, (c, w, h) => {
   c.beginPath(); c.arc(x, y, 26 + pulse * 10, 0, Math.PI * 2); c.stroke();
   c.beginPath(); c.moveTo(x - 60, y); c.lineTo(x - 34, y); c.moveTo(x + 34, y); c.lineTo(x + 60, y); c.moveTo(x, y - 60); c.lineTo(x, y - 34); c.moveTo(x, y + 34); c.lineTo(x, y + 60); c.stroke();
   c.fillStyle = "#ff8fb8"; c.beginPath(); c.arc(x, y, 6, 0, Math.PI * 2); c.fill();
-  c.fillStyle = "rgba(255,255,255,.9)"; c.font = "700 16px 'Space Mono', monospace"; c.textBaseline = "top"; c.fillText("HERE", x + 40, y - 8);
-  c.fillText("IT POINTS", 40, h - 44);
+  c.fillStyle = "rgba(255,255,255,.9)"; c.font = PANEL_FONT; c.textBaseline = "top"; c.fillText(L("p.here"), x + 40, y - 8);
+  c.fillText(L("p.points"), 40, h - 44);
 });
 // IV: the game, playing
 const video = document.createElement("video");
 video.src = "assets/demo.mp4"; video.muted = true; video.loop = true; video.playsInline = true; video.preload = "auto"; video.crossOrigin = "anonymous";
 const videoTex = new THREE.VideoTexture(video); videoTex.colorSpace = THREE.SRGBColorSpace;
 
+applyLang(false);
 const P1 = panel(-13, 1, 4.6, digits.tex, 0x8ff3ff);
 const P2 = panel(-26, -1, 4.6, path.tex, 0xb78bff);
 const P3 = panel(-38, 1, 4.6, spark.tex, 0xff8fb8);
@@ -280,8 +337,9 @@ function decode(el) {
   const nodes = [...el.querySelectorAll("*")].filter(n => n.childNodes.length && [...n.childNodes].some(c => c.nodeType === 3));
   const targets = []; const walk = n => { n.childNodes.forEach(c => { if (c.nodeType === 3 && c.textContent.trim()) targets.push([c, c.textContent]); else if (c.nodeType === 1) walk(c); }); };
   walk(el);
-  let f = 0; const total = 26;
+  let f = 0; const total = 26, gen = decodeGen;
   const tick = () => {
+    if (gen !== decodeGen) return;
     f++;
     targets.forEach(([node, text]) => {
       const k = Math.floor(text.length * Math.min(1, f / (total * 0.75)));
@@ -302,7 +360,6 @@ function chaptersAt(p) {
 }
 
 // ---------- sound: a slow pad, made here, off until asked ------------------
-let audio = null;
 document.getElementById("audio").addEventListener("click", function () {
   if (!audio) {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -322,7 +379,7 @@ document.getElementById("audio").addEventListener("click", function () {
   audio.on = !audio.on;
   audio.ac.resume();
   audio.master.gain.setTargetAtTime(audio.on ? 0.22 : 0, audio.ac.currentTime, 1.2);
-  this.textContent = audio.on ? "Sound on" : "Sound off";
+  this.textContent = L(audio.on ? "sound.on" : "sound.off");
 });
 
 // ---------- resize, frame ---------------------------------------------------
