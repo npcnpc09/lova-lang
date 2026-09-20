@@ -191,14 +191,12 @@ python apps/shell/policy_app.py       # http://127.0.0.1:8765
 python apps/tanks/tank_game.py        # arrows move, space fires
 python -m core.cli run apps/tanks.lova 7   # the same game, turn by turn in the terminal
 python apps/g2048/game2048.py 7       # 2048, ported from gabrielecirulli/2048
-python apps/model/model.py            # low-poly meshes, turned and lit in real time
 python apps/platformer/platformer.py  # Kenney's 3D platformer kit, ported out of GDScript
-python apps/citybuilder/citybuilder.py # Kenney's city builder kit, sample city and all
 python apps/fps/fps.py                # Kenney's FPS kit: two blasters, four flying enemies
-#   the three 3D kits above draw in an SDL window when pygame is there
+#   the two kits above draw in an SDL window when pygame is there
 #   (`pip install pygame` for the smooth window; Tk is the fallback, and
 #   `--host tk` / `--host sdl` chooses.  `--bench N` prints frame times)
-python -m core.cli run apps/cube.lova # a cube turning in three dimensions
+python apps/godot/fps/build.py path/to/Starter-Kit-FPS --run   # the FPS kit's rules inside Godot
 
 # an interactive session, with the standard library loaded
 python -m core.cli repl
@@ -309,26 +307,6 @@ something and kept as a test. What they demonstrate:
   python -m core.cli run apps/g2048.lova 7   # the terminal
   ```
 
-- **And a mesh, in real time.** `lib/mesh3d.lova` is the general camera:
-  a model of triangles with no grid under it, turned about two axes,
-  divided by its depth, back faces dropped by the sign of the projected
-  area, each face lit by its own normal, handed over far face first. No
-  square root anywhere — a face keeps the unit normal it was born with,
-  and a rotation does not change a length — and the sun is carried into
-  the model’s frame once a frame rather than every normal into the
-  camera’s. About **220 LOVA steps a triangle**: 32 triangles in 16 ms,
-  48 in 25, 66 in 31, and a 320-triangle sphere in 139. `tests/test_mesh3d.py` holds the same renderer in
-  floating point and compares 961 faces across five models and five
-  angles: **the fixed-point picture lands within 1.34 pixels of it**,
-  with the same faces surviving the cull.
-
-  ![a low-poly tree turning: the window is Python, the 3D is LOVA](apps/model/screenshot.png)
-
-  ```bash
-  python apps/model/model.py                        # 1-5 pick a model, drag to turn
-  python apps/model/obj_to_lova.py mine.obj lib/mine.lova mine   # what Blender exports
-  ```
-
 - **And a 3D platformer, ported from Kenney's starter kit.**
   `lib/platformer.lova` holds the rules of
   [KenneyNL/Starter-Kit-3D-Platformer](https://github.com/KenneyNL/Starter-Kit-3D-Platformer)
@@ -355,32 +333,7 @@ something and kept as a test. What they demonstrate:
   python apps/platformer/platformer.py --shot out.png    # one frame, no window
   ```
 
-- **And a city builder, from Kenney's other starter kit.**
-  `lib/citybuilder.lova` holds the rules of
-  [KenneyNL/Starter-Kit-City-Builder](https://github.com/KenneyNL/Starter-Kit-City-Builder)
-  (MIT, about 1 500 stars): a grid of fifteen kinds of structure, a
-  till charged only when a cell changes hands, a cursor that turns in
-  quarters, a camera that pans, turns under the mouse and zooms in
-  steps — and what a click *means*, the mouse carried back through the
-  camera to the ground in integers. The sample city ships with it: 122
-  cells and the 5 860 left in its till, read out of Godot's binary
-  resource format by `apps/citybuilder/import_kit.py`, which also
-  reads the fifteen models and simplifies them by vertex clustering.
-  `tests/test_citybuilder.py` transliterates `builder.gd` and
-  `view.gd` and runs them beside the port one tick at a time through a
-  session of panning, turning, zooming, building over and demolishing:
-  **the same till, the same cells, the same camera within four
-  thousandths**, and the same cell under the mouse for every pixel not
-  within eight hundredths of a boundary.
-
-  ![Kenney's sample city: the window is Python, the city is LOVA](apps/citybuilder/screenshot.png)
-
-  ```bash
-  python apps/citybuilder/citybuilder.py                 # WASD, wheel, middle-drag, click, Q/E
-  python apps/citybuilder/citybuilder.py --empty         # a clean grid
-  ```
-
-- **And a first-person shooter, from Kenney's third starter kit.**
+- **And a first-person shooter, from Kenney's FPS starter kit.**
   `lib/fps.lova` holds the rules of
   [KenneyNL/Starter-Kit-FPS](https://github.com/KenneyNL/Starter-Kit-FPS)
   (MIT, about 1 000 stars): a player who walks at five, jumps twice,
