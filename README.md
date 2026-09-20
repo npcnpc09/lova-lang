@@ -190,10 +190,7 @@ python apps/shell/policy_app.py       # http://127.0.0.1:8765
 # tank battle: the window is Python, every rule of the game is LOVA
 python apps/tanks/tank_game.py        # arrows move, space fires
 python -m core.cli run apps/tanks.lova 7   # the same game, turn by turn in the terminal
-python apps/maze/maze3d.py            # a first-person 3D maze, cast in integers
-python apps/war/war.py                # an isometric battlefield, terrain and all
 python apps/g2048/game2048.py 7       # 2048, ported from gabrielecirulli/2048
-python apps/tactics/tactics.py        # a tactics battle, ported out of GDScript
 python apps/model/model.py            # low-poly meshes, turned and lit in real time
 python apps/platformer/platformer.py  # Kenney's 3D platformer kit, ported out of GDScript
 python apps/citybuilder/citybuilder.py # Kenney's city builder kit, sample city and all
@@ -290,47 +287,6 @@ something and kept as a test. What they demonstrate:
   python -m core.cli run apps/tanks.lova 7   # the terminal
   ```
 
-- **It renders 3D.** A first-person maze: eighty rays a frame, cast
-  through a 23-by-23 grid, each marched cell by cell until it meets a
-  wall, and the wall drawn as tall as its distance says. LOVA has no
-  floating point, so every number in it is an integer -- lengths in
-  1024ths of a cell, angles in 256ths of a turn, a sine from a
-  65-entry table, a square root by Newton's method for the round edge
-  of an orb. The picture is one call, `(frame w 80 420)`: a list of
-  columns, each with a height, a wall and a distance, and the orbs
-  already tested against the wall in front of them. It costs about
-  35 000 steps, under a tenth of a second, and the window is tkinter
-  with nothing in it but the painting and the keys. `apps/cube.lova`
-  is the other kind of 3D on the same arithmetic -- eight corners, a
-  rotation about two axes, a perspective divide -- drawn in characters
-  in a terminal.
-
-  ![a first-person maze; the window is Python, the 3D is LOVA](apps/maze/screenshot.png)
-
-  ```bash
-  python apps/maze/maze3d.py                  # W/S walk, A/D turn, Q/E sidestep
-  python -m core.cli run apps/maze.lova 0     # the same maze, drawn in characters
-  python -m core.cli run apps/cube.lova       # a cube turning in three dimensions
-  ```
-
-- **And the camera a strategy game uses.** An isometric battlefield:
-  a height field from value noise, an island falloff, water at sea
-  level, sand, grass, upland, rock and snow chosen by height and slope,
-  woods and boulders where the ground is flat enough, and a sun dotted
-  against every cell's normal over its own length for the light. Then
-  twelve soldiers on top of it, who walk, slide along a coast they
-  cannot cross, fight what comes within reach and die of it. All of it
-  is `lib/war.lova`: 1 296 cells and 2.5 million steps for the ground,
-  handed to the host far cells first because a painter has no depth
-  buffer, and about 6 000 steps a tick for the battle. The window
-  owns the pixels, the clock and the mouse, and nothing else.
-
-  ![an isometric battlefield: the window is Python, the terrain, the light and the battle are LOVA](apps/war/screenshot.png)
-
-  ```bash
-  python apps/war/war.py    # left-click picks, right-click sends, drag pans, A all, R again
-  ```
-
 - **It ports someone else’s game, and proves it.** 2048, after
   [gabrielecirulli/2048](https://github.com/gabrielecirulli/2048) (MIT):
   `lib/g2048.lova` was written against the original’s
@@ -351,32 +307,6 @@ something and kept as a test. What they demonstrate:
   ```bash
   python apps/g2048/game2048.py 7            # the window, in the original's colours
   python -m core.cli run apps/g2048.lova 7   # the terminal
-  ```
-
-- **And a game engine’s rules, ported out of GDScript.**
-  [ramaureirac/godot-tactical-rpg](https://github.com/ramaureirac/godot-tactical-rpg)
-  (MIT, ~960 stars) is a Final-Fantasy-Tactics-shaped demo for Godot 4.
-  Its rules are now `lib/tactics.lova`: the breadth-first flood a pawn’s
-  movement makes across blocks it can climb, the marking of reachable
-  and attackable tiles, damage that is the attacker’s power and nothing
-  else, an opponent that walks to the tile beside the nearest of yours
-  and strikes the weakest thing in reach. `tests/test_tactics.py` holds
-  a transliteration of the original’s flood and compares the distance
-  to **every cell of the arena, for every kind of pawn**. Two places
-  where the original contradicts itself are named in the file header
-  rather than quietly copied or quietly fixed. **The arena and the cast
-  are the original’s too**: its scene file holds no model — every
-  “mesh” in it is a one-by-one quad with the height in the node’s
-  transform — so the layout was read out of it, two hundred tiles on
-  ten by twenty, and its seven character sprites sit in
-  `apps/tactics/assets/` under its MIT licence. What is ours is the
-  renderer: Godot draws with a GPU; this is isometric blocks the host
-  paints from a list LOVA hands it, far ones first.
-
-  ![a tactics battle on blocks: the window is Python, the rules are LOVA](apps/tactics/screenshot.png)
-
-  ```bash
-  python apps/tactics/tactics.py   # click one of yours, space ends your turn
   ```
 
 - **And a mesh, in real time.** `lib/mesh3d.lova` is the general camera:
