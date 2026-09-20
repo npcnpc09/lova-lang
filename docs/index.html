@@ -62,8 +62,9 @@
   html[lang="zh"] .ui, html[lang="zh"] .cta, html[lang="zh"] .n { letter-spacing: .2em; }
   html[lang="zh"] .c { letter-spacing: .14em; max-width: 36ch; }
   html[lang="zh"] .chapter:not(.hero) .t { font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 900;
-       font-size: clamp(34px, 4.6vw, 72px); line-height: 1.22; letter-spacing: .06em; }
-  html[lang="zh"] .chapter.center:not(.hero) .t { font-size: clamp(30px, 4vw, 64px); }
+       font-size: clamp(32px, 4vw, 64px); line-height: 1.22; letter-spacing: .06em; }
+  html[lang="zh"] .chapter.center:not(.hero) .t { font-size: clamp(30px, 3.8vw, 60px); }
+  html[lang="zh"] .chapter:not(.center) .box { width: min(760px, 88vw); }
   @media (max-width: 720px) { .side, .progress { display: none; } .nav i { width: 18px; } .chapter { align-items: flex-end; } .chapter .box { padding: 0 22px 12vh; } .chapter.right { justify-content: flex-start; } .chapter.center { align-items: center; } }
 </style>
 </head>
@@ -113,16 +114,16 @@ const I18N = {
     "meta": "A language for something that writes and will never read.",
   },
   zh: {
-    "nav.source": "源码", "hint": "往下滑", "side.head": "去处", "side.source": "源码", "side.journal": "研究日志", "side.game": "游戏", "side.card": "语言卡",
-    "sound.on": "有声", "sound.off": "无声", "lang.other": "EN",
-    "hero.c": "为只写不读的作者而生",
-    "c1.t": "它不落字。<br><em>只落一个数。</em>", "c1.c": "整个程序是一个整数，拿起来就是全部",
-    "c2.t": "每一步，<br><em>都知道下一步。</em>", "c2.c": "错的形状，根本写不进去",
-    "c3.t": "出了错，<br>它不吵。<br><em>它指给你看。</em>", "c3.c": "错的是什么，在哪，怎么改",
-    "c4.t": "它<br><em>已经开局了。</em>", "c4.c": "一个完整的游戏，规则全部用它写成",
-    "c5.n": "三步走，这是第一步", "c5.t": "文字是给我们看的窗。<br><em>数，才是它住的家。</em>", "c5.cta": "去看源码",
-    "p.number": "一个数", "p.next": "下一步能是什么", "p.here": "这里", "p.points": "它指给你看",
-    "meta": "LOVA：为只写不读的作者而生的语言。",
+    "nav.source": "源码", "hint": "往下滑", "side.head": "去哪儿", "side.source": "源码", "side.journal": "研究日志", "side.game": "那个游戏", "side.card": "语言速查卡",
+    "sound.on": "声音 开", "sound.off": "声音 关", "lang.other": "EN",
+    "hero.c": "写它的不是人，读它的也不是",
+    "c1.t": "它不写代码，<br><em>它写一个数。</em>", "c1.c": "一个程序，从头到尾，就是一个整数",
+    "c2.t": "每写一步，<br>都知道<br><em>下一步能写什么。</em>", "c2.c": "语法错误、类型错误，根本写不出来",
+    "c3.t": "出了错，<br>不是一屏报错，<br><em>而是指给你看。</em>", "c3.c": "错在哪，怎么改，一行说完",
+    "c4.t": "它<br><em>已经在跑游戏了。</em>", "c4.c": "一个 3D 游戏，规则全部是用它写的",
+    "c5.n": "三个阶段，现在是第一个", "c5.t": "文字只是给人看的窗口。<br><em>它本来的样子，是一个数。</em>", "c5.cta": "去看源码",
+    "p.number": "一个数", "p.next": "下一步能写什么", "p.here": "这里", "p.points": "错在这儿",
+    "meta": "写它的不是人，读它的也不是。LOVA，一门给 AI 用的语言。",
   },
 };
 let lang = "en";
