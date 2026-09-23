@@ -26,9 +26,9 @@ kept honest.*
 
 ## The one-paragraph pitch
 
-Every programming language before it was built for a person -- to be
+Every programming language before it was built for humans -- to be
 learned by a human, read by a human, reviewed by a human. **LOVA is the
-first built for an AI.**
+first built for AI.**
 
 LOVA has one goal: **an AI uses it more conveniently than any other
 language.** Not denser, not stranger: fewer attempts from writing to

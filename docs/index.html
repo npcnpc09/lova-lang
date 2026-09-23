@@ -57,7 +57,7 @@
   .hero .c { font-size: clamp(13px, 1.25vw, 18px); letter-spacing: .24em; margin-top: 26px; color: var(--ink); opacity: .85; max-width: none; }
   html[lang="zh"] .hero .c { font-size: clamp(20px, 2.2vw, 32px); letter-spacing: .22em; font-weight: 700; margin-top: 30px; }
   /* the second hero line says what the first one leaves out: who the language was made for */
-  .hero .sub, html[lang="zh"] .hero .sub { font-size: clamp(10px, 1vw, 14px); letter-spacing: .14em; font-weight: 400; color: var(--ink); opacity: .62; margin-top: 18px; max-width: 64ch; line-height: 2.1;
+  .hero .sub, html[lang="zh"] .hero .sub { font-size: clamp(10px, 1vw, 14px); letter-spacing: .14em; font-weight: 400; color: var(--ink); opacity: .62; margin-top: 18px; max-width: 58ch; line-height: 2.1;
        text-shadow: 0 0 16px rgba(5,10,12,.95), 0 0 6px rgba(5,10,12,.9); }
   html[lang="zh"] .hero .sub { letter-spacing: .14em; max-width: 30em; }
   .open { margin-top: 18px; max-width: 80ch; letter-spacing: .14em; }
@@ -90,7 +90,7 @@
 <div class="ui side"><b data-i18n="side.head">Where to</b><a href="https://github.com/npcnpc09/lova-lang" data-i18n="side.source">the source</a><a href="https://github.com/npcnpc09/lova-lang/blob/main/journal/README.md" data-i18n="side.journal">the journal</a><a href="https://github.com/npcnpc09/lova-lang/tree/main/apps/godot/fps" data-i18n="side.game">the game</a><a href="https://github.com/npcnpc09/lova-lang/blob/main/corpus/language_card.md" data-i18n="side.card">the card</a></div>
 <div class="ui progress"><i id="bar"></i></div>
 
-<div class="chapter hero center on" data-from="0" data-to="0.08"><div class="box"><p class="t" data-decode>LOVA</p><p class="c" data-i18n="hero.c">A language born for AI</p><p class="c sub" data-i18n="hero.s">every language before it was built for a person — this one is built for an AI</p></div></div>
+<div class="chapter hero center on" data-from="0" data-to="0.08"><div class="box"><p class="t" data-decode>LOVA</p><p class="c" data-i18n="hero.c">A language born for AI</p><p class="c sub" data-i18n="hero.s">every language before it was built for humans — this one is built for AI</p></div></div>
 <div class="chapter" data-from="0.10" data-to="0.24"><div class="box"><p class="n">I</p><p class="t" data-decode data-i18n="c1.t">A base<br><em>defined by<br>mathematics.</em></p><p class="c" data-i18n="c1.c">a program is an integer; its rules are arithmetic</p></div></div>
 <div class="chapter right" data-from="0.27" data-to="0.41"><div class="box"><p class="n">II</p><p class="t" data-decode data-i18n="c2.t">Let AI<br><em>spend less,<br>do it faster.</em></p><p class="c" data-i18n="c2.c">no spare brackets, no spare names: one byte, one step</p></div></div>
 <div class="chapter" data-from="0.44" data-to="0.58"><div class="box"><p class="n">III</p><p class="t" data-decode data-i18n="c3.t">Written for<br><em>AI to understand.</em></p><p class="c" data-i18n="c3.c">the fault and the fix: the language says it, the AI does it</p></div></div>
@@ -115,7 +115,7 @@ const I18N = {
     "nav.source": "Source", "hint": "Scroll down", "side.head": "Where to", "side.source": "the source", "side.journal": "the journal", "side.game": "the game", "side.card": "the card",
     "sound.on": "Sound on", "sound.off": "Sound off", "lang.other": "中文",
     "hero.c": "A language born for AI",
-    "hero.s": "every language before it was built for a person — this one is built for an AI",
+    "hero.s": "every language before it was built for humans — this one is built for AI",
     "c1.t": "A base<br><em>defined by<br>mathematics.</em>", "c1.c": "a program is an integer; its rules are arithmetic",
     "c2.t": "Let AI<br><em>spend less,<br>do it faster.</em>", "c2.c": "no spare brackets, no spare names: one byte, one step",
     "c3.t": "Written for<br><em>AI to understand.</em>", "c3.c": "the fault and the fix: the language says it, the AI does it",
