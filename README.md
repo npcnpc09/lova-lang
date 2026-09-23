@@ -26,6 +26,10 @@ kept honest.*
 
 ## The one-paragraph pitch
 
+Every programming language before it was built for a person -- to be
+learned by a human, read by a human, reviewed by a human. **LOVA is the
+first built for an AI.**
+
 LOVA has one goal: **an AI uses it more conveniently than any other
 language.** Not denser, not stranger: fewer attempts from writing to
 running, less context spent on each failure, no scaffolding needed to
@@ -35,6 +39,11 @@ declared effects, the lineage and the evolution machinery exist for
 that; the integer encoding underneath is the format and the identity
 of a program, not the point. **AI is the first-class reader, writer,
 and executor** -- and the people who work with it are the second.
+
+And because it is open source, the language is not anyone's to own.
+Anyone may extend it, change it, or rebuild it outright -- on the one
+test that decides everything here: does an AI get more done with it,
+and get it done more easily.
 
 ```lova
 (defn square [n] (⊗ n n))
