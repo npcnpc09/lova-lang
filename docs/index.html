@@ -60,8 +60,6 @@
   .hero .sub, html[lang="zh"] .hero .sub { font-size: clamp(10px, 1vw, 14px); letter-spacing: .14em; font-weight: 400; color: var(--ink); opacity: .62; margin-top: 18px; max-width: 58ch; line-height: 2.1;
        text-shadow: 0 0 16px rgba(5,10,12,.95), 0 0 6px rgba(5,10,12,.9); }
   html[lang="zh"] .hero .sub { letter-spacing: .14em; max-width: 30em; }
-  .open { margin-top: 18px; max-width: 80ch; letter-spacing: .14em; }
-  html[lang="zh"] .open { max-width: min(32em, 86vw); }
   .cta { pointer-events: auto; display: inline-block; margin-top: 30px; padding: 13px 24px; border: 1px solid rgba(143,243,255,.4); border-radius: 999px; color: var(--ink); text-decoration: none;
     font-size: 10px; letter-spacing: .3em; text-transform: uppercase; background: rgba(5,10,12,.35); backdrop-filter: blur(8px); transition: box-shadow .3s, border-color .3s; }
   .cta:hover { border-color: var(--glow); box-shadow: 0 0 30px rgba(143,243,255,.2); }
@@ -95,7 +93,7 @@
 <div class="chapter right" data-from="0.27" data-to="0.41"><div class="box"><p class="n">II</p><p class="t" data-decode data-i18n="c2.t">Let AI<br><em>spend less,<br>do it faster.</em></p><p class="c" data-i18n="c2.c">no spare brackets, no spare names: one byte, one step</p></div></div>
 <div class="chapter" data-from="0.44" data-to="0.58"><div class="box"><p class="n">III</p><p class="t" data-decode data-i18n="c3.t">Written for<br><em>AI to understand.</em></p><p class="c" data-i18n="c3.c">the fault and the fix: the language says it, the AI does it</p></div></div>
 <div class="chapter right" data-from="0.61" data-to="0.75"><div class="box"><p class="n">IV</p><p class="t" data-decode data-i18n="c4.t">The age of AI:<br>one word<br><em>creates<br>one world.</em></p><p class="c" data-i18n="c4.c">the game on this screen: every rule of it written in LOVA</p><p class="c tap" id="tap" data-i18n="c4.tap">the picture is still? tap the screen once</p></div></div>
-<div class="chapter center" data-from="0.80" data-to="1.01"><div class="box"><p class="n" data-i18n="c5.n">Three stages, this is the first</p><p class="t" data-decode data-i18n="c5.t">The age of code<br><em>defined by numbers<br>is here.</em></p><p class="c open" data-i18n="c5.open">open source — extend it, change it, rebuild it outright; the one test is whether an AI does more with it</p><a class="cta" href="https://github.com/npcnpc09/lova-lang" data-i18n="c5.cta">See the source</a></div></div>
+<div class="chapter center" data-from="0.80" data-to="1.01"><div class="box"><p class="n" data-i18n="c5.n">Three stages, this is the first</p><p class="t" data-decode data-i18n="c5.t">The age of code<br><em>defined by numbers<br>is here.</em></p><a class="cta" href="https://github.com/npcnpc09/lova-lang" data-i18n="c5.cta">See the source</a></div></div>
 
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
@@ -121,7 +119,6 @@ const I18N = {
     "c3.t": "Written for<br><em>AI to understand.</em>", "c3.c": "the fault and the fix: the language says it, the AI does it",
     "c4.t": "The age of AI:<br>one word<br><em>creates<br>one world.</em>", "c4.c": "the game on this screen: every rule of it written in LOVA", "c4.tap": "the picture is still? tap the screen once", "c4.wait": "the game is still loading",
     "c5.n": "Three stages, this is the first", "c5.t": "The age of code<br><em>defined by numbers<br>is here.</em>", "c5.cta": "See the source",
-    "c5.open": "open source — extend it, change it, rebuild it outright; the one test is whether an AI does more with it",
     "p.number": "ONE NUMBER", "p.next": "WHAT MAY COME NEXT", "p.here": "HERE", "p.points": "IT BROKE HERE",
     "meta": "LOVA, a language born for AI.",
   },
@@ -135,7 +132,6 @@ const I18N = {
     "c3.t": "为 AI 的<em>理解</em>而写。", "c3.c": "错在哪、怎么改，它自己说清，AI 自己修好",
     "c4.t": "AI 时代，<br>一句话，<br><em>创造一个世界。</em>", "c4.c": "屏幕里这个游戏，规则全部由 LOVA 写成", "c4.tap": "画面没动？点一下屏幕", "c4.wait": "游戏画面还在加载",
     "c5.n": "三个阶段，这是第一个", "c5.t": "由数字定义代码的时代<br><em>到来。</em>", "c5.cta": "去看源码",
-    "c5.open": "开源 —— 谁都可以扩展它、改写它，乃至推倒重来。标准只有一条：AI 用着是不是更省事",
     "p.number": "一个数", "p.next": "下一步能写什么", "p.here": "这里", "p.points": "错在这儿",
     "meta": "LOVA，为 AI 而生的语言。",
   },
