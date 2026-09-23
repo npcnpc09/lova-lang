@@ -2,7 +2,7 @@
 
 **English** · [中文](README.zh-CN.md)
 
-**An AI-native integer-sequence programming language.**
+**A programming language built for AI to write, run and repair.**
 
 **Site:** [npcnpc09.github.io/lova-lang](https://npcnpc09.github.io/lova-lang/) — the language in one page, on a field of a quarter million particles (`docs/`).
 
@@ -14,7 +14,7 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 1 104 tests. The
+LOVA, modules, a CLI, an MCP server for agents, and 1 116 tests. The
 reference implementation is a stdlib-only Python interpreter; the
 programs run on a native Rust runtime -- a bytecode VM at 10-12
 million steps a second, checked against the interpreter step for step
@@ -39,6 +39,23 @@ declared effects, the lineage and the evolution machinery exist for
 that; the integer encoding underneath is the format and the identity
 of a program, not the point. **AI is the first-class reader, writer,
 and executor** -- and the people who work with it are the second.
+
+### Where it stands against that goal
+
+The goal is measured by four numbers, on the same tasks in LOVA and in
+Python, with fresh model sessions. Where each one stands today:
+
+| number | standing | evidence |
+|---|---|---|
+| 1. attempts from writing to running correctly | parity on most tasks; behind on search-heavy ones, and closing | Exp 17-20; Exp 31: a step trap now says how many steps the run needs -- 17/18 search faults fixed against 14/18 without it (pilot) |
+| 2. context spent on each failure | **parity on like failures** | Exp 30: the fault is one line -- where, the span to patch, what is wrong -- 193 characters where the structured anomaly was 877; a wrong value 75 against Python's 71 |
+| 3. scaffolding to run the code safely | **won** | a function call under a step budget and a capability boundary, against a subprocess with a timeout |
+| 4. reusing, repairing, tracing | repair **won** at 110-160 lines; reuse and trace unproven | Exp 29 |
+
+And one thing the numbers settled: a current model writes the tree and
+transcribes it, so the integer substrate is the program's storage,
+transport and identity -- not a way for a model to think (Exp 24). The
+language keeps what the numbers support and changes what they do not.
 
 And because it is open source, the language is not anyone's to own.
 Anyone may extend it, change it, or rebuild it outright -- on the one
@@ -224,7 +241,7 @@ python -m core.cli analyze apps/collatz.lova 27
 # run the examples a program declares about itself
 python -m core.cli check apps/tictactoe.lova 0
 
-# run the test suite (1 104 tests, stdlib unittest only)
+# run the test suite (1 116 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # the same under PyPy, where the whole suite is also expected to pass
@@ -252,7 +269,11 @@ lova run apps/is_prime.lova 1999
 host — Claude Code, Claude Desktop, Cursor — gets four tools: run a
 program (with explicit capability grants), analyse one without running
 it, ask which tokens may come next in a partial program, and project a
-program into Stage 2 / bytes / one integer.
+program into Stage 2 / bytes / one integer. A failure comes back as one
+line -- stage, kind, `line:col`, the `[start,end)` span `lova_patch`
+takes, the text there and what is wrong, and for a step trap how many
+steps the run needs; `report: "full"` returns the whole structured
+anomaly.
 
 ```json
 {"mcpServers": {"lova": {"command": "lova", "args": ["mcp"]}}}
@@ -445,7 +466,7 @@ something and kept as a test. What they demonstrate:
   functions it went to (`journal/experiment_19.md`).
 - **It runs anywhere Python does, and fast where Rust does.** The core
   has no dependencies, so the same programs run under CPython and PyPy,
-  and the 1 104 tests pass on both; the native runtime runs the same
+  and the test suite runs on both; the native runtime runs the same
   byte sequence at 10-12 million steps a second and inside Godot.
 - **Text is a value.** A string literal is one node; `words`, `split`,
   `join`, `parse-int` and the rest are one operator each; a word count
@@ -483,7 +504,7 @@ place is a set of guarantees no general-purpose language carries.
 | Faults as structured data, not text | – | partly | partly | – | – | **yes** |
 | Ill-formed programs unrepresentable to a generator | – | – | – | – | – | **yes** |
 | Effects declared by the program, granted by the host | – | – | typed | – | partly | **yes** |
-| Termination guaranteed | – | – | – | – | – | **yes** |
+| Every run bounded (step and depth ceilings) | – | – | – | – | – | **yes** |
 | Cost contracts inside the program | – | – | – | – | – | **yes** |
 | Programs as first-class data | – | – | – | yes | yes | **yes** |
 | Provenance queryable from inside | – | – | – | – | partly | **yes** |
@@ -513,11 +534,17 @@ How LOVA does each, in the order of the table:
 9. `conserve` states the contract, `surprise` measures the miss,
    `mutate` proposes; three targets repaired in 39, 37 and 20 attempts,
    reproducibly.
-10. The core is stdlib-only; 1 104 tests pass on both interpreters.
+10. The core is stdlib-only; the 1 116-test suite runs on both interpreters.
 
 And the measurement behind the claim that it costs a model nothing: a
 fresh Claude session given one page of LOVA wrote 79 of 80 benchmark
 tasks correctly, single-shot, exactly its score in Python.
+
+The nearer neighbours are the embeddable, sandboxed rule languages --
+Starlark, CEL, Lua with an instruction hook, WebAssembly with fuel --
+which share the bounded run and the host-granted world. What LOVA adds
+over them is the rest of the table, and a fault written for a model to
+act on: one line that says where, what, and how far over budget.
 
 Three of these exist elsewhere, scattered: effects in types (Haskell,
 Koka), code as data (Lisp, Unison), a system that heals itself
@@ -595,6 +622,9 @@ statistical guarantees** — sample sizes are stated for each.
 | Self-healing, written as a LOVA program | 9/10 seeds improve, 3/10 converge, best 35 → 1 | Exp 15 (10 seeds × 30 generations) |
 | Constant-folding compression | 58.5% fewer nodes, 43.9% fewer bytes | Exp 08 |
 | Telemetry-weighted vs uniform sampling | +32 pp pass-without-trap (88% vs 56%) | Exp 10 (N=50, re-run at M16 with scope-aware samplers) |
+| Characters a failure costs to read (22 replayed real faults) | full anomaly 877 → **one-line fault 193**; a wrong value 75 (Python 71) | Exp 30 |
+| ...repair with the one-line fault, 15 paired cases (pilot) | fixed 14/15 vs 11/15, 31 attempts vs 41, 7 774 chars read vs 59 585 | Exp 30 |
+| Search faults, step trap that says how many steps the run needs (pilot, 18 sessions an arm) | fixed 17/18 vs 14/18, attempts 49 vs 62 | Exp 31 |
 
 ### What the correctness number actually measures
 
@@ -678,7 +708,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         1 104 unit tests, stdlib only
+tests/         1 116 unit tests, stdlib only
 native/        the Rust runtime (lova-rt) and its Godot extension (lova-godot)
 ```
 
@@ -739,11 +769,13 @@ shared; the code here is an independent reimplementation, not a fork.
 
 ## Design philosophy
 
-Human readability is an explicit **non-goal of the substrate**. The
-Stage-1 text surface exists to bootstrap the project and to audit
-programs on demand — it is tooling, not the language. Contributions
-that make LOVA nicer for humans at the cost of Stage-3's pure-integer
-representation will be rejected on principle (see Axiom 10).
+One goal decides every change: **does an AI get more done with it, and
+more easily?** The axioms are means to that goal and yield to it --
+since 2026-09-10 the integer encoding, human readability as a non-goal,
+the 64-slot ceiling and stage coherence (Axioms 1, 2, 8, 10) are design
+preferences, not vetoes. A change enters with a measured number behind
+it, whatever it does to the substrate; a feature that no number
+supports is a proposal, however old its lineage.
 
 There is also no PnL / reward objective anywhere in the language. Users
 declare their own objectives through conservation contracts and surprise
