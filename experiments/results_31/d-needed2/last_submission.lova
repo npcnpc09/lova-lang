@@ -1,0 +1,37 @@
+(def wins [] (list (list 0 1 2) (list 3 4 5) (list 6 7 8)
+                   (list 0 3 6) (list 1 4 7) (list 2 5 8)
+                   (list 0 4 8) (list 2 4 6)))
+(def pw [] (list 6561 2187 729 243 81 27 9 3 1))
+(def cell [k i] (mod (div k (nth pw i)) 3))
+(def line-win [k p ln]
+  (and (eq (cell k (nth ln 0)) p)
+       (and (eq (cell k (nth ln 1)) p) (eq (cell k (nth ln 2)) p))))
+(def has-win [k p] (any (lambda ln (line-win k p ln)) wins))
+(def opp [p] (if (eq p 1) 2 1))
+(def put-at [k i v] (merge k (mul (sub v (cell k i)) (nth pw i))))
+(def full [k i] (if (eq i 9) 1 (if (eq (cell k i) 0) 0 (full k (inc i)))))
+(def pcode [c] (if (eq c 88) 1 (if (eq c 79) 2 0)))
+(def bkey-init [b] (fold (lambda a (lambda c (merge (mul a 3) (pcode c)))) 0 b))
+(def best [k p mm]
+  (let kk (merge (mul k 2) (if (eq p 1) 1 0))
+    (let hit (map-get mm kk 9)
+      (if (ne hit 9) (rec s hit m mm)
+        (let res (best2 k p mm)
+          (rec s (get res s) m (map-put (get res m) kk (get res s))))))))
+(def best2 [k p mm]
+  (if (has-win k (opp p)) (rec s (neg 1) m mm)
+    (if (full k 0) (rec s 0 m mm)
+      (bestloop k p 0 (neg 2) mm))))
+(def bestloop [k p i acc mm]
+  (if (eq i 9) (rec s acc m mm)
+    (if (ne (cell k i) 0) (bestloop k p (inc i) acc mm)
+      (let r (best (put-at k i p) (opp p) mm)
+        (bestloop k p (inc i) (max acc (neg (get r s))) (get r m))))))
+(def pick [k p i bi bs mm]
+  (if (eq i 9) bi
+    (if (ne (cell k i) 0) (pick k p (inc i) bi bs mm)
+      (let r (best (put-at k i p) (opp p) mm)
+        (let sc (neg (get r s))
+          (if (gt sc bs) (pick k p (inc i) i sc (get r m))
+                         (pick k p (inc i) bi bs (get r m))))))))
+(let b (text-chars {board}) (pick (bkey-init b) (pcode (head {side})) 0 0 (neg 2) (map-of (nil))))

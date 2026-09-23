@@ -1,0 +1,84 @@
+(def idc [c] c)
+(def cell [b i] (cond
+  (eq i 0) (mod b 3)
+  (eq i 1) (mod (div b 3) 3)
+  (eq i 2) (mod (div b 9) 3)
+  (eq i 3) (mod (div b 27) 3)
+  (eq i 4) (mod (div b 81) 3)
+  (eq i 5) (mod (div b 243) 3)
+  (eq i 6) (mod (div b 729) 3)
+  (eq i 7) (mod (div b 2187) 3)
+  (mod (div b 6561) 3)))
+(def pw [i] (cond
+  (eq i 0) 1
+  (eq i 1) 3
+  (eq i 2) 9
+  (eq i 3) 27
+  (eq i 4) 81
+  (eq i 5) 243
+  (eq i 6) 729
+  (eq i 7) 2187
+  6561))
+(def setat [b i v] (cond
+  (eq i 0) (merge b v)
+  (eq i 1) (merge b (mul v 3))
+  (eq i 2) (merge b (mul v 9))
+  (eq i 3) (merge b (mul v 27))
+  (eq i 4) (merge b (mul v 81))
+  (eq i 5) (merge b (mul v 243))
+  (eq i 6) (merge b (mul v 729))
+  (eq i 7) (merge b (mul v 2187))
+  (merge b (mul v 6561))))
+(def cw [d e f] (and (ne d 0) (and (eq d e) (eq e f))))
+(def winner [b]
+  (let d0 (cell b 0) (let d1 (cell b 1) (let d2 (cell b 2)
+  (let d3 (cell b 3) (let d4 (cell b 4) (let d5 (cell b 5)
+  (let d6 (cell b 6) (let d7 (cell b 7) (let d8 (cell b 8)
+    (cond
+      (cw d0 d1 d2) d0
+      (cw d3 d4 d5) d3
+      (cw d6 d7 d8) d6
+      (cw d0 d3 d6) d0
+      (cw d1 d4 d7) d1
+      (cw d2 d5 d8) d2
+      (cw d0 d4 d8) d0
+      (cw d2 d4 d6) d2
+      0)))))))))))
+(def other [w] (if (eq w 1) 2 1))
+(def cv [c] (cond (eq c 88) 1 (eq c 79) 2 0))
+(def enc [chars i] (if (nil? chars) 0 (merge (mul (cv (head chars)) (pw i)) (enc (tail chars) (inc i)))))
+(def mkey [b who] (merge (mul b 2) (sub who 1)))
+(def search [b mover i e memo bv]
+  (if (eq bv 1) (rec val bv mm memo)
+  (if (eq i 9) (rec val bv mm memo)
+    (if (ne (cell b i) 0) (search b mover (inc i) e memo bv)
+      (let nb (setat b i mover)
+        (let r (solve nb (other mover) (sub e 1) memo)
+          (let v2 (neg (get r val)) (let m2 (get r mm)
+            (search b mover (inc i) e m2 (max bv v2))))))))))
+(def solve [b mover e memo]
+  (let key (mkey b mover)
+    (let cached (map-get memo key (neg 9))
+      (if (ne cached (neg 9)) (rec val cached mm memo)
+        (let w (winner b)
+          (if (eq w (other mover))
+            (rec val (neg 1) mm (map-put memo key (neg 1)))
+            (if (eq e 0)
+              (rec val 0 mm (map-put memo key 0))
+              (let res (search b mover 0 e memo (neg 2))
+                (let bv (get res val) (let m2 (get res mm)
+                  (rec val bv mm (map-put m2 key bv))))))))))))
+(def pick [b who i e memo bi bv]
+  (if (eq bv 1) bi
+  (if (eq i 9) bi
+    (if (ne (cell b i) 0) (pick b who (inc i) e memo bi bv)
+      (let nb (setat b i who)
+        (let r (solve nb (other who) (sub e 1) memo)
+          (let v2 (neg (get r val)) (let m2 (get r mm)
+            (if (gt v2 bv) (pick b who (inc i) e m2 i v2) (pick b who (inc i) e m2 bi bv))))))))))
+(let bc (map idc {board})
+  (let b (enc bc 0)
+    (let s (head {side})
+      (let who (cv s)
+        (let e (len (filter (lambda c (eq c 46)) bc))
+          (pick b who 0 e (nil) (neg 1) (neg 2)))))))

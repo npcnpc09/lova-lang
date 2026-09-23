@@ -1,0 +1,71 @@
+(def pow2 [] (list 1 2 4 8 16 32 64 128 256))
+(def order [] (list 4 0 2 6 8 1 3 5 7))
+(def other [p] (if (eq p 88) 79 88))
+
+(def pairs-for [i]
+  (cond
+    (eq i 0) (list (list 1 2) (list 3 6) (list 4 8))
+    (eq i 1) (list (list 0 2) (list 4 7))
+    (eq i 2) (list (list 0 1) (list 5 8) (list 4 6))
+    (eq i 3) (list (list 4 5) (list 0 6))
+    (eq i 4) (list (list 3 5) (list 1 7) (list 0 8) (list 2 6))
+    (eq i 5) (list (list 3 4) (list 2 8))
+    (eq i 6) (list (list 7 8) (list 0 3) (list 2 4))
+    (eq i 7) (list (list 6 8) (list 1 4))
+    (list (list 6 7) (list 2 5) (list 0 4))))
+
+(def check-pairs [mask ps]
+  (if (nil? ps) 0
+    (let p (head ps)
+      (if (and (eq (mod (div mask (nth pow2 (nth p 0))) 2) 1)
+               (eq (mod (div mask (nth pow2 (nth p 1))) 2) 1))
+          1 (check-pairs mask (tail ps))))))
+
+(def win-at? [mask i] (check-pairs mask (pairs-for i)))
+
+(def nmax [xmask omask combo p alpha beta cnt lastIdx lastMask]
+  (if (win-at? lastMask lastIdx) (neg 1)
+    (if (eq cnt 9) 0 (nloop xmask omask combo p alpha beta (neg 2) cnt 0))))
+
+(def nloop [xmask omask combo p alpha beta best cnt j]
+  (if (ge j 9) best
+    (let i (nth order j)
+      (let p2 (nth pow2 i)
+        (if (eq (mod (div combo p2) 2) 1)
+            (nloop xmask omask combo p alpha beta best cnt (inc j))
+            (let isX (eq p 88)
+              (let nx (if isX (merge xmask p2) xmask)
+                (let no (if isX omask (merge omask p2))
+                  (let lastMask (if isX nx no)
+                    (let ncombo (merge combo p2)
+                      (let v (neg (nmax nx no ncombo (other p) (neg beta) (neg alpha) (inc cnt) i lastMask))
+                        (let best2 (max best v)
+                          (let a2 (max alpha v)
+                            (if (ge a2 beta) best2 (nloop xmask omask combo p a2 beta best2 cnt (inc j))))))))))))))))
+
+(def pick [xmask omask combo p i besti bestv cnt]
+  (if (ge i 9) besti
+    (let p2 (nth pow2 i)
+      (if (eq (mod (div combo p2) 2) 1)
+          (pick xmask omask combo p (inc i) besti bestv cnt)
+          (let isX (eq p 88)
+            (let nx (if isX (merge xmask p2) xmask)
+              (let no (if isX omask (merge omask p2))
+                (let lastMask (if isX nx no)
+                  (let ncombo (merge combo p2)
+                    (let v (neg (nmax nx no ncombo (other p) (neg 2) (neg bestv) (inc cnt) i lastMask))
+                      (if (gt v bestv)
+                          (pick xmask omask combo p (inc i) i v cnt)
+                          (pick xmask omask combo p (inc i) besti bestv cnt))))))))))))
+
+(def build [chars i st]
+  (if (nil? chars) st
+    (let c (head chars)
+      (if (eq c 88) (build (tail chars) (inc i) (rec x (merge (get st x) (nth pow2 i)) o (get st o) c (inc (get st c))))
+        (if (eq c 79) (build (tail chars) (inc i) (rec x (get st x) o (merge (get st o) (nth pow2 i)) c (inc (get st c))))
+          (build (tail chars) (inc i) st))))))
+
+(let chars (text-chars {board})
+  (let st (build chars 0 (rec x 0 o 0 c 0))
+    (let xm (get st x) (let om (get st o)
+      (pick xm om (merge xm om) (head {side}) 0 0 (neg 2) (get st c))))))

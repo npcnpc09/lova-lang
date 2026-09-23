@@ -1,0 +1,37 @@
+(def idc [c] c)
+(def setat [xs i v] (if (eq i 0) (cons v (tail xs)) (cons (head xs) (setat (tail xs) (sub i 1) v))))
+(def wonAt [b i who]
+  (cond
+    (eq i 0) (or (and (eq (nth b 1) who) (eq (nth b 2) who)) (or (and (eq (nth b 3) who) (eq (nth b 6) who)) (and (eq (nth b 4) who) (eq (nth b 8) who))))
+    (eq i 1) (or (and (eq (nth b 0) who) (eq (nth b 2) who)) (and (eq (nth b 4) who) (eq (nth b 7) who)))
+    (eq i 2) (or (and (eq (nth b 0) who) (eq (nth b 1) who)) (or (and (eq (nth b 5) who) (eq (nth b 8) who)) (and (eq (nth b 4) who) (eq (nth b 6) who))))
+    (eq i 3) (or (and (eq (nth b 4) who) (eq (nth b 5) who)) (and (eq (nth b 0) who) (eq (nth b 6) who)))
+    (eq i 4) (or (and (eq (nth b 3) who) (eq (nth b 5) who)) (or (and (eq (nth b 1) who) (eq (nth b 7) who)) (or (and (eq (nth b 0) who) (eq (nth b 8) who)) (and (eq (nth b 2) who) (eq (nth b 6) who)))))
+    (eq i 5) (or (and (eq (nth b 3) who) (eq (nth b 4) who)) (and (eq (nth b 2) who) (eq (nth b 8) who)))
+    (eq i 6) (or (and (eq (nth b 7) who) (eq (nth b 8) who)) (or (and (eq (nth b 0) who) (eq (nth b 3) who)) (and (eq (nth b 2) who) (eq (nth b 4) who))))
+    (eq i 7) (or (and (eq (nth b 6) who) (eq (nth b 8) who)) (and (eq (nth b 1) who) (eq (nth b 4) who)))
+    (or (and (eq (nth b 6) who) (eq (nth b 7) who)) (or (and (eq (nth b 2) who) (eq (nth b 5) who)) (and (eq (nth b 0) who) (eq (nth b 4) who))))
+  ))
+(def nm [b who alpha beta i rest e]
+  (if (nil? rest) alpha
+    (if (ne (head rest) 46) (nm b who alpha beta (merge i 1) (tail rest) e)
+      (let nb (setat b i who)
+        (let v (if (wonAt nb i who) 1
+                 (if (eq e 1) 0
+                   (neg (nm nb (if (eq who 88) 79 88) (neg beta) (neg alpha) 0 nb (sub e 1)))))
+          (let a2 (max alpha v)
+            (if (ge a2 beta) a2 (nm b who a2 beta (merge i 1) (tail rest) e))))))))
+(def pick [b who i rest e bi bv]
+  (if (nil? rest) bi
+    (if (eq bv 1) bi
+      (if (ne (head rest) 46) (pick b who (merge i 1) (tail rest) e bi bv)
+        (let nb (setat b i who)
+          (let v (if (wonAt nb i who) 1
+                   (if (eq e 1) 0
+                     (neg (nm nb (if (eq who 88) 79 88) (neg 2) (neg bv) 0 nb (sub e 1)))))
+            (if (gt v bv)
+              (pick b who (merge i 1) (tail rest) e i v)
+              (pick b who (merge i 1) (tail rest) e bi bv))))))))
+(let b (map idc {board})
+  (let s (head {side})
+    (pick b s 0 b (len (filter (lambda c (eq c 46)) b)) (neg 1) (neg 2))))

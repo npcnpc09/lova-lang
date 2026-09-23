@@ -1,0 +1,54 @@
+(def idc [c] c)
+(def order [] (list 4 0 2 6 8 1 3 5 7))
+(def setat [xs i v] (if (eq i 0) (cons v (tail xs)) (cons (head xs) (setat (tail xs) (sub i 1) v))))
+(def winloop [b ls]
+  (if (nil? ls) 0
+    (let ln (head ls)
+      (let a (nth b (nth ln 0))
+        (if (and (ne a 46) (and (eq a (nth b (nth ln 1))) (eq a (nth b (nth ln 2)))))
+          a (winloop b (tail ls)))))))
+(def lof [i]
+  (cond
+    (eq i 0) (list (list 0 1 2) (list 0 3 6) (list 0 4 8))
+    (eq i 1) (list (list 0 1 2) (list 1 4 7))
+    (eq i 2) (list (list 0 1 2) (list 2 5 8) (list 2 4 6))
+    (eq i 3) (list (list 3 4 5) (list 0 3 6))
+    (eq i 4) (list (list 3 4 5) (list 1 4 7) (list 0 4 8) (list 2 4 6))
+    (eq i 5) (list (list 3 4 5) (list 2 5 8))
+    (eq i 6) (list (list 6 7 8) (list 0 3 6) (list 2 4 6))
+    (eq i 7) (list (list 6 7 8) (list 1 4 7))
+    (list (list 6 7 8) (list 2 5 8) (list 0 4 8))))
+(def winner-at [b i] (winloop b (lof i)))
+(def full [b] (not (contains b 46)))
+(def other [w] (if (eq w 88) 79 88))
+(def nm [b who alpha beta pos]
+  (if (eq pos 9) alpha
+    (let idx (nth order pos)
+      (if (ne (nth b idx) 46) (nm b who alpha beta (inc pos))
+        (let nb (setat b idx who)
+          (let w (winner-at nb idx)
+            (let v (if (eq w who) 1 (if (full nb) 0 (neg (nm nb (other who) (neg beta) (neg alpha) 0))))
+              (let a2 (max alpha v)
+                (if (ge a2 beta) a2 (nm b who a2 beta (inc pos)))))))))))
+(def pick [b who i bi bv]
+  (if (eq i 9) bi
+    (if (eq bv 1) bi
+      (if (ne (nth b i) 46) (pick b who (inc i) bi bv)
+        (let nb (setat b i who)
+          (let w (winner-at nb i)
+            (let v (if (eq w who) 1 (if (full nb) 0 (neg (nm nb (other who) (neg 2) 2 0))))
+              (if (gt v bv) (pick b who (inc i) i v) (pick b who (inc i) bi bv)))))))))
+(def blank? [b] (all (lambda c (eq c 46)) b))
+(def evalmove [b who idx]
+  (let nb (setat b idx who)
+    (let w (winner-at nb idx)
+      (if (eq w who) 1 (if (full nb) 0 (neg (nm nb (other who) (neg 2) 2 0)))))))
+(let b (map idc {board})
+  (let s (head {side})
+    (if (blank? b)
+      (let v0 (evalmove b s 0)
+        (let v1 (evalmove b s 1)
+          (let v4 (evalmove b s 4)
+            (let bestv (max v0 (max v1 v4))
+              (if (eq v0 bestv) 0 (if (eq v1 bestv) 1 4))))))
+      (pick b s 0 (neg 1) (neg 2)))))

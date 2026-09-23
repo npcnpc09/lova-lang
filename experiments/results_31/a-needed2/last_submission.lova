@@ -1,0 +1,60 @@
+(def l0 [] (list 0 1 2))
+(def l1 [] (list 3 4 5))
+(def l2 [] (list 6 7 8))
+(def l3 [] (list 0 3 6))
+(def l4 [] (list 1 4 7))
+(def l5 [] (list 2 5 8))
+(def l6 [] (list 0 4 8))
+(def l7 [] (list 2 4 6))
+(def linesfor [i]
+  (cond
+    (eq i 0) (list l0 l3 l6)
+    (eq i 1) (list l0 l4)
+    (eq i 2) (list l0 l5 l7)
+    (eq i 3) (list l1 l3)
+    (eq i 4) (list l1 l4 l6 l7)
+    (eq i 5) (list l1 l5)
+    (eq i 6) (list l2 l3 l7)
+    (eq i 7) (list l2 l4)
+    (list l2 l5 l6)))
+(def winline [b l]
+  (let a (nth b (nth l 0))
+    (if (eq a 46) 0
+      (if (and (eq a (nth b (nth l 1))) (eq a (nth b (nth l 2)))) a 0))))
+(def winner-at [b i] (fold (lambda acc (lambda l (if acc acc (winline b l)))) 0 (linesfor i)))
+(def empties [b] (filter (lambda i (eq (nth b i) 46)) (range 0 9)))
+(def setat [b i c] (append (take i b) (cons c (drop (inc i) b))))
+(def other [c] (if (eq c 88) 79 88))
+(def ab [b cur me alpha beta last-i es]
+  (let wn (winner-at b last-i)
+    (if wn (if (eq wn me) 1 (neg 1))
+      (if (nil? es) 0
+        (if (eq cur me)
+            (maxloop b cur me (nil) es alpha beta)
+            (minloop b cur me (nil) es alpha beta))))))
+(def maxloop [b cur me before ms alpha beta]
+  (if (nil? ms) alpha
+    (let i (head ms)
+      (let after (tail ms)
+        (let es (append before after)
+          (let v (ab (setat b i cur) (other cur) me alpha beta i es)
+            (let a2 (max alpha v)
+              (if (ge a2 beta) a2 (maxloop b cur me (cons i before) after a2 beta)))))))))
+(def minloop [b cur me before ms alpha beta]
+  (if (nil? ms) beta
+    (let i (head ms)
+      (let after (tail ms)
+        (let es (append before after)
+          (let v (ab (setat b i cur) (other cur) me alpha beta i es)
+            (let b2 (min beta v)
+              (if (le b2 alpha) b2 (minloop b cur me (cons i before) after alpha b2)))))))))
+(def pick [b me before ms bi bs]
+  (if (nil? ms) bi
+    (let i (head ms)
+      (let after (tail ms)
+        (let es (append before after)
+          (let s (ab (setat b i me) (other me) me bs 2 i es)
+            (if (gt s bs) (pick b me (cons i before) after i s) (pick b me (cons i before) after bi bs))))))))
+(let b (text-chars {board})
+  (let me (head (text-chars {side}))
+    (pick b me (nil) (empties b) (neg 1) (neg 2))))

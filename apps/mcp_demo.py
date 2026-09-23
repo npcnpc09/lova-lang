@@ -67,7 +67,7 @@ def main() -> int:
         result = server.call("lova_execute", source="(sum (map (lambda 9 (mul (ref 9) (ref 9))) (range 1 5)))")
         print("  sum of squares 1..4 =", result["value_int"], f"({result['steps']} steps)")
         result = server.call("lova_execute", source="(div 1 0)")
-        print("  (div 1 0) ->", result["anomaly"]["kind"], "-", result["anomaly"]["repair_hint"])
+        print("  (div 1 0) ->", result["kind"], "-", result["fault"])
         result = server.call("lova_execute", source='(boundary "clock" (gt (clock) 0))', allow=["clock"])
         print("  clock under a granted boundary ->", result["value_int"])
 

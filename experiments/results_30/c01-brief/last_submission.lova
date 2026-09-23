@@ -1,0 +1,46 @@
+(def linesfor []
+  (list
+    (list (list 0 1 2) (list 0 3 6) (list 0 4 8))
+    (list (list 0 1 2) (list 1 4 7))
+    (list (list 0 1 2) (list 2 5 8) (list 2 4 6))
+    (list (list 3 4 5) (list 0 3 6))
+    (list (list 3 4 5) (list 1 4 7) (list 0 4 8) (list 2 4 6))
+    (list (list 3 4 5) (list 2 5 8))
+    (list (list 6 7 8) (list 0 3 6) (list 2 4 6))
+    (list (list 6 7 8) (list 1 4 7))
+    (list (list 6 7 8) (list 2 5 8) (list 0 4 8))))
+(def line3 [b l c] (and (eq (nth b (nth l 0)) c) (and (eq (nth b (nth l 1)) c) (eq (nth b (nth l 2)) c))))
+(def wonat [b i c] (any (lambda l (line3 b l c)) (nth linesfor i)))
+(def full [b] (not (contains b 46)))
+(def empties [b] (filter (lambda i (eq (nth b i) 46)) (range 0 9)))
+(def order [] (list 4 0 2 6 8 1 3 5 7))
+(def oempties [b] (filter (lambda i (eq (nth b i) 46)) order))
+(def setat [b i c] (append (take i b) (cons c (drop (inc i) b))))
+(def other [c] (if (eq c 88) 79 88))
+(def ab [b i mover me alpha beta]
+  (if (wonat b i mover) (if (eq mover me) 1 (neg 1))
+    (if (full b) 0
+      (let nxt (other mover)
+        (if (eq nxt me)
+            (maxloop b nxt me (oempties b) alpha beta)
+            (minloop b nxt me (oempties b) alpha beta))))))
+(def maxloop [b cur me ms alpha beta]
+  (if (nil? ms) alpha
+    (let i (head ms)
+      (let v (ab (setat b i cur) i cur me alpha beta)
+        (let a2 (max alpha v)
+          (if (ge a2 beta) a2 (maxloop b cur me (tail ms) a2 beta)))))))
+(def minloop [b cur me ms alpha beta]
+  (if (nil? ms) beta
+    (let i (head ms)
+      (let v (ab (setat b i cur) i cur me alpha beta)
+        (let b2 (min beta v)
+          (if (le b2 alpha) b2 (minloop b cur me (tail ms) alpha b2)))))))
+(def pick [b me ms bi bs]
+  (if (nil? ms) bi
+    (let i (head ms)
+      (let s (ab (setat b i me) i me me bs 2)
+        (if (gt s bs) (pick b me (tail ms) i s) (pick b me (tail ms) bi bs))))))
+(let b (text-chars {board})
+  (let me (head (text-chars {side}))
+    (pick b me (empties b) (neg 1) (neg 2))))

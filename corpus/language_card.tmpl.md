@@ -102,8 +102,12 @@ it. `fold` calls `(f acc x)`; write a two-argument fold step as
 
 A program runs under a step budget the host sets; a run that exceeds it
 is a `step-limit-exceeded` anomaly whose `hot` detail lists the
-functions the steps went to. An operator costs 1 step, a call to a
-`def` about 3 plus its body. Cheap: `nth`, `take`, `drop`, `append`,
+functions the steps went to, and -- when the program touches no file,
+clock or network -- how many steps the whole run needs (measured up to
+4x the budget), so a rewrite can be sized. An operator costs 1 step, a
+call to a `def` about 3 plus its body. `pow` is a prelude loop, not an
+operator: about 40 steps plus 20 per unit of exponent (`(pow 3 8)` is
+~200, `mul` is 1); for fixed powers write the constants. Cheap: `nth`, `take`, `drop`, `append`,
 `last`, `len` (a few steps, native), `map-get`, `map-put`, `get`, `put`
 (~4), the `text-*` operators. The list operators cost one step an
 element plus the function called (`map` with a one-operator body about

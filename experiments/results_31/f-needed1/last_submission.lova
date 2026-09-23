@@ -1,0 +1,43 @@
+(def cellval [c] (if (eq c 88) 1 (if (eq c 79) 2 0)))
+(def p4tbl [] (list 1 4 16 64 256 1024 4096 16384 65536))
+(def getc [s i] (mod (div s (nth p4tbl i)) 4))
+(def setc [s i v] (merge s (mul v (nth p4tbl i))))
+(def otherw [w] (if (eq w 1) 2 1))
+(def ordr [] (list 4 0 2 6 8 1 3 5 7))
+(def nat [] (list 0 1 2 3 4 5 6 7 8))
+(def build [xs i s] (if (nil? xs) s (build (tail xs) (inc i) (merge s (mul (cellval (head xs)) (nth p4tbl i))))))
+(def emptycount [s idxs n] (if (nil? idxs) n (emptycount s (tail idxs) (if (eq (getc s (head idxs)) 0) (inc n) n))))
+
+(def win-at [s i who]
+  (cond
+    (eq i 0) (or (and (eq (getc s 1) who) (eq (getc s 2) who)) (or (and (eq (getc s 3) who) (eq (getc s 6) who)) (and (eq (getc s 4) who) (eq (getc s 8) who))))
+    (eq i 1) (or (and (eq (getc s 0) who) (eq (getc s 2) who)) (and (eq (getc s 4) who) (eq (getc s 7) who)))
+    (eq i 2) (or (and (eq (getc s 0) who) (eq (getc s 1) who)) (or (and (eq (getc s 5) who) (eq (getc s 8) who)) (and (eq (getc s 4) who) (eq (getc s 6) who))))
+    (eq i 3) (or (and (eq (getc s 4) who) (eq (getc s 5) who)) (and (eq (getc s 0) who) (eq (getc s 6) who)))
+    (eq i 4) (or (and (eq (getc s 3) who) (eq (getc s 5) who)) (or (and (eq (getc s 1) who) (eq (getc s 7) who)) (or (and (eq (getc s 0) who) (eq (getc s 8) who)) (and (eq (getc s 2) who) (eq (getc s 6) who)))))
+    (eq i 5) (or (and (eq (getc s 3) who) (eq (getc s 4) who)) (and (eq (getc s 2) who) (eq (getc s 8) who)))
+    (eq i 6) (or (and (eq (getc s 7) who) (eq (getc s 8) who)) (or (and (eq (getc s 0) who) (eq (getc s 3) who)) (and (eq (getc s 2) who) (eq (getc s 4) who))))
+    (eq i 7) (or (and (eq (getc s 6) who) (eq (getc s 8) who)) (and (eq (getc s 1) who) (eq (getc s 4) who)))
+    (or (and (eq (getc s 6) who) (eq (getc s 7) who)) (or (and (eq (getc s 2) who) (eq (getc s 5) who)) (and (eq (getc s 0) who) (eq (getc s 4) who))))))
+
+(def nm [s who alpha beta idxs e]
+  (if (nil? idxs) alpha
+    (let i (head idxs)
+      (if (ne (getc s i) 0) (nm s who alpha beta (tail idxs) e)
+        (let ns (setc s i who)
+          (let v (if (win-at ns i who) 1 (if (eq e 1) 0 (neg (nm ns (otherw who) (neg beta) (neg alpha) ordr (sub e 1)))))
+            (let a2 (max alpha v)
+              (if (ge a2 beta) a2 (nm s who a2 beta (tail idxs) e)))))))))
+
+(def pick [s who idxs e bi bv]
+  (if (nil? idxs) bi
+    (if (eq bv 1) bi
+      (let i (head idxs)
+        (if (ne (getc s i) 0) (pick s who (tail idxs) e bi bv)
+          (let ns (setc s i who)
+            (let v (if (win-at ns i who) 1 (if (eq e 1) 0 (neg (nm ns (otherw who) (neg 2) 2 ordr (sub e 1)))))
+              (if (gt v bv) (pick s who (tail idxs) e i v) (pick s who (tail idxs) e bi bv)))))))))
+
+(let s0 (build {board} 0 0)
+  (let sd (cellval (head {side}))
+    (pick s0 sd nat (emptycount s0 ordr 0) (neg 1) (neg 2))))

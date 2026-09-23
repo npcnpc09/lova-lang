@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -290,9 +291,13 @@ def check_lova(program: str, task: Task) -> str:
     if r["ok"]:
         n = r.get("total", 0)
         return f"OK: compiles; {n} example{'s' if n != 1 else ''} pass." if n else "OK: compiles (no examples)."
-    a = r["anomaly"]
-    keep = {k: a[k] for k in ("kind", "stage", "excerpt", "line", "col", "repair_hint", "detail", "message", "span") if k in a}
-    return "FAIL " + json.dumps(keep, ensure_ascii=False)
+    if os.environ.get("LOVA_REPORT") == "full":
+        a = r["anomaly"]
+        keep = {k: a[k] for k in ("kind", "stage", "excerpt", "line", "col", "repair_hint", "detail", "message", "span") if k in a}
+        return "FAIL " + json.dumps(keep, ensure_ascii=False)
+    from core.brief import compact
+    c = compact(r)
+    return "FAIL " + ("\n".join(c["faults"]) if "faults" in c else c["fault"])
 
 
 def check_python(code: str) -> str:
@@ -326,8 +331,22 @@ def feedback_text(lang: str, result: Dict[str, Any]) -> str:
             return f"PASS: all tests pass (largest run {result['most_steps']} of {BUDGET} steps)."
         return "PASS: all tests pass."
     f = result["failures"][0]
+    if lang == "lova" and os.environ.get("LOVA_REPORT") == "full":
+        return "FAIL " + json.dumps(f, ensure_ascii=False)       # the report Exp 18-29 read
     if lang == "lova":
-        return "FAIL " + json.dumps(f, ensure_ascii=False)
+        # The same shape as Python's: the test, then the fault in one line
+        # (core/brief.py).  A compile fault does not depend on the test's
+        # inputs, so it is not given them.
+        from core.brief import brief
+        a = f.get("anomaly")
+        if a is not None and a.get("stage") == "compile":
+            return "FAIL " + brief(a)
+        lines = [f"FAIL inputs={json.dumps(f['inputs'], ensure_ascii=False)} expected={json.dumps(f['expected'], ensure_ascii=False)}"]
+        if "got" in f:
+            lines.append(f"got={f['got']}")
+        if a is not None:
+            lines.append(brief(a))
+        return "\n".join(lines)
     lines = [f"FAIL inputs={json.dumps(f['inputs'])} expected={f['expected']}"]
     if "got" in f:
         lines.append(f"got={f['got']}")

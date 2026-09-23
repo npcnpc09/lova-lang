@@ -1,0 +1,44 @@
+(def line3 [b p q r]
+  (let a (nth b p)
+    (if (eq a 46) 0
+      (if (and (eq a (nth b q)) (eq a (nth b r))) a 0))))
+(def winner [b]
+  (cond
+    (line3 b 0 1 2) (line3 b 0 1 2)
+    (line3 b 3 4 5) (line3 b 3 4 5)
+    (line3 b 6 7 8) (line3 b 6 7 8)
+    (line3 b 0 3 6) (line3 b 0 3 6)
+    (line3 b 1 4 7) (line3 b 1 4 7)
+    (line3 b 2 5 8) (line3 b 2 5 8)
+    (line3 b 0 4 8) (line3 b 0 4 8)
+    (line3 b 2 4 6) (line3 b 2 4 6)
+    0))
+(def full [b] (not (contains b 46)))
+(def empties [b] (filter (lambda i (eq (nth b i) 46)) (range 0 9)))
+(def setat [b i c] (append (take i b) (cons c (drop (inc i) b))))
+(def other [c] (if (eq c 88) 79 88))
+(def ab [b cur me alpha beta]
+  (let wn (winner b)
+    (if wn (if (eq wn me) 1 (neg 1))
+      (if (full b) 0
+        (if (eq cur me)
+            (maxloop b cur me (empties b) alpha beta)
+            (minloop b cur me (empties b) alpha beta))))))
+(def maxloop [b cur me ms alpha beta]
+  (if (nil? ms) alpha
+    (let v (ab (setat b (head ms) cur) (other cur) me alpha beta)
+      (let a2 (max alpha v)
+        (if (ge a2 beta) a2 (maxloop b cur me (tail ms) a2 beta))))))
+(def minloop [b cur me ms alpha beta]
+  (if (nil? ms) beta
+    (let v (ab (setat b (head ms) cur) (other cur) me alpha beta)
+      (let b2 (min beta v)
+        (if (le b2 alpha) b2 (minloop b cur me (tail ms) alpha b2))))))
+(def pick [b me ms bi bs]
+  (if (nil? ms) bi
+    (let i (head ms)
+      (let s (ab (setat b i me) (other me) me (neg 2) 2)
+        (if (gt s bs) (pick b me (tail ms) i s) (pick b me (tail ms) bi bs))))))
+(let b (text-chars {board})
+  (let me (head (text-chars {side}))
+    (pick b me (empties b) (neg 1) (neg 2))))

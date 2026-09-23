@@ -1,0 +1,47 @@
+(def win3 [a b c] (if (eq a 46) 0 (if (and (eq a b) (eq a c)) a 0)))
+(def mc [i c rest] (if (eq c 46) (cons i rest) rest))
+(def scan [b]
+  (let c0 (nth b 0)
+  (let c1 (nth b 1)
+  (let c2 (nth b 2)
+  (let c3 (nth b 3)
+  (let c4 (nth b 4)
+  (let c5 (nth b 5)
+  (let c6 (nth b 6)
+  (let c7 (nth b 7)
+  (let c8 (nth b 8)
+    (let w (or (win3 c0 c1 c2) (or (win3 c3 c4 c5) (or (win3 c6 c7 c8)
+              (or (win3 c0 c3 c6) (or (win3 c1 c4 c7) (or (win3 c2 c5 c8)
+              (or (win3 c0 c4 c8) (win3 c2 c4 c6))))))))
+      (let es (mc 4 c4 (mc 0 c0 (mc 2 c2 (mc 6 c6 (mc 8 c8 (mc 1 c1 (mc 3 c3 (mc 5 c5 (mc 7 c7 (nil))))))))))
+        (rec w w es es)))))))))))))
+(def empties [b] (filter (lambda i (eq (nth b i) 46)) (range 0 9)))
+(def setat [b i c] (append (take i b) (cons c (drop (inc i) b))))
+(def other [c] (if (eq c 88) 79 88))
+(def ab [b cur me alpha beta]
+  (let sc (scan b)
+    (let wn (get sc w)
+      (if wn (if (eq wn me) 1 (neg 1))
+        (let es (get sc es)
+          (if (nil? es) 0
+            (if (eq cur me)
+                (maxloop b cur me es alpha beta)
+                (minloop b cur me es alpha beta))))))))
+(def maxloop [b cur me ms alpha beta]
+  (if (nil? ms) alpha
+    (let v (ab (setat b (head ms) cur) (other cur) me alpha beta)
+      (let a2 (max alpha v)
+        (if (ge a2 beta) a2 (maxloop b cur me (tail ms) a2 beta))))))
+(def minloop [b cur me ms alpha beta]
+  (if (nil? ms) beta
+    (let v (ab (setat b (head ms) cur) (other cur) me alpha beta)
+      (let b2 (min beta v)
+        (if (le b2 alpha) b2 (minloop b cur me (tail ms) alpha b2))))))
+(def pick [b me ms bi bs]
+  (if (nil? ms) bi
+    (let i (head ms)
+      (let s (ab (setat b i me) (other me) me (neg 2) 2)
+        (if (gt s bs) (pick b me (tail ms) i s) (pick b me (tail ms) bi bs))))))
+(let b (text-chars {board})
+  (let me (head (text-chars {side}))
+    (pick b me (empties b) (neg 1) (neg 2))))

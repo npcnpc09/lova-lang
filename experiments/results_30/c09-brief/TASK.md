@@ -1,0 +1,63 @@
+# Task h04
+
+Given a text board of nine characters (X, O or . for empty, rows first) and a text side (X or O) whose turn it is, return the 0-based index of the best move for side: a move that wins if one exists, else one that forces a draw, else any move; where several moves are equally good, the lowest index. Both players play perfectly after the move. The board has at least one empty square and no winner yet.  [inputs: {board}, {side}]
+
+Each test runs under 7000000 steps.
+
+## Your last submission (program.lova)
+
+```lova
+(def w3 [x y z p] (and (eq x p) (and (eq y p) (eq z p))))
+(def win9 [a b c d e f g h i p]
+  (or (w3 a b c p) (or (w3 d e f p) (or (w3 g h i p) (or (w3 a d g p)
+  (or (w3 b e h p) (or (w3 c f i p) (or (w3 a e i p) (w3 c e g p)))))))))
+(def full9 [a b c d e f g h i]
+  (and (ne a 46) (and (ne b 46) (and (ne c 46) (and (ne d 46) (and (ne e 46)
+  (and (ne f 46) (and (ne g 46) (and (ne h 46) (ne i 46)))))))))
+(def k9 [a b c d e f g h i p] (text-of-chars (list a b c d e f g h i p)))
+(def other [p] (if (eq p 88) 79 88))
+(def cellat [n0 n1 n2 n3 n4 n5 n6 n7 n8 idx]
+  (cond (eq idx 0) n0 (eq idx 1) n1 (eq idx 2) n2 (eq idx 3) n3 (eq idx 4) n4
+        (eq idx 5) n5 (eq idx 6) n6 (eq idx 7) n7 n8))
+(def mval2 [m0 m1 m2 m3 m4 m5 m6 m7 m8 p m]
+  (if (win9 m0 m1 m2 m3 m4 m5 m6 m7 m8 p) (rec rv 1 rm m)
+    (if (full9 m0 m1 m2 m3 m4 m5 m6 m7 m8) (rec rv 0 rm m)
+      (let r (sc m0 m1 m2 m3 m4 m5 m6 m7 m8 (other p) m)
+        (rec rv (neg (get r rv)) rm (get r rm))))))
+(def mval [n0 n1 n2 n3 n4 n5 n6 n7 n8 p idx m]
+  (mval2 (if (eq idx 0) p n0) (if (eq idx 1) p n1) (if (eq idx 2) p n2)
+         (if (eq idx 3) p n3) (if (eq idx 4) p n4) (if (eq idx 5) p n5)
+         (if (eq idx 6) p n6) (if (eq idx 7) p n7) (if (eq idx 8) p n8) p m))
+(def loopmoves [n0 n1 n2 n3 n4 n5 n6 n7 n8 p idx acc m]
+  (if (gt idx 8) (rec rv acc rm m)
+    (if (ne (cellat n0 n1 n2 n3 n4 n5 n6 n7 n8 idx) 46)
+        (loopmoves n0 n1 n2 n3 n4 n5 n6 n7 n8 p (inc idx) acc m)
+        (let r (mval n0 n1 n2 n3 n4 n5 n6 n7 n8 p idx m)
+          (if (eq (get r rv) 1) (rec rv 1 rm (get r rm))
+            (loopmoves n0 n1 n2 n3 n4 n5 n6 n7 n8 p (inc idx)
+                       (max acc (get r rv)) (get r rm)))))))
+(def sc [n0 n1 n2 n3 n4 n5 n6 n7 n8 p m]
+  (let k (k9 n0 n1 n2 n3 n4 n5 n6 n7 n8 p)
+    (let hit (map-get m k 99)
+      (if (ne hit 99) (rec rv hit rm m)
+        (let r (loopmoves n0 n1 n2 n3 n4 n5 n6 n7 n8 p 0 (neg 1) m)
+          (rec rv (get r rv) rm (map-put (get r rm) k (get r rv))))))))
+(def pickloop [n0 n1 n2 n3 n4 n5 n6 n7 n8 p idx bi bs m]
+  (if (gt idx 8) bi
+    (if (ne (cellat n0 n1 n2 n3 n4 n5 n6 n7 n8 idx) 46)
+        (pickloop n0 n1 n2 n3 n4 n5 n6 n7 n8 p (inc idx) bi bs m)
+        (let r (mval n0 n1 n2 n3 n4 n5 n6 n7 n8 p idx m)
+          (if (gt (get r rv) bs)
+              (pickloop n0 n1 n2 n3 n4 n5 n6 n7 n8 p (inc idx) idx (get r rv) (get r rm))
+              (pickloop n0 n1 n2 n3 n4 n5 n6 n7 n8 p (inc idx) bi bs (get r rm)))))))
+(let b (text-chars {board})
+  (pickloop (nth b 0) (nth b 1) (nth b 2) (nth b 3) (nth b 4) (nth b 5)
+            (nth b 6) (nth b 7) (nth b 8) (head {side}) 0 0 (neg 2) (map-of (nil))))
+
+```
+
+## What the test run said
+
+```
+FAIL compile parse-error 5:1 [234,264) `(def full9 [a b c d e f g h i]`: defn 'full9': expected a closing paren after the body, got '('; the form beginning at line 5 -- '(def full9 [a b c d e f g h i]' -- opens 1 paren(s) that never close, and the fault is almost certainly there rather than here
+```

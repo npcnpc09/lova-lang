@@ -1,0 +1,46 @@
+(def idc [c] c)
+(def setat [xs i v] (if (eq i 0) (cons v (tail xs)) (cons (head xs) (setat (tail xs) (sub i 1) v))))
+(def won [b who]
+  (let q0 (head b) (let r1 (tail b)
+  (let q1 (head r1) (let r2 (tail r1)
+  (let q2 (head r2) (let r3 (tail r2)
+  (let q3 (head r3) (let r4 (tail r3)
+  (let q4 (head r4) (let r5 (tail r4)
+  (let q5 (head r5) (let r6 (tail r5)
+  (let q6 (head r6) (let r7 (tail r6)
+  (let q7 (head r7) (let r8 (tail r7)
+  (let q8 (head r8)
+    (or (and (eq q0 who) (and (eq q1 who) (eq q2 who)))
+    (or (and (eq q3 who) (and (eq q4 who) (eq q5 who)))
+    (or (and (eq q6 who) (and (eq q7 who) (eq q8 who)))
+    (or (and (eq q0 who) (and (eq q3 who) (eq q6 who)))
+    (or (and (eq q1 who) (and (eq q4 who) (eq q7 who)))
+    (or (and (eq q2 who) (and (eq q5 who) (eq q8 who)))
+    (or (and (eq q0 who) (and (eq q4 who) (eq q8 who)))
+        (and (eq q2 who) (and (eq q4 who) (eq q6 who)))))))))
+  )))))))))))))))))))
+(def orderlist [] (list 4 0 2 6 8 1 3 5 7))
+(def nm [b who alpha beta order e]
+  (if (nil? order) alpha
+    (let idx (head order)
+      (if (ne (nth b idx) 46) (nm b who alpha beta (tail order) e)
+        (let nb (setat b idx who)
+          (let v (if (won nb who) 1
+                   (if (eq e 1) 0
+                     (neg (nm nb (if (eq who 88) 79 88) (neg beta) (neg alpha) orderlist (sub e 1)))))
+            (let a2 (max alpha v)
+              (if (ge a2 beta) a2 (nm b who a2 beta (tail order) e)))))))))
+(def pick [b who i rest e bi bv]
+  (if (nil? rest) bi
+    (if (eq bv 1) bi
+      (if (ne (head rest) 46) (pick b who (merge i 1) (tail rest) e bi bv)
+        (let nb (setat b i who)
+          (let v (if (won nb who) 1
+                   (if (eq e 1) 0
+                     (neg (nm nb (if (eq who 88) 79 88) (neg 2) (neg bv) orderlist (sub e 1)))))
+            (if (gt v bv)
+              (pick b who (merge i 1) (tail rest) e i v)
+              (pick b who (merge i 1) (tail rest) e bi bv))))))))
+(let b (map idc {board})
+  (let s (head {side})
+    (pick b s 0 b (len (filter (lambda c (eq c 46)) b)) (neg 1) (neg 2))))

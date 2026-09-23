@@ -1,0 +1,81 @@
+(def pows [] (list 1 3 9 27 81 243 729 2187 6561))
+
+(def digit-of [c] (if (eq c 88) 1 (if (eq c 79) 2 0)))
+
+(def build [chars idx val emps]
+  (if (nil? chars) (rec val val emps emps)
+    (let c (head chars)
+      (let d (digit-of c)
+        (if (eq d 0)
+          (build (tail chars) (inc idx) val (cons idx emps))
+          (build (tail chars) (inc idx) (merge val (mul d (nth pows idx))) emps))))))
+
+(def win3 [d0 d1 d2 d3 d4 d5 d6 d7 d8]
+  (cond
+    (and (ne d0 0) (and (eq d0 d1) (eq d0 d2))) d0
+    (and (ne d3 0) (and (eq d3 d4) (eq d3 d5))) d3
+    (and (ne d6 0) (and (eq d6 d7) (eq d6 d8))) d6
+    (and (ne d0 0) (and (eq d0 d3) (eq d0 d6))) d0
+    (and (ne d1 0) (and (eq d1 d4) (eq d1 d7))) d1
+    (and (ne d2 0) (and (eq d2 d5) (eq d2 d8))) d2
+    (and (ne d0 0) (and (eq d0 d4) (eq d0 d8))) d0
+    (and (ne d2 0) (and (eq d2 d4) (eq d2 d6))) d2
+    0))
+
+(def winner [b]
+  (let d0 (mod b 3)
+  (let b1 (div b 3)
+  (let d1 (mod b1 3)
+  (let b2 (div b1 3)
+  (let d2 (mod b2 3)
+  (let b3 (div b2 3)
+  (let d3 (mod b3 3)
+  (let b4 (div b3 3)
+  (let d4 (mod b4 3)
+  (let b5 (div b4 3)
+  (let d5 (mod b5 3)
+  (let b6 (div b5 3)
+  (let d6 (mod b6 3)
+  (let b7 (div b6 3)
+  (let d7 (mod b7 3)
+  (let b8 (div b7 3)
+  (let d8 (mod b8 3)
+    (win3 d0 d1 d2 d3 d4 d5 d6 d7 d8)
+  ))))))))))))))))))
+
+(def other [p] (if (eq p 1) 2 1))
+
+(def prio [] (list 4 0 2 6 8 1 3 5 7))
+
+(def reorder [rest] (filter (lambda x (contains rest x)) prio))
+
+(def nmax [b p emps alpha beta]
+  (if (winner b) (neg 1)
+    (if (nil? emps) 0 (nloop b p (reorder emps) (nil) alpha beta (neg 2)))))
+
+(def nloop [b p rest before alpha beta best]
+  (if (nil? rest) best
+    (let i (head rest)
+      (let child-emps (append before (tail rest))
+        (let child-b (merge b (mul p (nth pows i)))
+          (let v (neg (nmax child-b (other p) child-emps (neg beta) (neg alpha)))
+            (let best2 (max best v)
+              (let a2 (max alpha v)
+                (if (ge a2 beta) best2 (nloop b p (tail rest) (cons i before) a2 beta best2))))))))))
+
+(def pick [b p rest before besti bestv]
+  (if (nil? rest) besti
+    (let i (head rest)
+      (let child-emps (append before (tail rest))
+        (let child-b (merge b (mul p (nth pows i)))
+          (let v (neg (nmax child-b (other p) child-emps (neg 2) 2))
+            (if (gt v bestv)
+              (pick b p (tail rest) (cons i before) i v)
+              (pick b p (tail rest) (cons i before) besti bestv))))))))
+
+(let chars (text-chars {board})
+  (let built (build chars 0 0 (nil))
+    (let val (get built val)
+      (let emps (reverse (get built emps))
+        (let sidec (digit-of (head {side}))
+          (pick val sidec emps (nil) 0 (neg 2)))))))

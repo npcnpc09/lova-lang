@@ -1,0 +1,45 @@
+(def idc [c] c)
+(def three [x y z] (and (ne x 46) (and (eq x y) (eq y z))))
+(def setat [xs i v] (if (eq i 0) (cons v (tail xs)) (cons (head xs) (setat (tail xs) (sub i 1) v))))
+(def order [] (list 4 0 2 6 8 1 3 5 7))
+(def winner [b]
+  (let q0 (head b) (let r1 (tail b)
+  (let q1 (head r1) (let r2 (tail r1)
+  (let q2 (head r2) (let r3 (tail r2)
+  (let q3 (head r3) (let r4 (tail r3)
+  (let q4 (head r4) (let r5 (tail r4)
+  (let q5 (head r5) (let r6 (tail r5)
+  (let q6 (head r6) (let r7 (tail r6)
+  (let q7 (head r7) (let r8 (tail r7)
+  (let q8 (head r8)
+    (cond
+      (three q0 q1 q2) q0
+      (three q3 q4 q5) q3
+      (three q6 q7 q8) q6
+      (three q0 q3 q6) q0
+      (three q1 q4 q7) q1
+      (three q2 q5 q8) q2
+      (three q0 q4 q8) q0
+      (three q2 q4 q6) q2
+      0)))))))))))))))))))
+(def other [w] (if (eq w 88) 79 88))
+(def nm [b who alpha beta ms e]
+  (if (nil? ms) alpha
+    (let i (head ms)
+      (if (ne (nth b i) 46) (nm b who alpha beta (tail ms) e)
+        (let nb (setat b i who)
+          (let w (winner nb)
+            (let v (if (eq w who) 1 (if (eq e 1) 0 (neg (nm nb (other who) (neg beta) (neg alpha) order (sub e 1)))))
+              (let a2 (max alpha v)
+                (if (ge a2 beta) a2 (nm b who a2 beta (tail ms) e))))))))))
+(def pick [b who i rest e bi bv]
+  (if (nil? rest) bi
+    (if (eq bv 1) bi
+      (if (ne (head rest) 46) (pick b who (inc i) (tail rest) e bi bv)
+        (let nb (setat b i who)
+          (let w (winner nb)
+            (let v (if (eq w who) 1 (if (eq e 1) 0 (neg (nm nb (other who) (neg 2) (neg bv) order (sub e 1)))))
+              (if (gt v bv) (pick b who (inc i) (tail rest) e i v) (pick b who (inc i) (tail rest) e bi bv)))))))))
+(let b (map idc {board})
+  (let s (head {side})
+    (pick b s 0 b (len (filter (lambda c (eq c 46)) b)) (neg 1) (neg 2))))

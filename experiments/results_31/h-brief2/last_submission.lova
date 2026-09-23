@@ -1,0 +1,58 @@
+(def other [c] (if (eq c 1) 2 1))
+
+(def code [c] (cond (eq c 46) 0 (eq c 88) 1 (eq c 79) 2 0))
+
+(def pack [chars i] (if (nil? chars) 0 (merge (mul (code (head chars)) (pow 3 i)) (pack (tail chars) (inc i)))))
+
+(def getcell [b i] (mod (div b (pow 3 i)) 3))
+(def setcell [b i v] (merge b (mul v (pow 3 i))))
+
+(def empties [b i] (if (eq i 9) (nil) (if (eq (getcell b i) 0) (cons i (empties b (inc i))) (empties b (inc i)))))
+
+(def full? [b] (nil? (empties b 0)))
+
+(def line3 [b i j k]
+  (let a (getcell b i)
+    (if (eq a 0) 0
+      (if (and (eq a (getcell b j)) (eq a (getcell b k))) a 0))))
+
+(def orv [a b] (if a a b))
+(def winner [b]
+  (orv (line3 b 0 1 2)
+  (orv (line3 b 3 4 5)
+  (orv (line3 b 6 7 8)
+  (orv (line3 b 0 3 6)
+  (orv (line3 b 1 4 7)
+  (orv (line3 b 2 5 8)
+  (orv (line3 b 0 4 8)
+       (line3 b 2 4 6)))))))))
+
+(def ab [b cur me alpha beta]
+  (let wn (winner b)
+    (if wn (if (eq wn me) 1 (neg 1))
+      (if (full? b) 0
+        (if (eq cur me)
+            (maxloop b cur me (empties b 0) alpha beta)
+            (minloop b cur me (empties b 0) alpha beta))))))
+
+(def maxloop [b cur me ms alpha beta]
+  (if (nil? ms) alpha
+    (let v (ab (setcell b (head ms) cur) (other cur) me alpha beta)
+      (let a2 (max alpha v)
+        (if (ge a2 beta) a2 (maxloop b cur me (tail ms) a2 beta))))))
+
+(def minloop [b cur me ms alpha beta]
+  (if (nil? ms) beta
+    (let v (ab (setcell b (head ms) cur) (other cur) me alpha beta)
+      (let b2 (min beta v)
+        (if (le b2 alpha) b2 (minloop b cur me (tail ms) alpha b2))))))
+
+(def pick [b me ms bi bs]
+  (if (nil? ms) bi
+    (let i (head ms)
+      (let s (ab (setcell b i me) (other me) me bs 1)
+        (if (gt s bs) (pick b me (tail ms) i s) (pick b me (tail ms) bi bs))))))
+
+(let b (pack (text-chars {board}) 0)
+  (let me (code (head (text-chars {side})))
+    (pick b me (empties b 0) (neg 1) (neg 2))))

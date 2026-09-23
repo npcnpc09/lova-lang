@@ -1,0 +1,5 @@
+{"attempt": 1, "passed": false, "feedback_chars": 306, "emitted_chars": 1381, "time": 1790157977.2542691}
+{"attempt": 2, "passed": false, "feedback_chars": 303, "emitted_chars": 1473, "time": 1790158023.2912474}
+{"attempt": 3, "passed": false, "feedback_chars": 269, "emitted_chars": 2561, "time": 1790158158.2642558}
+{"attempt": 4, "passed": false, "feedback_chars": 340, "emitted_chars": 2562, "time": 1790158174.6580434}
+{"attempt": 5, "passed": true, "feedback_chars": 60, "emitted_chars": 2677, "time": 1790158234.5326393}

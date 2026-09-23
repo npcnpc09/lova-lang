@@ -1,0 +1,85 @@
+(def pw3 [] (list 1 3 9 27 81 243 729 2187 6561))
+(def digit [b i] (mod (div b (nth pw3 i)) 3))
+(def setat [b i v] (merge b (mul v (nth pw3 i))))
+(def other [c] (if (eq c 1) 2 1))
+(def state [b]
+  (let d0 (digit b 0)
+  (let d1 (digit b 1)
+  (let d2 (digit b 2)
+  (let d3 (digit b 3)
+  (let d4 (digit b 4)
+  (let d5 (digit b 5)
+  (let d6 (digit b 6)
+  (let d7 (digit b 7)
+  (let d8 (digit b 8)
+  (let wn (cond
+            (and (ne d0 0) (and (eq d0 d1) (eq d1 d2))) d0
+            (and (ne d3 0) (and (eq d3 d4) (eq d4 d5))) d3
+            (and (ne d6 0) (and (eq d6 d7) (eq d7 d8))) d6
+            (and (ne d0 0) (and (eq d0 d3) (eq d3 d6))) d0
+            (and (ne d1 0) (and (eq d1 d4) (eq d4 d7))) d1
+            (and (ne d2 0) (and (eq d2 d5) (eq d5 d8))) d2
+            (and (ne d0 0) (and (eq d0 d4) (eq d4 d8))) d0
+            (and (ne d2 0) (and (eq d2 d4) (eq d4 d6))) d2
+            0)
+  (let l1 (if (eq d7 0) (cons 7 (nil)) (nil))
+  (let l2 (if (eq d5 0) (cons 5 l1) l1)
+  (let l3 (if (eq d3 0) (cons 3 l2) l2)
+  (let l4 (if (eq d1 0) (cons 1 l3) l3)
+  (let l5 (if (eq d8 0) (cons 8 l4) l4)
+  (let l6 (if (eq d6 0) (cons 6 l5) l5)
+  (let l7 (if (eq d2 0) (cons 2 l6) l6)
+  (let l8 (if (eq d0 0) (cons 0 l7) l7)
+  (let l9 (if (eq d4 0) (cons 4 l8) l8)
+    (cons wn (cons l9 (nil)))
+  ))))))))))))))))))))
+(def emptiesAsc [b]
+  (let d0 (digit b 0)
+  (let d1 (digit b 1)
+  (let d2 (digit b 2)
+  (let d3 (digit b 3)
+  (let d4 (digit b 4)
+  (let d5 (digit b 5)
+  (let d6 (digit b 6)
+  (let d7 (digit b 7)
+  (let d8 (digit b 8)
+  (let l8 (if (eq d8 0) (cons 8 (nil)) (nil))
+  (let l7 (if (eq d7 0) (cons 7 l8) l8)
+  (let l6 (if (eq d6 0) (cons 6 l7) l7)
+  (let l5 (if (eq d5 0) (cons 5 l6) l6)
+  (let l4 (if (eq d4 0) (cons 4 l5) l5)
+  (let l3 (if (eq d3 0) (cons 3 l4) l4)
+  (let l2 (if (eq d2 0) (cons 2 l3) l3)
+  (let l1 (if (eq d1 0) (cons 1 l2) l2)
+  (let l0 (if (eq d0 0) (cons 0 l1) l1)
+    l0
+  )))))))))))))))))))
+(def ab [b cur me alpha beta]
+  (let st (state b)
+    (let wn (head st)
+      (if wn (if (eq wn me) 1 (neg 1))
+        (let ms (head (tail st))
+          (if (nil? ms) 0
+            (if (eq cur me)
+                (maxloop b cur me ms alpha beta)
+                (minloop b cur me ms alpha beta))))))))
+(def maxloop [b cur me ms alpha beta]
+  (if (nil? ms) alpha
+    (let v (ab (setat b (head ms) cur) (other cur) me alpha beta)
+      (let a2 (max alpha v)
+        (if (ge a2 beta) a2 (maxloop b cur me (tail ms) a2 beta))))))
+(def minloop [b cur me ms alpha beta]
+  (if (nil? ms) beta
+    (let v (ab (setat b (head ms) cur) (other cur) me alpha beta)
+      (let b2 (min beta v)
+        (if (le b2 alpha) b2 (minloop b cur me (tail ms) alpha b2))))))
+(def pick [b me ms bi bs]
+  (if (nil? ms) bi
+    (let i (head ms)
+      (let s (ab (setat b i me) (other me) me (neg 2) 2)
+        (if (gt s bs) (pick b me (tail ms) i s) (pick b me (tail ms) bi bs))))))
+(def chardigit [c] (if (eq c 88) 1 (if (eq c 79) 2 0)))
+(def packrec [cs i] (if (nil? cs) 0 (merge (mul (chardigit (head cs)) (nth pw3 i)) (packrec (tail cs) (inc i)))))
+(let b (packrec (text-chars {board}) 0)
+  (let me (chardigit (head (text-chars {side})))
+    (pick b me (emptiesAsc b) (neg 1) (neg 2))))

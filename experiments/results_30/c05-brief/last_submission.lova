@@ -1,0 +1,53 @@
+(def idc [c] c)
+(def cellwins [] (list
+  (list (list 0 1 2) (list 0 3 6) (list 0 4 8))
+  (list (list 0 1 2) (list 1 4 7))
+  (list (list 0 1 2) (list 2 5 8) (list 2 4 6))
+  (list (list 3 4 5) (list 0 3 6))
+  (list (list 3 4 5) (list 1 4 7) (list 0 4 8) (list 2 4 6))
+  (list (list 3 4 5) (list 2 5 8))
+  (list (list 6 7 8) (list 0 3 6) (list 2 4 6))
+  (list (list 6 7 8) (list 1 4 7))
+  (list (list 6 7 8) (list 2 5 8) (list 0 4 8))))
+(def setat [xs i v] (if (eq i 0) (cons v (tail xs)) (cons (head xs) (setat (tail xs) (sub i 1) v))))
+(def winloop [b ls]
+  (if (nil? ls) 0
+    (let ln (head ls)
+      (let a (nth b (nth ln 0))
+        (if (and (ne a 46) (and (eq a (nth b (nth ln 1))) (eq a (nth b (nth ln 2)))))
+          a (winloop b (tail ls)))))))
+(def winnerat [b ci] (winloop b (nth cellwins ci)))
+(def full [b] (not (contains b 46)))
+(def other [w] (if (eq w 88) 79 88))
+(def keyof [b who] (text-cat (text-of-chars b) (int-text who)))
+(def mmloop [b who cache i bestv]
+  (if (eq i 9) (rec v bestv c cache)
+    (if (ne (nth b i) 46) (mmloop b who cache (inc i) bestv)
+      (let nb (setat b i who)
+        (let w (winnerat nb i)
+          (if (eq w who)
+            (rec v 1 c cache)
+            (if (full nb)
+              (mmloop b who cache (inc i) (max bestv 0))
+              (let sub (mm nb (other who) cache)
+                (let v2 (neg (get sub v))
+                  (mmloop b who (get sub c) (inc i) (max bestv v2)))))))))))
+(def mm [b who cache]
+  (let key (keyof b who)
+    (let cached (map-get cache key 2)
+      (if (ne cached 2) (rec v cached c cache)
+        (let res (mmloop b who cache 0 (neg 2))
+          (rec v (get res v) c (map-put (get res c) key (get res v))))))))
+(def pick [b who i bi bv cache]
+  (if (eq i 9) bi
+    (if (eq bv 1) bi
+      (if (ne (nth b i) 46) (pick b who (inc i) bi bv cache)
+        (let nb (setat b i who)
+          (let w (winnerat nb i)
+            (if (eq w who) i
+              (if (full nb)
+                (if (gt 0 bv) (pick b who (inc i) i 0 cache) (pick b who (inc i) bi bv cache))
+                (let sub (mm nb (other who) cache)
+                  (let v (neg (get sub v))
+                    (if (gt v bv) (pick b who (inc i) i v (get sub c)) (pick b who (inc i) bi bv (get sub c)))))))))))))
+(let b (map idc {board}) (let s (head {side}) (pick b s 0 (neg 1) (neg 2) (nil))))

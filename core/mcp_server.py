@@ -33,6 +33,7 @@ import sys
 from dataclasses import asdict
 from typing import Any, Callable, Dict, List, Optional
 
+from core.brief import compact
 from core.cli import (
     CLI_MAX_DEPTH, CLI_MAX_STEPS, build, format_value, name_anomaly,
     parse_allow, parse_net_allow, substitute,
@@ -89,6 +90,11 @@ _SOURCE_PROPS = {
                 "description": "load lib/prelude.lova (len, map, filter, ...)"},
     "stage2": {"type": "boolean", "default": False,
                "description": "read source as the Stage-2 surface"},
+    "report": {"type": "string", "enum": ["brief", "full"], "default": "brief",
+               "description": "on failure, `brief` answers with the fault in one "
+                              "line -- stage, kind, line:col, [span) to patch, the "
+                              "text there, what is wrong; `full` with the whole "
+                              "structured anomaly"},
 }
 
 TOOLS: List[Dict[str, Any]] = [
@@ -97,7 +103,9 @@ TOOLS: List[Dict[str, Any]] = [
         "description": (
             "Run a LOVA program. Returns its value, what it wrote to stdout, "
             "the step count, and -- if it trapped or failed to compile -- the "
-            "structured anomaly (kind, detail, position_path, repair_hint). "
+            "fault: one line by default -- stage, kind, line:col, the [start,end) "
+            "span lova_patch takes, the text there and what is wrong; "
+            "`report: \"full\"` for the whole structured anomaly. "
             "Capabilities are granted with `allow`, e.g. [\"fs-read\", \"clock\", "
             "\"net=127.0.0.1:9000\"]; nothing is granted by default."
         ),
@@ -111,6 +119,11 @@ TOOLS: List[Dict[str, Any]] = [
                 "stdin": {"type": "string",
                           "description": "lines the program may read with (stdin)"},
                 "max_steps": {"type": "integer", "default": 20000000},
+                "probe": {"type": "integer", "default": 4,
+                          "description": "on a step trap, run the program again "
+                                         "under probe x max_steps (only when it "
+                                         "touches no file, clock or network) and "
+                                         "report the steps it needs; 0 disables"},
                 "max_depth": {"type": "integer", "default": 10000},
                 "native": {"type": "string", "enum": ["auto", "on", "off"],
                            "default": "auto",
@@ -128,8 +141,8 @@ TOOLS: List[Dict[str, Any]] = [
         "name": "lova_patch",
         "description": (
             "Replace one span of a LOVA source and report whether the result "
-            "compiles. An anomaly from lova_execute carries `span` as [start, "
-            "end] character offsets and `excerpt`, the text there: patch that "
+            "compiles. A fault from lova_execute names its span as [start,end) "
+            "character offsets and quotes the text there: patch that "
             "span with the fix and run again. Or name a `def` and the `find` "
             "text to replace inside it, which must occur once in that def "
             "(it may occur elsewhere). Returns the patched source."
@@ -289,6 +302,10 @@ def _failure(stage: str, exc: Exception, source: Optional[str] = None) -> Dict[s
     if anomaly is None:
         anomaly = {"kind": "error", "message": str(exc)}
     anomaly = _jsonable(anomaly)
+    if isinstance(anomaly, dict) and not anomaly.get("message") and str(exc):
+        # The trap's own sentence -- "div: division by zero" -- is the
+        # fact; the native runtime reported it and the Python one did not.
+        anomaly["message"] = str(exc)
     path = anomaly.get("position_path") if isinstance(anomaly, dict) else None
     if isinstance(path, list) and len(path) > 12:
         # A depth trap carries a path per frame -- twenty thousand
@@ -348,7 +365,7 @@ def _value_fields(value: Any) -> Dict[str, Any]:
     return out
 
 
-def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
+def _execute(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
         source = _source(params)
         tree, _report = _build(params)
@@ -392,6 +409,53 @@ def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
         "caught": _jsonable(runtime.caught),
         "runtime": "python",
     }
+
+
+# Q141 (Exp 30 F3): a step trap stops counting at the budget, so it said
+# "overrun: 1" on every trap and a session could not tell a program one
+# percent too slow from one a hundred times too slow.  The run is repeated
+# under a larger ceiling -- only when repeating it touches nothing outside
+# the process -- and the trap then says how many steps the program needs.
+PROBE_FACTOR = 4
+_WORLD = frozenset({"read-fs", "write-fs", "read-clock", "net-send", "net-recv"})
+
+
+def _probe_needed(params: Dict[str, Any], result: Dict[str, Any]) -> None:
+    anomaly = result.get("anomaly")
+    if not isinstance(anomaly, dict) or anomaly.get("kind") != "step-limit-exceeded":
+        return
+    factor = int(params.get("probe", PROBE_FACTOR))
+    if factor <= 1:
+        return
+    try:
+        tree, _report = _build(params)
+        effects = static_analyze(tree).effects
+    except Exception:                              # the trap stands as reported
+        return
+    if set(effects) & _WORLD:
+        return                                     # repeating it would touch the world
+    budget = int(params.get("max_steps", CLI_MAX_STEPS))
+    ceiling = budget * factor
+    again = _execute({**params, "max_steps": ceiling})
+    detail = anomaly.setdefault("detail", {})
+    detail["probe_limit"] = ceiling
+    a2 = again.get("anomaly") if isinstance(again.get("anomaly"), dict) else {}
+    if again.get("ok"):
+        detail["needed"] = int(again.get("steps", 0))
+    elif a2.get("kind") == "step-limit-exceeded":
+        detail["needed"] = None                    # more than the ceiling
+    else:
+        return                                     # it fails another way later; not a cost fact
+    hot = (a2.get("detail") or {}).get("hot") if a2 else None
+    if hot:
+        detail["hot_at_probe"] = hot
+
+
+def tool_execute(params: Dict[str, Any]) -> Dict[str, Any]:
+    result = _execute(params)
+    if not result.get("ok", True):
+        _probe_needed(params, result)
+    return result
 
 
 def _execute_native(params: Dict[str, Any], tree: Any, source: str,
@@ -780,8 +844,13 @@ def handle(request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         except Exception as exc:          # a tool must answer, not crash the server
             result = {"ok": False, "stage": "tool",
                       "anomaly": {"kind": "error", "message": f"{type(exc).__name__}: {exc}"}}
+        if arguments.get("report", "brief") != "full":
+            # The fault in one line (core/brief.py): what differs from one
+            # failure to the next, not the schema around it.
+            result = compact(result)
         return {"jsonrpc": "2.0", "id": request_id, "result": {
-            "content": [{"type": "text", "text": json.dumps(result, indent=1)}],
+            "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False,
+                                                            separators=(",", ":"))}],
             "isError": not result.get("ok", True),
         }}
     return _error(request_id, -32601, f"unknown method {method!r}")

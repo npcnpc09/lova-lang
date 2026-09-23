@@ -1,0 +1,81 @@
+# Task h03
+
+Given a text `text` of log lines, each `LEVEL component: message` where LEVEL is one of INFO, WARN, ERROR, return a text with one line per component, `component errors warnings` (the counts of its ERROR and WARN lines), ordered by errors descending, then warnings descending, then component name ascending. Components with only INFO lines still appear with 0 0. Blank lines in the input are skipped.  [inputs: {text}]
+
+Each test runs under 7000000 steps.
+
+## Your last submission (program.lova)
+
+```lova
+(def strip-colon [t]
+  (let n (text-len t)
+    (if (eq (text-slice t (sub n 1) n) ":") (text-slice t 0 (sub n 1)) t)))
+(def step [m ln]
+  (let ws (words ln)
+    (if (nil? ws) m
+      (let comp (strip-colon (nth ws 1))
+        (let cur (map-get m comp (rec e 0 w 0))
+          (let lv (nth ws 0)
+            (map-put m comp
+              (if (eq lv "ERROR") (put cur e (inc (get cur e)))
+                (if (eq lv "WARN") (put cur w (inc (get cur w))) cur)))))))))
+(example (let m (fold step (map-of (nil)) (lines "INFO db: up\nERROR api: timeout\nWARN db: slow\nERROR api: 500\n\nWARN cache: miss"))
+  (let ks (sort-by (lambda a (lambda b
+             (let ra (map-get m a 0) (let rb (map-get m b 0)
+               (if (ne (get ra e) (get rb e)) (gt (get ra e) (get rb e))
+                 (if (ne (get ra w) (get rb w)) (lt (get ra w) (get rb w))
+                   (text-lt a b)))))))
+           (map-keys m))
+    (join (map (lambda c
+                 (let r (map-get m c 0)
+                   (text-cat c (text-cat " " (text-cat (text-of (get r e))
+                     (text-cat " " (text-of (get r w))))))))
+               ks)
+          10))) "api 2 0\ncache 0 1\ndb 0 1")
+(example (let m (fold step (map-of (nil)) (lines "INFO a: x\nINFO b: y"))
+  (let ks (sort-by (lambda a (lambda b
+             (let ra (map-get m a 0) (let rb (map-get m b 0)
+               (if (ne (get ra e) (get rb e)) (gt (get ra e) (get rb e))
+                 (if (ne (get ra w) (get rb w)) (lt (get ra w) (get rb w))
+                   (text-lt a b)))))))
+           (map-keys m))
+    (join (map (lambda c
+                 (let r (map-get m c 0)
+                   (text-cat c (text-cat " " (text-cat (text-of (get r e))
+                     (text-cat " " (text-of (get r w))))))))
+               ks)
+          10))) "a 0 0\nb 0 0")
+(example (let m (fold step (map-of (nil)) (lines "ERROR z: a\nERROR y: b\nWARN y: c"))
+  (let ks (sort-by (lambda a (lambda b
+             (let ra (map-get m a 0) (let rb (map-get m b 0)
+               (if (ne (get ra e) (get rb e)) (gt (get ra e) (get rb e))
+                 (if (ne (get ra w) (get rb w)) (lt (get ra w) (get rb w))
+                   (text-lt a b)))))))
+           (map-keys m))
+    (join (map (lambda c
+                 (let r (map-get m c 0)
+                   (text-cat c (text-cat " " (text-cat (text-of (get r e))
+                     (text-cat " " (text-of (get r w))))))))
+               ks)
+          10))) "y 1 1\nz 1 0")
+(let m (fold step (map-of (nil)) (lines {text}))
+  (let ks (sort-by (lambda a (lambda b
+             (let ra (map-get m a 0) (let rb (map-get m b 0)
+               (if (ne (get ra e) (get rb e)) (gt (get ra e) (get rb e))
+                 (if (ne (get ra w) (get rb w)) gtt (get ra w) (get rb w))
+                   (text-lt a b)))))))
+           (map-keys m))
+    (join (map (lambda c
+                 (let r (map-get m c 0)
+                   (text-cat c (text-cat " " (text-cat (text-of (get r e))
+                     (text-cat " " (text-of (get r w))))))))
+               ks)
+          10)))
+
+```
+
+## What the test run said
+
+```
+FAIL compile parse-error 65:72 [3136,3137): if-surprise: expects 3 args, got 4; a closing paren at line 69 has nothing open to close; a form above it closed too early
+```

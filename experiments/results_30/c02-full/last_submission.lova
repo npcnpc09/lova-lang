@@ -1,0 +1,42 @@
+(def pow3 [] (list 1 3 9 27 81 243 729 2187 6561))
+(def get-cell [b i] (mod (div b (nth pow3 i)) 3))
+(def set-cell [b i v] (merge b (mul v (nth pow3 i))))
+(def other [p] (if (eq p 1) 2 1))
+(def lines-idx [] (list
+  (list (list 0 1 2) (list 0 3 6) (list 0 4 8))
+  (list (list 0 1 2) (list 1 4 7))
+  (list (list 0 1 2) (list 2 5 8) (list 2 4 6))
+  (list (list 3 4 5) (list 0 3 6))
+  (list (list 3 4 5) (list 1 4 7) (list 0 4 8) (list 2 4 6))
+  (list (list 3 4 5) (list 2 5 8))
+  (list (list 6 7 8) (list 0 3 6) (list 2 4 6))
+  (list (list 6 7 8) (list 1 4 7))
+  (list (list 6 7 8) (list 2 5 8) (list 0 4 8))))
+(def line-eq [b l v]
+  (and (eq v (get-cell b (nth l 0))) (and (eq v (get-cell b (nth l 1))) (eq v (get-cell b (nth l 2))))))
+(def any-line-win [b ls v]
+  (if (nil? ls) 0 (if (line-eq b (head ls) v) 1 (any-line-win b (tail ls) v))))
+(def win-at [b i v] (any-line-win b (nth lines-idx i) v))
+(def order [] (list 4 0 2 6 8 1 3 5 7))
+(def nmax [b p e alpha beta last lastv]
+  (if (win-at b last lastv) (neg 1)
+    (if (eq e 0) 0 (nloop b p 0 alpha beta (neg 2) e))))
+(def nloop [b p k alpha beta best e]
+  (if (ge k 9) best
+    (let ci (nth order k)
+      (if (ne (get-cell b ci) 0) (nloop b p (inc k) alpha beta best e)
+        (let v (neg (nmax (set-cell b ci p) (other p) (sub e 1) (neg beta) (neg alpha) ci p))
+          (let best2 (max best v)
+            (let a2 (max alpha v)
+              (if (ge a2 beta) best2 (nloop b p (inc k) a2 beta best2 e)))))))))
+(def pick [b p i besti bestv e]
+  (if (ge i 9) besti
+    (if (ne (get-cell b i) 0) (pick b p (inc i) besti bestv e)
+      (let v (neg (nmax (set-cell b i p) (other p) (sub e 1) (neg 2) 2 i p))
+        (if (gt v bestv) (pick b p (inc i) i v e) (pick b p (inc i) besti bestv e))))))
+(def code-to-digit [c] (if (eq c 88) 1 (if (eq c 79) 2 0)))
+(def pack-go [b i cs] (if (nil? cs) b (pack-go (merge b (mul (code-to-digit (head cs)) (nth pow3 i))) (inc i) (tail cs))))
+(def count-zeros [b i] (if (ge i 9) 0 (merge (if (eq (get-cell b i) 0) 1 0) (count-zeros b (inc i)))))
+(let b (pack-go 0 0 (text-chars {board}))
+  (let p (if (eq (head {side}) 88) 1 2)
+    (pick b p 0 0 (neg 2) (count-zeros b 0))))

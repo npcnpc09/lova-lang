@@ -1,0 +1,38 @@
+(def idc [c] c)
+(def setat [xs i v] (append (take i xs) (cons v (drop (inc i) xs))))
+(def cell [b i] (nth b i))
+(def line3 [b who a c2 d] (and (eq (cell b a) who) (and (eq (cell b c2) who) (eq (cell b d) who))))
+(def won [b who i]
+  (cond
+    (eq i 0) (or (line3 b who 0 1 2) (or (line3 b who 0 3 6) (line3 b who 0 4 8)))
+    (eq i 1) (or (line3 b who 0 1 2) (line3 b who 1 4 7))
+    (eq i 2) (or (line3 b who 0 1 2) (or (line3 b who 2 5 8) (line3 b who 2 4 6)))
+    (eq i 3) (or (line3 b who 0 3 6) (line3 b who 3 4 5))
+    (eq i 4) (or (line3 b who 0 4 8) (or (line3 b who 1 4 7) (or (line3 b who 3 4 5) (line3 b who 2 4 6))))
+    (eq i 5) (or (line3 b who 2 5 8) (line3 b who 3 4 5))
+    (eq i 6) (or (line3 b who 0 3 6) (or (line3 b who 2 4 6) (line3 b who 6 7 8)))
+    (eq i 7) (or (line3 b who 1 4 7) (line3 b who 6 7 8))
+    (or (line3 b who 0 4 8) (or (line3 b who 2 5 8) (line3 b who 6 7 8)))))
+(def nm [b who alpha beta i rest e]
+  (if (nil? rest) alpha
+    (if (ne (head rest) 46) (nm b who alpha beta (merge i 1) (tail rest) e)
+      (let nb (setat b i who)
+        (let v (if (won nb who i) 1
+                 (if (eq e 1) 0
+                   (neg (nm nb (if (eq who 88) 79 88) (neg beta) (neg alpha) 0 nb (sub e 1)))))
+          (let a2 (max alpha v)
+            (if (ge a2 beta) a2 (nm b who a2 beta (merge i 1) (tail rest) e))))))))
+(def pick [b who i rest e bi bv]
+  (if (nil? rest) bi
+    (if (eq bv 1) bi
+      (if (ne (head rest) 46) (pick b who (merge i 1) (tail rest) e bi bv)
+        (let nb (setat b i who)
+          (let v (if (won nb who i) 1
+                   (if (eq e 1) 0
+                     (neg (nm nb (if (eq who 88) 79 88) (neg 2) (neg bv) 0 nb (sub e 1)))))
+            (if (gt v bv)
+              (pick b who (merge i 1) (tail rest) e i v)
+              (pick b who (merge i 1) (tail rest) e bi bv))))))))
+(let b (map idc {board})
+  (let s (head {side})
+    (pick b s 0 b (len (filter (lambda c (eq c 46)) b)) (neg 1) (neg 2))))

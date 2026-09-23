@@ -1,0 +1,51 @@
+(def pow3 [] (list 1 3 9 27 81 243 729 2187 6561))
+(def wins [] (list (list 0 1 2) (list 3 4 5) (list 6 7 8)
+                   (list 0 3 6) (list 1 4 7) (list 2 5 8)
+                   (list 0 4 8) (list 2 4 6)))
+(def cell [key i] (mod (div key (nth pow3 i)) 3))
+(def line-win [key pc ln]
+  (and (eq (cell key (nth ln 0)) pc)
+       (and (eq (cell key (nth ln 1)) pc) (eq (cell key (nth ln 2)) pc))))
+(def has-win [key pc] (any (lambda ln (line-win key pc ln)) wins))
+(def pcode [p] (if (eq p 88) 1 2))
+(def opp [p] (if (eq p 88) 79 88))
+(def set-cell [key i pc] (merge key (mul pc (nth pow3 i))))
+
+(def best [key p rem mm]
+  (let kk (merge (mul key 2) (if (eq p 88) 1 0))
+    (let hit (map-get mm kk 9)
+      (if (ne hit 9) (rec s hit m mm)
+        (let res (best2 key p rem mm)
+          (rec s (get res s) m (map-put (get res m) kk (get res s))))))))
+
+(def best2 [key p rem mm]
+  (if (has-win key (pcode (opp p))) (rec s (neg 1) m mm)
+    (if (eq rem 0) (rec s 0 m mm)
+      (bestloop key p rem 0 (neg 2) mm))))
+
+(def bestloop [key p rem i acc mm]
+  (if (eq i 9) (rec s acc m mm)
+    (if (ne (cell key i) 0) (bestloop key p rem (inc i) acc mm)
+      (let r (best (set-cell key i (pcode p)) (opp p) (sub rem 1) mm)
+        (bestloop key p rem (inc i) (max acc (neg (get r s))) (get r m))))))
+
+(def pick [key p rem i bi bs mm]
+  (if (eq i 9) bi
+    (if (ne (cell key i) 0) (pick key p rem (inc i) bi bs mm)
+      (let r (best (set-cell key i (pcode p)) (opp p) (sub rem 1) mm)
+        (let sc (neg (get r s))
+          (if (gt sc bs) (pick key p rem (inc i) i sc (get r m))
+                         (pick key p rem (inc i) bi bs (get r m))))))))
+
+(def board-key [b i acc]
+  (if (eq i 9) acc
+    (board-key b (inc i) (merge acc (mul (if (eq (nth b i) 88) 1 (if (eq (nth b i) 79) 2 0)) (nth pow3 i))))))
+
+(def count-empty [b i acc]
+  (if (eq i 9) acc
+    (count-empty b (inc i) (merge acc (if (eq (nth b i) 46) 1 0)))))
+
+(let b (text-chars {board})
+  (let key (board-key b 0 0)
+    (let rem (count-empty b 0 0)
+      (pick key (head {side}) rem 0 0 (neg 2) (map-of (nil))))))

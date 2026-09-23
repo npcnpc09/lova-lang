@@ -1,0 +1,37 @@
+(def lines3 [] (list (list 0 1 2) (list 3 4 5) (list 6 7 8)
+                     (list 0 3 6) (list 1 4 7) (list 2 5 8)
+                     (list 0 4 8) (list 2 4 6)))
+(def lines-by-idx [] (map (lambda i (filter (lambda l (contains l i)) lines3)) (range 0 9)))
+(def line-win [b l]
+  (let a (nth b (nth l 0))
+    (if (and (ne a 46) (and (eq a (nth b (nth l 1))) (eq a (nth b (nth l 2))))) a 0)))
+(def winner-of [b ls]
+  (if (nil? ls) 0 (let w (line-win b (head ls)) (if w w (winner-of b (tail ls))))))
+(def winner-at [b i] (winner-of b (nth lines-by-idx i)))
+(def full [b] (not (contains b 46)))
+(def other [p] (if (eq p 88) 79 88))
+(def set-at [xs i v]
+  (if (eq i 0) (cons v (tail xs)) (cons (head xs) (set-at (tail xs) (sub i 1) v))))
+(def nmax [b p alpha beta mv]
+  (if (winner-at b mv) (neg 1)
+    (if (full b) 0 (nloop b p 0 alpha beta (neg 2)))))
+(def nloop [b p i alpha beta best]
+  (if (ge i 9) best
+    (if (ne (nth b i) 46) (nloop b p (inc i) alpha beta best)
+      (let v (neg (nmax (set-at b i p) (other p) (neg beta) (neg alpha) i))
+        (let best2 (max best v)
+          (let a2 (max alpha v)
+            (if (ge a2 beta) best2 (nloop b p (inc i) a2 beta best2))))))))
+(def pick [b p i besti bestv alpha]
+  (if (ge i 9) besti
+    (if (ne (nth b i) 46) (pick b p (inc i) besti bestv alpha)
+      (let v (neg (nmax (set-at b i p) (other p) (neg 2) (neg alpha) i))
+        (if (gt v bestv) (pick b p (inc i) i v (max alpha v)) (pick b p (inc i) besti bestv alpha))))))
+(def empty-board? [b] (not (any (lambda x (ne x 46)) b)))
+(def pick-sym [b p]
+  (let v0 (neg (nmax (set-at b 0 p) (other p) (neg 2) 2 0))
+    (let v1 (neg (nmax (set-at b 1 p) (other p) (neg 2) 2 1))
+      (let v4 (neg (nmax (set-at b 4 p) (other p) (neg 2) 2 4))
+        (if (ge v0 v1) (if (ge v0 v4) 0 4) (if (ge v1 v4) 1 4))))))
+(let b (text-chars {board})
+  (if (empty-board? b) (pick-sym b (head {side})) (pick b (head {side}) 0 0 (neg 2) (neg 2))))

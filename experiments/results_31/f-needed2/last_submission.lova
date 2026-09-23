@@ -1,0 +1,38 @@
+(def idc [c] c)
+(def ord [] (list 4 0 2 6 8 1 3 5 7))
+(def wl3 [b a c d who] (and (eq (nth b a) who) (and (eq (nth b c) who) (eq (nth b d) who))))
+(def won-at [b i who]
+  (cond
+    (eq i 0) (or (wl3 b 0 1 2 who) (or (wl3 b 0 3 6 who) (wl3 b 0 4 8 who)))
+    (eq i 1) (or (wl3 b 0 1 2 who) (wl3 b 1 4 7 who))
+    (eq i 2) (or (wl3 b 0 1 2 who) (or (wl3 b 2 5 8 who) (wl3 b 2 4 6 who)))
+    (eq i 3) (or (wl3 b 3 4 5 who) (wl3 b 0 3 6 who))
+    (eq i 4) (or (wl3 b 3 4 5 who) (or (wl3 b 1 4 7 who) (or (wl3 b 0 4 8 who) (wl3 b 2 4 6 who))))
+    (eq i 5) (or (wl3 b 3 4 5 who) (wl3 b 2 5 8 who))
+    (eq i 6) (or (wl3 b 6 7 8 who) (or (wl3 b 0 3 6 who) (wl3 b 2 4 6 who)))
+    (eq i 7) (or (wl3 b 6 7 8 who) (wl3 b 1 4 7 who))
+    (eq i 8) (or (wl3 b 6 7 8 who) (or (wl3 b 2 5 8 who) (wl3 b 0 4 8 who)))
+    0))
+(def setat [xs i v] (append (take i xs) (cons v (drop (inc i) xs))))
+(def other [w] (if (eq w 88) 79 88))
+(def nm [b who alpha beta idxs e]
+  (if (nil? idxs) alpha
+    (let i (head idxs)
+      (if (ne (nth b i) 46) (nm b who alpha beta (tail idxs) e)
+        (let nb (setat b i who)
+          (let iswin (won-at nb i who)
+            (let v (if iswin 1 (if (eq e 1) 0 (neg (nm nb (other who) (neg beta) (neg alpha) ord (sub e 1)))))
+              (let a2 (max alpha v)
+                (if (ge a2 beta) a2 (nm b who a2 beta (tail idxs) e))))))))))
+(def pick [b who idxs e bi bv]
+  (if (nil? idxs) bi
+    (if (eq bv 1) bi
+      (let i (head idxs)
+        (if (ne (nth b i) 46) (pick b who (tail idxs) e bi bv)
+          (let nb (setat b i who)
+            (let iswin (won-at nb i who)
+              (let v (if iswin 1 (if (eq e 1) 0 (neg (nm nb (other who) (neg 2) 2 ord (sub e 1)))))
+                (if (or (gt v bv) (and (eq v bv) (lt i bi))) (pick b who (tail idxs) e i v) (pick b who (tail idxs) e bi bv))))))))))
+(let b (map idc {board})
+  (let s (head {side})
+    (pick b s ord (len (filter (lambda c (eq c 46)) b)) (neg 1) (neg 2))))

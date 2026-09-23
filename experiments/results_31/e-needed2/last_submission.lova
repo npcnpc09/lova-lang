@@ -1,0 +1,40 @@
+(def idc [c] c)
+(def lines0 [] (list (list 0 1 2) (list 0 3 6) (list 0 4 8)))
+(def lines1 [] (list (list 0 1 2) (list 1 4 7)))
+(def lines2 [] (list (list 0 1 2) (list 2 5 8) (list 2 4 6)))
+(def lines3 [] (list (list 3 4 5) (list 0 3 6)))
+(def lines4 [] (list (list 3 4 5) (list 1 4 7) (list 0 4 8) (list 2 4 6)))
+(def lines5 [] (list (list 3 4 5) (list 2 5 8)))
+(def lines6 [] (list (list 6 7 8) (list 0 3 6) (list 2 4 6)))
+(def lines7 [] (list (list 6 7 8) (list 1 4 7)))
+(def lines8 [] (list (list 6 7 8) (list 2 5 8) (list 0 4 8)))
+(def linesfor [i] (cond (eq i 0) lines0 (eq i 1) lines1 (eq i 2) lines2 (eq i 3) lines3 (eq i 4) lines4 (eq i 5) lines5 (eq i 6) lines6 (eq i 7) lines7 lines8))
+(def setat [xs i v] (if (eq i 0) (cons v (tail xs)) (cons (head xs) (setat (tail xs) (sub i 1) v))))
+(def winloop [b ls]
+  (if (nil? ls) 0
+    (let ln (head ls)
+      (let a (nth b (nth ln 0))
+        (if (and (ne a 46) (and (eq a (nth b (nth ln 1))) (eq a (nth b (nth ln 2)))))
+          a (winloop b (tail ls)))))))
+(def winnerAt [b i] (winloop b (linesfor i)))
+(def full [b] (not (contains b 46)))
+(def other [w] (if (eq w 88) 79 88))
+(def order [] (list 4 0 2 6 8 1 3 5 7))
+(def nm [b who alpha beta idxs]
+  (if (nil? idxs) alpha
+    (let i (head idxs)
+      (if (ne (nth b i) 46) (nm b who alpha beta (tail idxs))
+        (let nb (setat b i who)
+          (let w (winnerAt nb i)
+            (let v (if (eq w who) 1 (if (full nb) 0 (neg (nm nb (other who) (neg beta) (neg alpha) order))))
+              (let a2 (max alpha v)
+                (if (ge a2 beta) a2 (nm b who a2 beta (tail idxs)))))))))))
+(def pick [b who i bi bv]
+  (if (eq i 9) bi
+    (if (eq bv 1) bi
+      (if (ne (nth b i) 46) (pick b who (inc i) bi bv)
+        (let nb (setat b i who)
+          (let w (winnerAt nb i)
+            (let v (if (eq w who) 1 (if (full nb) 0 (neg (nm nb (other who) (neg 2) (neg bv) order))))
+              (if (gt v bv) (pick b who (inc i) i v) (pick b who (inc i) bi bv)))))))))
+(let b (map idc {board}) (let s (head {side}) (pick b s 0 (neg 1) (neg 2))))

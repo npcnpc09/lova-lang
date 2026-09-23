@@ -3042,9 +3042,24 @@ the corpus grows again.
   threshold, a weight -- planted where the prompt says nothing, so
   that "fixes all N examples" is the only oracle; the confident-
   mislead rate there.
-- **Q123** *(Exp 29 run 2)*: the report's characters as a number in
+- ~~**Q123**~~ *(Exp 29 run 2; answered by Exp 30: 877 -> 193 characters a fault)*: the report's characters as a number in
   the yardstick, beside the program's, so a change to the summary is
   measured and not argued.
+- **Q141** *(Exp 30)*: the step trap's missing fact, how far over.
+  Answered the same day by Exp 31: the run is repeated under 4x the
+  budget when it touches nothing outside the process, and the fault
+  says "needs N steps (k x the budget)".
+- **Q142** *(Exp 30)*: the second number re-measured properly -- the
+  Exp 19 tasks, ten sessions a language on one model, both arms of the
+  report.
+- **Q143** *(Exp 30)*: the CLI's report in the same one-line form
+  under `--brief`, or by default when stderr is not a terminal.
+- **Q144** *(Exp 31)*: the probe against Python with a wall clock on
+  the Exp 19 search task -- does "needs 3.4x" beat "timed out after
+  10 s"?
+- **Q145** *(Exp 31)*: `pow` and the other prelude loops that read
+  like operators: native operators, or a cost column in the card
+  generated from measured steps.
 - **Q121** *(Exp 29)*: examples as the locator's power -- the same
   faults with three, eight and twenty examples; the confident-mislead
   rate (Q116) as a function of the count.

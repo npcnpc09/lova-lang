@@ -1,0 +1,4 @@
+{"attempt": 1, "passed": false, "feedback_chars": 388, "emitted_chars": 1381, "time": 1790157979.707806}
+{"attempt": 2, "passed": false, "feedback_chars": 359, "emitted_chars": 1391, "time": 1790158023.7263434}
+{"attempt": 3, "passed": false, "feedback_chars": 388, "emitted_chars": 1473, "time": 1790158049.901247}
+{"attempt": 4, "passed": true, "feedback_chars": 60, "emitted_chars": 1824, "time": 1790158084.969671}

@@ -1,0 +1,52 @@
+(def wins [] (list (list 0 1 2) (list 3 4 5) (list 6 7 8)
+                   (list 0 3 6) (list 1 4 7) (list 2 5 8)
+                   (list 0 4 8) (list 2 4 6)))
+(def lines0 [] (list (list 0 1 2) (list 0 3 6) (list 0 4 8)))
+(def lines1 [] (list (list 0 1 2) (list 1 4 7)))
+(def lines2 [] (list (list 0 1 2) (list 2 5 8) (list 2 4 6)))
+(def lines3 [] (list (list 3 4 5) (list 0 3 6)))
+(def lines4 [] (list (list 3 4 5) (list 1 4 7) (list 0 4 8) (list 2 4 6)))
+(def lines5 [] (list (list 3 4 5) (list 2 5 8)))
+(def lines6 [] (list (list 6 7 8) (list 0 3 6) (list 2 4 6)))
+(def lines7 [] (list (list 6 7 8) (list 1 4 7)))
+(def lines8 [] (list (list 6 7 8) (list 2 5 8) (list 0 4 8)))
+(def linesfor [i] (cond (eq i 0) lines0 (eq i 1) lines1 (eq i 2) lines2
+                        (eq i 3) lines3 (eq i 4) lines4 (eq i 5) lines5
+                        (eq i 6) lines6 (eq i 7) lines7 lines8))
+(def winline [b l]
+  (let a (nth b (nth l 0))
+    (if (eq a 46) 0
+      (if (and (eq a (nth b (nth l 1))) (eq a (nth b (nth l 2)))) a 0))))
+(def winner [b] (fold (lambda acc (lambda l (if acc acc (winline b l)))) 0 wins))
+(def winner-at [b lm] (fold (lambda acc (lambda l (if acc acc (winline b l)))) 0 (linesfor lm)))
+(def prefs [] (list 4 0 2 6 8 1 3 5 7))
+(def empties [b] (filter (lambda i (eq (nth b i) 46)) (range 0 9)))
+(def moves [b] (filter (lambda i (eq (nth b i) 46)) prefs))
+(def setat [b i c] (append (take i b) (cons c (drop (inc i) b))))
+(def other [c] (if (eq c 88) 79 88))
+(def ab [b lm cur me alpha beta]
+  (let wn (winner-at b lm)
+    (if wn (if (eq wn me) 1 (neg 1))
+      (let mv (moves b)
+        (if (nil? mv) 0
+          (if (eq cur me)
+              (maxloop b cur me mv alpha beta)
+              (minloop b cur me mv alpha beta)))))))
+(def maxloop [b cur me ms alpha beta]
+  (if (nil? ms) alpha
+    (let v (ab (setat b (head ms) cur) (head ms) (other cur) me alpha beta)
+      (let a2 (max alpha v)
+        (if (ge a2 beta) a2 (maxloop b cur me (tail ms) a2 beta))))))
+(def minloop [b cur me ms alpha beta]
+  (if (nil? ms) beta
+    (let v (ab (setat b (head ms) cur) (head ms) (other cur) me alpha beta)
+      (let b2 (min beta v)
+        (if (le b2 alpha) b2 (minloop b cur me (tail ms) alpha b2))))))
+(def pick [b me ms bi bs]
+  (if (nil? ms) bi
+    (let i (head ms)
+      (let s (ab (setat b i me) i (other me) me (neg 2) 2)
+        (if (gt s bs) (pick b me (tail ms) i s) (pick b me (tail ms) bi bs))))))
+(let b (text-chars {board})
+  (let me (head (text-chars {side}))
+    (pick b me (empties b) (neg 1) (neg 2))))

@@ -1,0 +1,44 @@
+(def dch [c] (if (eq c 46) 0 (if (eq c 88) 1 2)))
+(def enc [xs] (fold (lambda a (lambda c (merge (mul a 3) (dch c)))) 0 xs))
+(def places [] (list 6561 2187 729 243 81 27 9 3 1))
+(def pw [i] (nth places i))
+(def order [] (list 4 0 2 6 8 1 3 5 7))
+(def cellAt [k] (nth order k))
+(def getb [b i] (mod (div b (pw i)) 3))
+(def setb [b i v] (merge b (mul (sub v (getb b i)) (pw i))))
+(def line [b i j k]
+  (let a (getb b i)
+    (if (eq a 0) 0 (if (and (eq a (getb b j)) (eq a (getb b k))) a 0))))
+(def winner [b]
+  (cond
+    (ne (line b 0 1 2) 0) (line b 0 1 2)
+    (ne (line b 3 4 5) 0) (line b 3 4 5)
+    (ne (line b 6 7 8) 0) (line b 6 7 8)
+    (ne (line b 0 3 6) 0) (line b 0 3 6)
+    (ne (line b 1 4 7) 0) (line b 1 4 7)
+    (ne (line b 2 5 8) 0) (line b 2 5 8)
+    (ne (line b 0 4 8) 0) (line b 0 4 8)
+    (ne (line b 2 4 6) 0) (line b 2 4 6)
+    0))
+(def fullloop [b i] (if (eq i 9) 1 (if (eq (getb b i) 0) 0 (fullloop b (inc i)))))
+(def full [b] (fullloop b 0))
+(def other [w] (sub 3 w))
+(def sdig [c] (if (eq c 88) 1 2))
+(def nm [b who alpha beta k]
+  (if (eq k 9) alpha
+    (let i (cellAt k)
+      (if (ne (getb b i) 0) (nm b who alpha beta (inc k))
+        (let nb (setb b i who)
+          (let w (winner nb)
+            (let v (if (eq w who) 1 (if (full nb) 0 (neg (nm nb (other who) (neg beta) (neg alpha) 0))))
+              (let a2 (max alpha v)
+                (if (ge a2 beta) a2 (nm b who a2 beta (inc k)))))))))))
+(def pick [b who i bi bv]
+  (if (eq i 9) bi
+    (if (eq bv 1) bi
+      (if (ne (getb b i) 0) (pick b who (inc i) bi bv)
+        (let nb (setb b i who)
+          (let w (winner nb)
+            (let v (if (eq w who) 1 (if (full nb) 0 (neg (nm nb (other who) (neg 2) (neg bv) 0))))
+              (if (gt v bv) (pick b who (inc i) i v) (pick b who (inc i) bi bv)))))))))
+(let b (enc {board}) (let s (sdig (head {side})) (pick b s 0 (neg 1) (neg 2))))

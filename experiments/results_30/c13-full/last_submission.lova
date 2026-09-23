@@ -1,0 +1,57 @@
+(def lt0 [] (list (list 0 1 2) (list 0 3 6) (list 0 4 8)))
+(def lt1 [] (list (list 0 1 2) (list 1 4 7)))
+(def lt2 [] (list (list 0 1 2) (list 2 5 8) (list 2 4 6)))
+(def lt3 [] (list (list 3 4 5) (list 0 3 6)))
+(def lt4 [] (list (list 3 4 5) (list 1 4 7) (list 0 4 8) (list 2 4 6)))
+(def lt5 [] (list (list 3 4 5) (list 2 5 8)))
+(def lt6 [] (list (list 6 7 8) (list 0 3 6) (list 2 4 6)))
+(def lt7 [] (list (list 6 7 8) (list 1 4 7)))
+(def lt8 [] (list (list 6 7 8) (list 2 5 8) (list 0 4 8)))
+(def lines-by-idx [] (list lt0 lt1 lt2 lt3 lt4 lt5 lt6 lt7 lt8))
+(def lines-for [i] (nth lines-by-idx i))
+
+(def pow4 [] (list 1 4 16 64 256 1024 4096 16384 65536))
+(def p4 [i] (nth pow4 i))
+(def cell [b i] (mod (div b (p4 i)) 4))
+(def set-cell [b i v] (merge b (mul (sub v (cell b i)) (p4 i))))
+
+(def line-win [b l]
+  (let a (cell b (nth l 0))
+    (if (and (ne a 0) (and (eq a (cell b (nth l 1))) (eq a (cell b (nth l 2))))) a 0)))
+(def winner-of [b ls]
+  (if (nil? ls) 0 (let w (line-win b (head ls)) (if w w (winner-of b (tail ls))))))
+
+(def other [p] (if (eq p 1) 2 1))
+
+(def nmax [b p last left alpha beta]
+  (if (winner-of b (lines-for last)) (neg 1)
+    (if (eq left 0) 0 (nloop b p 0 left alpha beta (neg 2)))))
+
+(def order [] (list 4 0 2 6 8 1 3 5 7))
+
+(def nloop [b p j left alpha beta best]
+  (if (ge j 9) best
+    (let i (nth order j)
+      (if (ne (cell b i) 0) (nloop b p (inc j) left alpha beta best)
+        (let v (neg (nmax (set-cell b i p) (other p) i (sub left 1) (neg beta) (neg alpha)))
+          (let best2 (max best v)
+            (let a2 (max alpha v)
+              (if (ge a2 beta) best2 (nloop b p (inc j) left a2 beta best2)))))))))
+
+(def pick [b p i left besti bestv]
+  (if (ge i 9) besti
+    (if (ne (cell b i) 0) (pick b p (inc i) left besti bestv)
+      (let v (neg (nmax (set-cell b i p) (other p) i (sub left 1) (neg 2) 2))
+        (if (gt v bestv) (pick b p (inc i) left i v) (pick b p (inc i) left besti bestv))))))
+
+(def code-to-cell [c] (if (eq c 46) 0 (if (eq c 88) 1 2)))
+(def pack-rec [xs i acc] (if (nil? xs) acc (pack-rec (tail xs) (inc i) (merge acc (mul (code-to-cell (head xs)) (p4 i))))))
+(def pack [xs] (pack-rec xs 0 0))
+(def count-empty [xs] (if (nil? xs) 0 (merge (if (eq (head xs) 46) 1 0) (count-empty (tail xs)))))
+(def side-to-p [c] (if (eq c 88) 1 2))
+
+(let xs (text-chars {board})
+  (let b (pack xs)
+    (let p (side-to-p (head {side}))
+      (let left (count-empty xs)
+        (pick b p 0 left 0 (neg 2))))))

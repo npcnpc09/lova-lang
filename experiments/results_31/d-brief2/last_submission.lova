@@ -1,0 +1,50 @@
+(def wins [] (list (list 0 1 2) (list 3 4 5) (list 6 7 8)
+                   (list 0 3 6) (list 1 4 7) (list 2 5 8)
+                   (list 0 4 8) (list 2 4 6)))
+(def lines-at [] (map (lambda i (map (lambda ln (filter (lambda c (ne c i)) ln)) (filter (lambda ln (contains ln i)) wins))) (range 0 9)))
+(def code [c] (if (eq c 88) 1 (if (eq c 79) 2 0)))
+(def pow3 [] (list 1 3 9 27 81 243 729 2187 6561))
+(def get-cell [bi i] (mod (div bi (nth pow3 i)) 3))
+(def set-cell [bi i v] (merge bi (mul v (nth pow3 i))))
+(def win-at [bi p i]
+  (any (lambda pr (and (eq (get-cell bi (nth pr 0)) p) (eq (get-cell bi (nth pr 1)) p))) (nth lines-at i)))
+(def pack [chars i acc]
+  (if (lt i 0) acc
+    (pack chars (sub i 1) (merge (mul acc 3) (code (nth chars i))))))
+(def count-empty [chars i acc]
+  (if (eq i 9) acc
+    (count-empty chars (inc i) (if (eq (code (nth chars i)) 0) (inc acc) acc))))
+
+(def best [bi p ec mm]
+  (let kk (merge (mul bi 2) (sub p 1))
+    (let hit (map-get mm kk 9)
+      (if (ne hit 9) (rec s hit m mm)
+        (let res (bestloop bi p ec 0 (neg 2) mm)
+          (rec s (get res s) m (map-put (get res m) kk (get res s))))))))
+
+(def bestloop [bi p ec i acc mm]
+  (if (eq i 9) (rec s acc m mm)
+    (if (ne (get-cell bi i) 0) (bestloop bi p ec (inc i) acc mm)
+      (let newbi (set-cell bi i p)
+        (let r
+          (if (win-at newbi p i) (rec s 1 m mm)
+            (if (eq (sub ec 1) 0) (rec s 0 m mm)
+              (let br (best newbi (sub 3 p) (sub ec 1) mm)
+                (rec s (neg (get br s)) m (get br m)))))
+          (bestloop bi p ec (inc i) (max acc (get r s)) (get r m)))))))
+
+(def pick [bi p ec i bidx bs mm]
+  (if (eq i 9) bidx
+    (if (ne (get-cell bi i) 0) (pick bi p ec (inc i) bidx bs mm)
+      (let newbi (set-cell bi i p)
+        (let r
+          (if (win-at newbi p i) (rec s 1 m mm)
+            (if (eq (sub ec 1) 0) (rec s 0 m mm)
+              (let br (best newbi (sub 3 p) (sub ec 1) mm)
+                (rec s (neg (get br s)) m (get br m)))))
+          (if (gt (get r s) bs) (pick bi p ec (inc i) i (get r s) (get r m))
+                                 (pick bi p ec (inc i) bidx bs (get r m))))))))
+
+(let bi0 (pack (text-chars {board}) 8 0)
+  (let ec0 (count-empty (text-chars {board}) 0 0)
+    (pick bi0 (code (head {side})) ec0 0 0 (neg 2) (map-of (nil)))))

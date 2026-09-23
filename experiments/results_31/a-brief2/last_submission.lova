@@ -1,0 +1,69 @@
+(def p3 [i]
+  (if (lt i 4)
+    (if (lt i 2) (if (eq i 0) 1 3) (if (eq i 2) 9 27))
+    (if (lt i 7) (if (eq i 4) 81 (if (eq i 5) 243 729)) (if (eq i 7) 2187 6561))))
+(def charval [c] (if (eq c 46) 0 (if (eq c 88) 1 2)))
+(def packrec [cs i] (if (nil? cs) 0 (merge (mul (charval (head cs)) (p3 i)) (packrec (tail cs) (inc i)))))
+(def pack [cs] (packrec cs 0))
+(def getcell [b i] (mod (div b (p3 i)) 3))
+(def setcell [b i v] (merge b (mul (sub v (getcell b i)) (p3 i))))
+(def other [c] (if (eq c 1) 2 1))
+(def winner [b]
+  (let c0 (mod b 3)
+  (let c1 (mod (div b 3) 3)
+  (let c2 (mod (div b 9) 3)
+  (let c3 (mod (div b 27) 3)
+  (let c4 (mod (div b 81) 3)
+  (let c5 (mod (div b 243) 3)
+  (let c6 (mod (div b 729) 3)
+  (let c7 (mod (div b 2187) 3)
+  (let c8 (mod (div b 6561) 3)
+    (cond
+      (and (ne c0 0) (and (eq c0 c1) (eq c0 c2))) c0
+      (and (ne c3 0) (and (eq c3 c4) (eq c3 c5))) c3
+      (and (ne c6 0) (and (eq c6 c7) (eq c6 c8))) c6
+      (and (ne c0 0) (and (eq c0 c3) (eq c0 c6))) c0
+      (and (ne c1 0) (and (eq c1 c4) (eq c1 c7))) c1
+      (and (ne c2 0) (and (eq c2 c5) (eq c2 c8))) c2
+      (and (ne c0 0) (and (eq c0 c4) (eq c0 c8))) c0
+      (and (ne c2 0) (and (eq c2 c4) (eq c2 c6))) c2
+      0)
+  ))))))))))
+(def empties [b]
+  (let r8 (if (eq (mod (div b 6561) 3) 0) (cons 8 (nil)) (nil))
+  (let r7 (if (eq (mod (div b 2187) 3) 0) (cons 7 r8) r8)
+  (let r6 (if (eq (mod (div b 729) 3) 0) (cons 6 r7) r7)
+  (let r5 (if (eq (mod (div b 243) 3) 0) (cons 5 r6) r6)
+  (let r4 (if (eq (mod (div b 81) 3) 0) (cons 4 r5) r5)
+  (let r3 (if (eq (mod (div b 27) 3) 0) (cons 3 r4) r4)
+  (let r2 (if (eq (mod (div b 9) 3) 0) (cons 2 r3) r3)
+  (let r1 (if (eq (mod (div b 3) 3) 0) (cons 1 r2) r2)
+  (let r0 (if (eq (mod b 3) 0) (cons 0 r1) r1)
+    r0)))))))))
+(def ab [b cur me alpha beta]
+  (let wn (winner b)
+    (if wn (if (eq wn me) 1 (neg 1))
+      (let ms (empties b)
+        (if (nil? ms) 0
+          (if (eq cur me)
+              (maxloop b cur me ms alpha beta)
+              (minloop b cur me ms alpha beta)))))))
+(def maxloop [b cur me ms alpha beta]
+  (if (nil? ms) alpha
+    (let v (ab (setcell b (head ms) cur) (other cur) me alpha beta)
+      (let a2 (max alpha v)
+        (if (ge a2 beta) a2 (maxloop b cur me (tail ms) a2 beta))))))
+(def minloop [b cur me ms alpha beta]
+  (if (nil? ms) beta
+    (let v (ab (setcell b (head ms) cur) (other cur) me alpha beta)
+      (let b2 (min beta v)
+        (if (le b2 alpha) b2 (minloop b cur me (tail ms) alpha b2))))))
+(def pick [b me ms bi bs]
+  (if (nil? ms) bi
+    (let i (head ms)
+      (let s (ab (setcell b i me) (other me) me bs 2)
+        (if (gt s bs) (pick b me (tail ms) i s) (pick b me (tail ms) bi bs))))))
+(let cs (text-chars {board})
+  (let b (pack cs)
+    (let me (charval (head (text-chars {side})))
+      (pick b me (empties b) (neg 1) (neg 2)))))

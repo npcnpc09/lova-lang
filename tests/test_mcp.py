@@ -98,19 +98,24 @@ class TestExecute(unittest.TestCase):
         result, is_error = call("lova_execute", source="(div 1 0)")
         self.assertTrue(is_error)
         self.assertEqual(result["stage"], "run")
-        self.assertEqual(result["anomaly"]["kind"], "domain-error")
-        self.assertIn("repair_hint", result["anomaly"])
+        self.assertEqual(result["kind"], "domain-error")
+        self.assertIn("`(div 1 0)`", result["fault"])      # where, and the text there
+        self.assertNotIn("anomaly", result)                 # one line, not the schema
+        # The whole structured anomaly is one argument away.
+        full, _ = call("lova_execute", source="(div 1 0)", report="full")
+        self.assertEqual(full["anomaly"]["kind"], "domain-error")
+        self.assertIn("repair_hint", full["anomaly"])
 
     def test_a_compile_error_is_a_structured_error(self):
         result, is_error = call("lova_execute", source="(merge (nil) 1)", prelude=False)
         self.assertTrue(is_error)
         self.assertEqual(result["stage"], "compile")
-        self.assertEqual(result["anomaly"]["kind"], "type-mismatch")
+        self.assertEqual(result["kind"], "type-mismatch")
 
     def test_capabilities_are_granted_explicitly(self):
         result, is_error = call("lova_execute", source='(boundary "clock" (gt (clock) 0))')
         self.assertTrue(is_error)
-        self.assertEqual(result["anomaly"]["kind"], "capability-denied")
+        self.assertEqual(result["kind"], "capability-denied")
         result, is_error = call("lova_execute", source='(boundary "clock" (gt (clock) 0))',
                                 allow=["clock"])
         self.assertFalse(is_error)
