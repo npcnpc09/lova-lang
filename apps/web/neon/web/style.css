@@ -1,0 +1,74 @@
+:root {
+  --bg: #07050c;
+  --ink: #f4eefa;
+  --dim: #8c7fa3;
+  --hot: #ff2a55;
+  --cyan: #3ff2ff;
+  --mono: "Share Tech Mono", ui-monospace, Consolas, monospace;
+  --display: "Orbitron", "Share Tech Mono", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+  font-family: var(--mono); -webkit-user-select: none; user-select: none; touch-action: none; }
+canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.hidden { display: none !important; }
+
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+.hud-left { position: absolute; left: 22px; top: 18px; }
+.brand { font-family: var(--display); font-weight: 900; font-size: 20px; letter-spacing: 3px; color: var(--hot);
+  text-shadow: 0 0 10px rgba(255, 42, 85, .8); }
+.brand span { color: var(--cyan); margin-left: 6px; text-shadow: 0 0 10px rgba(63, 242, 255, .8); }
+.stats { margin-top: 10px; font-size: 15px; line-height: 1.7; }
+.stats .k, .result .k { color: var(--dim); display: inline-block; width: 64px; font-size: 12px; letter-spacing: 2px; }
+#sparks { color: var(--cyan); }
+#debug { position: absolute; right: 18px; top: 16px; font-size: 11px; color: var(--hot); opacity: .85; text-align: right;
+  white-space: pre; }
+.keys { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); font-size: 12px; color: var(--dim);
+  white-space: nowrap; }
+.key { border: 1px solid rgba(255, 42, 85, .7); color: var(--hot); padding: 1px 7px; border-radius: 4px; margin: 0 4px 0 12px;
+  box-shadow: 0 0 8px rgba(255, 42, 85, .35) inset; }
+#toast { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); font-family: var(--display); font-weight: 900;
+  font-size: 34px; letter-spacing: 6px; color: #7dffb0; text-shadow: 0 0 18px rgba(125, 255, 176, .9); opacity: 0;
+  transition: opacity .4s; white-space: nowrap; }
+#toast.on { opacity: 1; }
+
+/* overlays */
+.overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(ellipse at center, rgba(7, 5, 12, .35), rgba(7, 5, 12, .85)); }
+.panel { text-align: center; max-width: 520px; }
+.logo { font-family: var(--display); font-weight: 900; font-size: clamp(44px, 11vw, 92px); line-height: .95; letter-spacing: 6px;
+  color: var(--hot); text-shadow: 0 0 24px rgba(255, 42, 85, .85), 0 0 60px rgba(255, 42, 85, .4); }
+.logo span { color: var(--cyan); text-shadow: 0 0 24px rgba(63, 242, 255, .85), 0 0 60px rgba(63, 242, 255, .4); }
+.logo.small { font-size: clamp(34px, 8vw, 56px); }
+.lede { color: var(--ink); opacity: .85; font-size: 15px; line-height: 1.8; margin: 26px 0; }
+.fine { color: var(--dim); font-size: 12px; margin-top: 22px; }
+.fine b { color: var(--hot); }
+button#start, button#again { font-family: var(--display); font-weight: 900; letter-spacing: 4px; font-size: 18px;
+  color: #fff; background: var(--hot); border: 0; border-radius: 999px; padding: 12px 44px; cursor: pointer;
+  box-shadow: 0 0 22px rgba(255, 42, 85, .7); pointer-events: auto; }
+button#start:disabled { opacity: .55; cursor: wait; }
+button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+.result { display: flex; gap: 28px; justify-content: center; margin: 22px 0 26px; font-size: 22px; }
+.result b { color: var(--cyan); }
+#fault-text { text-align: left; color: var(--hot); white-space: pre-wrap; font-size: 12px; max-height: 50vh; overflow: auto; }
+
+/* touch */
+#touch { position: fixed; inset: auto 0 0 0; height: 190px; pointer-events: none; }
+#touch button { pointer-events: auto; background: rgba(255, 42, 85, .12); color: var(--hot); border: 1px solid rgba(255, 42, 85, .6);
+  border-radius: 10px; font-size: 18px; width: 54px; height: 54px; margin: 3px; }
+#touch button.on { background: rgba(255, 42, 85, .45); color: #fff; }
+.pad { position: absolute; left: 18px; bottom: 18px; width: 186px; text-align: center; }
+.pad button[data-k="up"] { display: block; margin: 0 auto 3px; }
+#touch .jump { position: absolute; right: 22px; bottom: 30px; width: 92px; height: 92px; border-radius: 50%;
+  font-family: var(--display); font-size: 14px; letter-spacing: 2px; }
+
+/* the screen's own lines, over everything but faint */
+.crt-lines { position: fixed; inset: 0; pointer-events: none; mix-blend-mode: multiply; opacity: .35;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0) 0 2px, rgba(0, 0, 0, .55) 2px 3px); }
+
+@media (max-width: 700px) {
+  .keys { display: none; }
+  .brand { font-size: 16px; }
+  #debug { font-size: 9px; }
+}

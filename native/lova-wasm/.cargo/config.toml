@@ -1,0 +1,4 @@
+# The evaluator is recursive in Rust, and wasm32's default shadow stack
+# is one megabyte: give it 32.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-zstack-size=33554432"]

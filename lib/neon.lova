@@ -1,0 +1,265 @@
+;;; neon.lova  --  the rules of Neon Alley, a game drawn in a browser
+;;;
+;;; `(use "neon")`.  A small ghost in a wet neon street at night: it
+;;; floats, jumps, gathers the sparks the street is scattered with, keeps
+;;; out of the patrol drones' way, and leaves by the gate at the far end,
+;;; which opens only when every spark is taken.  Everything that decides
+;;; is here; three.js draws it (`apps/web/neon/`), and the page calls
+;;; `tick` sixty times a second through the runtime compiled to
+;;; WebAssembly (`native/lova-wasm`).
+;;;
+;;; Units.  A length is in 65 536ths of a metre (`F`), a tick one
+;;; sixtieth of a second.  The street runs along z from 0 to LENGTH,
+;;; x from -HALF-W to HALF-W, y up.
+;;;
+;;;   new-game                    ; the world at the start
+;;;   (input mx mz jump)          ; what is held: mx, mz as -1 / 0 / 1
+;;;                               ; (mz 1 is up the street), jump 1 while held
+;;;   (tick w in)                 ; one sixtieth of a second later
+;;;   layout                      ; what never moves, for the page to build
+;;;   (scene w)                   ; what moved, for the page to draw
+
+(def F [] 65536)                        ; a metre
+(def HALF-W [] (mul 4 F))               ; the street's half width
+(def LENGTH [] (mul 60 F))              ; from the start line to the gate
+(def RADIUS [] 22938)                   ; the ghost's reach sideways: 0.35
+(def TOP [] (div (mul 6 F) 60))         ; top speed: 6 m/s, a tick
+(def DIAG [] 724)                       ; 1 / sqrt 2, in 1024ths
+(def EASE [] 8)                         ; a velocity closes 1/8 of its gap a tick
+(def JUMP [] (div (mul 7 F) 60))        ; 7 m/s up
+(def GRAV [] (div (mul 20 F) 3600))     ; 20 m/s/s, a tick a tick
+(def FLOAT [] (div (mul 5 F) 3600))     ; falling with jump held: a ghost floats
+(def REACH [] 58982)                    ; a spark is taken within 0.9
+(def BODY [] (div (mul 12 F) 10))       ; ... and between the ghost's feet and 1.2 above them
+(def HIT [] 52429)                      ; a drone strikes within 0.8
+(def DRONE-Y [] (mul 3 (div F 4)))      ; a drone flies at 0.75; jump it
+(def CLEAR [] (div (mul 11 F) 10))      ; feet above 1.1 pass over a drone
+(def STUN [] 45)                        ; ticks a strike takes control away
+(def KNOCK [] (div (mul 8 F) 60))       ; a strike's push: 8 m/s
+(def GATE-STOP [] (sub LENGTH F))       ; a closed gate stops the ghost here
+(def EXIT [] (sub LENGTH (div F 2)))    ; past this, with the gate open, it is out
+
+;; --- the level ------------------------------------------------------
+;;
+;; Sparks as (x z y) in tenths of a metre: along the middle, out to the
+;; kerbs, and three up where only a jump reaches.
+
+(def spark-spots []
+  (list (list 0 60 5) (list -20 100 5) (list 20 140 5) (list -30 190 5)
+        (list 30 190 5) (list 0 230 16) (list -32 270 5) (list 32 300 5)
+        (list 0 340 5) (list -15 380 16) (list 15 380 16) (list 0 430 5)
+        (list -30 470 5) (list 30 500 5) (list 0 540 5)))
+
+;; Drones as (z x0 x1 period phase): across the street at z, from x0 to
+;; x1 and back in `period` ticks, starting `phase` ticks in; tenths of a
+;; metre again.
+(def drone-paths []
+  (list (list 120 -35 35 150 0) (list 210 -35 35 110 55)
+        (list 320 -35 35 130 20) (list 360 -35 35 130 85)
+        (list 450 -35 35 90 0) (list 510 -35 35 100 50)))
+
+(def tenths [n] (div (mul n F) 10))
+
+(def spark-of [s]
+  (rec x (tenths (nth s 0)) z (tenths (nth s 1)) y (tenths (nth s 2)) taken 0))
+
+(def drone-of [d]
+  (rec z (tenths (nth d 0)) x0 (tenths (nth d 1)) x1 (tenths (nth d 2))
+       period (nth d 3) phase (nth d 4)))
+
+(def input [mx mz jump] (rec mx mx mz mz jump jump))
+
+(def still [] (input 0 0 0))
+
+(def new-ghost []
+  (rec x 0 y 0 z (div F 2) vx 0 vy 0 vz 0 stun 0 held 0 landed 0 jumped 0))
+
+(def new-game []
+  (rec g new-ghost
+       sparks (map spark-of spark-spots)
+       drones (map drone-of drone-paths)
+       t 0 left (len spark-spots) hits 0 won 0 took 0 struck 0))
+
+;; --- movement -------------------------------------------------------
+
+(def clamp [v lo hi] (max lo (min hi v)))
+
+;; Division toward zero.  `div` floors, so -9/8 is -2 and 9/8 is 1, and
+;; the left and the right of the street would ease differently.
+(def tdiv [a b] (if (lt a 0) (neg (div (neg a) b)) (div a b)))
+
+;; A velocity eased toward its target, and put on it once within a
+;; step, so that letting go comes to rest rather than creeping.
+(def ease [v target]
+  (let gap (sub target v)
+    (if (lt (abs gap) EASE) target (merge v (tdiv gap EASE)))))
+
+;; What the stick asks for, a tick: the full speed on one axis, the
+;; diagonal scaled so that it is no faster.
+(def want [a other]
+  (if (eq other 0)
+      (mul a TOP)
+      (tdiv (mul (mul a TOP) DIAG) 1024)))
+
+(def steer [g in]
+  (if (gt (get g stun) 0)
+      (put (put g vx (ease (get g vx) 0)) vz (ease (get g vz) 0))
+      (let mx (get in mx)
+        (let mz (get in mz)
+          (put (put g vx (ease (get g vx) (want mx mz)))
+               vz (ease (get g vz) (want mz mx)))))))
+
+;; A jump leaves the ground on the tick it is pressed; held while
+;; falling it slows the fall.
+(def leap [g in]
+  (let press (and (get in jump) (not (get g held)))
+    (let grounded (eq (get g y) 0)
+      (let up (and press (and grounded (eq (get g stun) 0)))
+        (put (put (put g vy (if up JUMP (get g vy)))
+                  held (get in jump))
+             jumped (if up 1 0))))))
+
+(def fall [g in]
+  (let air (or (gt (get g y) 0) (gt (get g vy) 0))
+    (if (not air)
+        (put g landed 0)
+        (let pull (if (and (get in jump) (lt (get g vy) 0)) FLOAT GRAV)
+          (let vy (sub (get g vy) pull)
+            (let y (merge (get g y) vy)
+              (if (le y 0)
+                  (put (put (put g y 0) vy 0) landed 1)
+                  (put (put (put g y y) vy vy) landed 0))))))))
+
+;; The walls: the kerbs at either side, the start line behind, and the
+;; gate ahead while it is shut.
+(def move [g open]
+  (let xw (sub HALF-W RADIUS)
+    (let x (merge (get g x) (get g vx))
+      (let far (if open LENGTH GATE-STOP)
+        (let z (merge (get g z) (get g vz))
+          (put (put (put (put g
+               x (clamp x (neg xw) xw))
+               vx (if (eq x (clamp x (neg xw) xw)) (get g vx) 0))
+               z (clamp z 0 far))
+               vz (if (eq z (clamp z 0 far)) (get g vz) 0)))))))
+
+;; --- sparks ---------------------------------------------------------
+
+(def near [dx dz r] (lt (merge (mul dx dx) (mul dz dz)) (mul r r)))
+
+(def reaches? [g s]
+  (and (not (get s taken))
+       (and (let up (sub (get s y) (get g y)) (and (ge up 0) (le up BODY)))
+            (near (sub (get g x) (get s x)) (sub (get g z) (get s z)) REACH))))
+
+(def gather [w]
+  (let g (get w g)
+    (let sparks (map (lambda s (if (reaches? g s) (put s taken 1) s)) (get w sparks))
+      (let left (len (filter (lambda s (not (get s taken))) sparks))
+        (put (put (put w sparks sparks) took (sub (get w left) left)) left left)))))
+
+;; --- drones ---------------------------------------------------------
+
+;; Where a drone is at tick t: a triangle wave from x0 to x1 and back.
+(def drone-x [d t]
+  (let p (get d period)
+    (let k (mod (merge t (get d phase)) p)
+      (let half (div p 2)
+        (let u (if (lt k half) k (sub p k))
+          (merge (get d x0) (div (mul (sub (get d x1) (get d x0)) u) half)))))))
+
+(def struck-by? [g t d]
+  (and (lt (get g y) CLEAR)
+       (near (sub (get g x) (drone-x d t)) (sub (get g z) (get d z)) HIT)))
+
+;; A strike pushes the ghost back down the street and away from the
+;; drone's side, and takes the stick away for STUN ticks.
+(def strike [g t d]
+  (let side (if (lt (get g x) (drone-x d t)) -1 1)
+    (put (put (put (put g stun STUN) vz (neg KNOCK))
+              vx (mul side (div KNOCK 2)))
+         vy (if (eq (get g y) 0) (div JUMP 2) (get g vy)))))
+
+(def dodge [w]
+  (let g (get w g)
+    (let t (get w t)
+      (if (gt (get g stun) 0)
+          (put (put w g (put g stun (sub (get g stun) 1))) struck 0)
+          (let hit (filter (lambda d (struck-by? g t d)) (get w drones))
+            (if (nil? hit)
+                (put w struck 0)
+                (put (put (put w g (strike g t (head hit))) hits (inc (get w hits))) struck 1)))))))
+
+;; --- a tick ---------------------------------------------------------
+
+(def tick [w in]
+  (if (get w won)
+      w
+      (let open (eq (get w left) 0)
+        (let g (move (fall (leap (steer (get w g) in) in) in) open)
+          (let w1 (dodge (gather (put w g g)))
+            (put (put w1 t (inc (get w t)))
+                 won (if (and open (gt (get (get w1 g) z) EXIT)) 1 0)))))))
+
+;; --- what the page reads --------------------------------------------
+
+(def layout []
+  (rec half-w HALF-W length LENGTH gate GATE-STOP
+       sparks (map (lambda s (list (get s x) (get s y) (get s z))) (get new-game sparks))
+       drones (map (lambda d (get d z)) (get new-game drones))
+       drone-y DRONE-Y))
+
+;; (ghost drones sparks)
+;;   ghost:  (x y z vx vz stun landed jumped left hits won t took struck)
+;;   drones: (x ...) in the order of `layout`'s drones
+;;   sparks: (taken ...) in the order of `layout`'s sparks
+(def scene [w]
+  (let g (get w g)
+    (list (list (get g x) (get g y) (get g z) (get g vx) (get g vz) (get g stun)
+                (get g landed) (get g jumped) (get w left) (get w hits) (get w won)
+                (get w t) (get w took) (get w struck))
+          (map (lambda d (drone-x d (get w t))) (get w drones))
+          (map (lambda s (get s taken)) (get w sparks)))))
+
+;; --- what the rules must satisfy ------------------------------------
+
+(def run [w in n] (if (le n 0) w (run (tick w in) in (sub n 1))))
+(def ghost-after [in n] (get (run new-game in n) g))
+
+;; Still, nothing moves; up the street, z grows; left and right mirror.
+(example (get (ghost-after still 20) z) (get new-ghost z))
+(example (gt (get (ghost-after (input 0 1 0) 30) z) (get new-ghost z)) 1)
+(example (get (ghost-after (input -1 0 0) 25) x) (neg (get (ghost-after (input 1 0 0) 25) x)))
+;; The diagonal is no faster than one axis.
+(example (le (get (ghost-after (input 1 1 0) 12) vx) (get (ghost-after (input 1 0 0) 12) vx)) 1)
+;; The kerb holds: a long press sideways ends at the wall, not through it.
+(example (get (ghost-after (input 1 0 0) 200) x) (sub HALF-W RADIUS))
+;; A jump comes down: up at once, back on the ground, having left it.
+(example (gt (get (ghost-after (input 0 0 1) 10) y) 0) 1)
+(example (get (run new-game (input 0 0 0) 90) g) (get (run (run new-game (input 0 0 1) 1) still 89) g))
+;; Holding jump floats: higher than a tap after the same time.
+(example (gt (get (get (run (run new-game (input 0 0 1) 1) (input 0 0 1) 50) g) y)
+             (get (get (run (run new-game (input 0 0 1) 1) still 50) g) y)) 1)
+;; A drone stays within its path.
+(example (all (lambda t (and (ge (drone-x (drone-of (list 0 -35 35 90 7)) t) (tenths -35))
+                            (le (drone-x (drone-of (list 0 -35 35 90 7)) t) (tenths 35))))
+              (range 0 200)) 1)
+;; The gate holds while a spark is left: pressing up the middle for
+;; twenty seconds never wins.
+(example (get (run new-game (input 0 1 0) 1200) won) 0)
+(example (le (get (ghost-after (input 0 1 0) 1200) z) GATE-STOP) 1)
+;; A spark under the ghost is taken, and counted once.
+(example (get (tick (put new-game g (put new-ghost z (tenths 60))) still) left)
+         (sub (len spark-spots) 1))
+(example (get (tick (tick (put new-game g (put new-ghost z (tenths 60))) still) still) left)
+         (sub (len spark-spots) 1))
+;; With every spark taken the gate opens and walking out wins; on an
+;; empty street, so that no drone is what the example measures.
+(def cleared []
+  (put (put (put new-game sparks (map (lambda s (put s taken 1)) (get new-game sparks)))
+            left 0) drones (nil)))
+(example (get (run cleared (input 0 1 0) 700) won) 1)
+;; A high spark is out of reach from the ground and within it in the air.
+(example (get (tick (put new-game g (put new-ghost z (tenths 230))) still) left) (len spark-spots))
+(example (get (tick (put new-game g (put (put new-ghost z (tenths 230)) y (tenths 8))) still) left)
+         (sub (len spark-spots) 1))

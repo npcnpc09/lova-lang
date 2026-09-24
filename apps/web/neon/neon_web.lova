@@ -1,0 +1,5 @@
+;;; neon_web.lova  --  what the page opens: `lib/neon.lova`'s rules as
+;;; one record the page takes its functions from.  `build.py` compiles
+;;; it to the byte sequence the runtime in the page evaluates.
+(use "neon")
+(rec new new-game tick tick input input scene scene layout layout)

@@ -19,7 +19,13 @@ pub const VERSION: &str = "lova-rt 0.4.0";
 
 /// D7, phase 3: everything but `read` / `explain`, which need the
 /// Stage-1 surface, and the network.
+#[cfg(not(target_arch = "wasm32"))]
 pub const UNSUPPORTED: [u8; 4] = [READ, EXPLAIN, NET_SEND, NET_RECV];
+/// In a page (`native/lova-wasm`) there are no files and no clock
+/// either: refused by name before the program runs, rather than a
+/// domain error from `std::fs` or a panic from `SystemTime`.
+#[cfg(target_arch = "wasm32")]
+pub const UNSUPPORTED: [u8; 7] = [READ, EXPLAIN, NET_SEND, NET_RECV, FS_READ, FS_WRITE, CLOCK];
 
 fn unsupported(op: u8) -> bool {
     UNSUPPORTED.contains(&op)

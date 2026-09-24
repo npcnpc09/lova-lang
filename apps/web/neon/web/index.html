@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Neon Alley</title>
+<meta name="description" content="A ghost in a wet neon street. The rules are LOVA, run in the page by WebAssembly; the picture is three.js.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cpath d=%22M6 30V14a10 10 0 0 1 20 0v16l-4-3-3 3-3-3-3 3-3-3z%22 fill=%22%23ff2a55%22/%3E%3Ccircle cx=%2212%22 cy=%2214%22 r=%222.5%22 fill=%22%23fff%22/%3E%3Ccircle cx=%2220%22 cy=%2214%22 r=%222.5%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@600;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="hud-left">
+    <div class="brand">NEON<span>ALLEY</span></div>
+    <div class="stats">
+      <div><span class="k">SPARKS</span> <span id="sparks">0/0</span></div>
+      <div><span class="k">TIME</span> <span id="time">0.00</span></div>
+      <div><span class="k">HITS</span> <span id="hits">0</span></div>
+    </div>
+  </div>
+  <div id="debug"></div>
+  <div id="toast"></div>
+  <div class="keys">
+    <span class="key">W A S D</span> 移动 <span class="key">SPACE</span> 跳 · 按住滑翔 <span class="key">R</span> 重来 <span class="key">M</span> 静音
+  </div>
+</div>
+
+<div id="touch" class="hidden">
+  <div class="pad">
+    <button data-k="up">▲</button>
+    <button data-k="left">◀</button><button data-k="down">▼</button><button data-k="right">▶</button>
+  </div>
+  <button class="jump" data-k="jump">JUMP</button>
+</div>
+
+<div id="title" class="overlay">
+  <div class="panel">
+    <div class="logo">NEON<br><span>ALLEY</span></div>
+    <p class="lede">雨夜的霓虹小巷。收集全部火花，巷尾的门才会打开。<br>躲开巡逻无人机，按住跳跃可以慢慢飘落。</p>
+    <button id="start" disabled>LOADING…</button>
+    <p class="fine">规则由 <b>LOVA</b> 编写，经 WebAssembly 在页面内运行；画面由 three.js 绘制。</p>
+  </div>
+</div>
+
+<div id="win" class="overlay hidden">
+  <div class="panel">
+    <div class="logo small">ESCAPED</div>
+    <div class="result"><div><span class="k">TIME</span> <b id="win-time">0.00</b></div><div><span class="k">HITS</span> <b id="win-hits">0</b></div></div>
+    <button id="again">AGAIN</button>
+  </div>
+</div>
+
+<div id="fault" class="overlay hidden">
+  <div class="panel"><div class="logo small">FAULT</div><pre id="fault-text"></pre></div>
+</div>
+
+<div class="crt-lines"></div>
+<script type="module" src="main.js"></script>
+</body>
+</html>

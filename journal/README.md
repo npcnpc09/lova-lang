@@ -666,6 +666,67 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 41 (2026-09-24) -- LOVA in a browser: Neon Alley
+
+The owner showed samsy.ninja -- a graphics engineer's portfolio that
+is a small game, a ghost in a neon street on a WebGPU engine of his
+own -- and asked what a game with that look needs.  The honest answer
+was that ninety per cent of it is the picture, which LOVA does not
+draw and should not (M39); what LOVA can own is what decides.  So the
+M39 shape again, with the browser as the host: three.js draws, and the
+rules run in the page.
+
+**The runtime in a page.** `native/lova-wasm` links `lova-rt` into a
+WebAssembly module with no imports and no wasm-bindgen: `lova_alloc`,
+`lova_request` (one protocol request's JSON in, the reply's out),
+`lova_reply_len`, `lova_free`.  `web/lova.js` is the page side, the
+Godot class's shape -- `open` / `get` / `call` / `release` / `close`,
+a fraction refused before it leaves the page.  1.8 MB.  Two changes in
+the crate: a 64-bit literal that did not fit a 32-bit `usize` (the
+program-handle tag, now `1 << (usize::BITS - 1)`, the same value on
+64-bit), and, on wasm only, `fs-read` / `fs-write` / `clock` join the
+refused-by-name list, where they had been a domain error from
+`std::fs` and a panic from `SystemTime`.  **Held to the golden set
+through a node stdio carrier: every in-scope record identical, value
+and step count** -- 43 refused by name (the seven unsupported
+operators), 19 non-deterministic, and 9 deep recursions that overflow
+the JS engine's own stack at node's default and pass with
+`--stack-size`.  A browser's stack is node's default: a program that
+recurses thousands deep will meet it in a page.  The native binary's
+conformance is unchanged (988, the same 29).
+
+**The game.** `lib/neon.lova`: a ghost that eases toward the stick,
+jumps, floats while jump is held, gathers fifteen sparks (three only
+from the air), is knocked back by six drones on triangle-wave patrols,
+and leaves by a gate that holds until every spark is taken.  Sixteen
+examples, most of them relations from the rules: left and right mirror,
+the diagonal no faster than an axis, the kerb holds, a jump comes back
+to exactly where it left, holding jump floats, a drone stays on its
+path, the gate holds for twenty seconds of pressing, a spark is counted
+once.  **Two of them caught real faults on the first check:** the
+mirror relation found that `div` floors, so easing toward -6 m/s and
++6 m/s were different curves (`tdiv`, toward zero, now); and the spark
+examples found that a ghost on the ground could not reach a spark at
+0.5 m because the height test was a strict inequality at exactly 0.5.
+Both well-typed, both the kind no type catches, both found by M40's
+method before the game ran once.
+
+`apps/web/neon/`: `neon_web.lova` (the record the page opens),
+`build.py` (compiles to `neon.hex`, builds the module, assembles
+`site/`, `--serve`), and `web/` -- plain ES modules, three.js 0.170
+from a CDN: a wet road over a planar mirror with puddles in its alpha,
+facades with canvas-drawn windows, neon signs in three scripts, cables
+with lanterns, rain, bloom, and a CRT pass (barrel, aberration, lines,
+grain, a red pulse on a hit); a lathe-built ghost with a waving hem,
+squash and stretch, a lean, wisps; synthesised music and sounds.  The
+rules tick at 60 Hz with the picture interpolated between; a tick
+(`tick` and `scene`) is 0.6-0.9 ms and ~2 000-2 500 steps.  A scripted
+driver in headless Chromium played it through: 15 of 15 sparks, 2
+hits, out in 17.5 s.  `tests/test_neon.py`: the examples pass, the
+page's calls answer in the shape `rules.js` reads, and 155 ticks
+through the WebAssembly module under node equal Python's, tick for
+tick.  Q146, Q147.  Tests 1119 -> 1122.
+
 ### Milestone 40 (2026-09-20) -- What the examples would not see
 
 The owner's question that morning, after the portal: did writing the
@@ -3060,6 +3121,16 @@ the corpus grows again.
 - **Q145** *(Exp 31)*: `pow` and the other prelude loops that read
   like operators: native operators, or a cost column in the card
   generated from measured steps.
+- **Q146** *(M41)*: the rules edited in the page.  The page runs
+  compiled bytes; the compiler is Python.  A LOVA rule changed live in
+  the browser -- the "rule layer you can edit and break" pitch, where
+  a person or a model would see it -- needs the parser, macros and
+  compiler in the page: ported, or the Python core under Pyodide.
+- **Q147** *(M41)*: recursion depth in a page.  The browser's stack
+  holds far fewer nested LOVA calls than the native runtime's
+  gigabyte thread; measure the depth a page reaches, and make the
+  overflow a `recursion-depth-exceeded` trap rather than a JS
+  `RangeError` that ends the instance.
 - **Q121** *(Exp 29)*: examples as the locator's power -- the same
   faults with three, eight and twenty examples; the confident-mislead
   rate (Q116) as a function of the count.

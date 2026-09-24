@@ -239,6 +239,20 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M41** (2026-09-24) -- **LOVA in a browser.** `native/lova-wasm`
+links the runtime into a WebAssembly module (no imports, no
+wasm-bindgen; `web/lova.js` is the Godot class's shape in JS); held to
+the golden set through `stdio.mjs`, every in-scope record identical,
+files / clock refused by name in a page.  `lib/neon.lova` and
+`apps/web/neon/` (**Neon Alley**): a ghost, sparks, drones and a gate
+drawn by three.js with bloom, a wet-road mirror and a CRT pass; the
+rules tick at 60 Hz in the page, 0.6-0.9 ms a tick.  Its relation
+examples caught two faults before the first run (`div` flooring broke
+the left/right mirror; a strict inequality at exactly 0.5 m).  Q146
+(rules edited in the page need the compiler there), Q147 (recursion
+depth in a page).  Tests 1119 -> 1122.  `journal/README.md`,
+"Milestone 41".
+
 **M40** (2026-09-20) -- **what the examples would not see.** The
 owner asked whether the games had shown the language convenient; the
 honest answer named the well-typed wrong value (Q106) and hand-carried

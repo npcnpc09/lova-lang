@@ -52,7 +52,7 @@ fn address(v: &Value) -> Option<usize> {
         Value::Population(p) => Some(Rc::as_ptr(p) as *const u8 as usize),
         Value::Tail(t) => Some(Rc::as_ptr(t) as *const u8 as usize),
         // A program is an arena id, and that id is its identity.
-        Value::Program(id) => Some(0x8000_0000_0000_0000usize | (*id as usize)),
+        Value::Program(id) => Some((1usize << (usize::BITS - 1)) | (*id as usize)),
         _ => None,
     }
 }

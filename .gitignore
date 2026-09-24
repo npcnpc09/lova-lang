@@ -43,3 +43,6 @@ native/lova-rt/target/
 native/lova-godot/target/
 # The Godot project assembled from the kit by apps/godot/fps/build.py
 apps/godot/fps/project/
+
+# Neon Alley: the assembled page (apps/web/neon/build.py)
+apps/web/neon/site/
