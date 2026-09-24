@@ -15,7 +15,32 @@ export class Sound {
 
   start() {
     if (this.ctx) { this.ctx.resume(); return; }
-    const ctx = this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.build(new (window.AudioContext || window.webkitAudioContext)());
+    this.nextAt = this.ctx.currentTime + 0.1;
+    this.timer = setInterval(() => this.schedule(), 25);
+  }
+
+  // The same music and the same sounds into an OfflineAudioContext, on a
+  // timeline given in advance: `log` is what `?record` wrote down,
+  // [seconds, method, argument], and `musicFrom` when the music starts.
+  // Returns the rendered AudioBuffer.
+  static async render(log, seconds, musicFrom) {
+    const rate = 44100;
+    const ctx = new OfflineAudioContext(2, Math.ceil(seconds * rate), rate);
+    const s = new Sound();
+    s.build(ctx);
+    s.nextAt = musicFrom;
+    const sixteenth = 60 / s.bpm / 4;
+    while (s.nextAt < seconds) { s.play(s.step, s.nextAt, sixteenth); s.nextAt += sixteenth; s.step++; }
+    for (const [t, name, arg] of log) { s.at = t; s[name](arg); }
+    s.at = null;
+    return ctx.startRendering();
+  }
+
+  now() { return this.at != null ? this.at : this.ctx.currentTime; }
+
+  build(ctx) {
+    this.ctx = ctx;
     this.master = ctx.createGain();
     this.master.gain.value = 0.7;
     const comp = ctx.createDynamicsCompressor();
@@ -39,8 +64,6 @@ export class Sound {
     this.rain();
     this.bpm = 92;
     this.step = 0;
-    this.nextAt = ctx.currentTime + 0.1;
-    this.timer = setInterval(() => this.schedule(), 25);
   }
 
   toggle() {
@@ -61,7 +84,7 @@ export class Sound {
     const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 6000;
     const g = ctx.createGain(); g.gain.value = 0.05;
     s.connect(hp).connect(lp).connect(g).connect(this.master);
-    s.start();
+    s.start(0);
   }
 
   // --- the loop, a sixteenth at a time, scheduled ahead ---------------
@@ -154,7 +177,7 @@ export class Sound {
   // --- the game's sounds ----------------------------------------------
   tone(type, f0, f1, len, vol, when = 0) {
     if (!this.ctx) return;
-    const ctx = this.ctx, t = ctx.currentTime + when, o = ctx.createOscillator(), g = ctx.createGain();
+    const ctx = this.ctx, t = this.now() + when, o = ctx.createOscillator(), g = ctx.createGain();
     o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len);
     this.env(g, t, 0.005, vol, len);
     o.connect(g).connect(this.sfx); o.start(t); o.stop(t + len + 0.05);
@@ -171,7 +194,7 @@ export class Sound {
 
   hit() {
     if (!this.ctx) return;
-    const ctx = this.ctx, t = ctx.currentTime, s = this.noiseSource(), g = ctx.createGain();
+    const ctx = this.ctx, t = this.now(), s = this.noiseSource(), g = ctx.createGain();
     const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1200;
     this.env(g, t, 0.002, 0.4, 0.3);
     s.connect(lp).connect(g).connect(this.sfx); s.start(t); s.stop(t + 0.35);

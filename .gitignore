@@ -46,3 +46,4 @@ apps/godot/fps/project/
 
 # Neon Alley: the assembled page (apps/web/neon/build.py)
 apps/web/neon/site/
+apps/web/neon/_frames/

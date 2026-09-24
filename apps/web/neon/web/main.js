@@ -11,6 +11,11 @@ import { Sound } from "./audio.js";
 
 const $ = id => document.getElementById(id);
 const TICK = 1 / 60;
+// `?record`: no clock and no speakers.  Time moves only when a driver
+// calls `__neon.step(dt)` -- a frame per call, none dropped -- and every
+// sound is written down with its time instead of played, so that
+// `record.py` can render the sound track offline to the same timeline.
+const RECORD = new URLSearchParams(location.search).has("record");
 
 function fault(e) {
   console.error(e);
@@ -35,7 +40,7 @@ async function boot() {
   const drones = new Drones(scene, L.drones, L.droneY);
   const rain = new Rain(scene, quality.rain);
   const post = makeComposer(renderer, scene, camera);
-  const sound = new Sound();
+  const sound = RECORD ? loggedSound() : new Sound();
 
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -135,14 +140,15 @@ async function boot() {
   let frames = 0, fpsT = 0, fps = 60, slow = 0, tickMs = 0, tickSteps = 0;
   const lerp = THREE.MathUtils.lerp;
 
-  function frame() {
-    const dt = Math.min(clock.getDelta(), 0.1);
-    const t = clock.elapsedTime;
+  const hooks = { beforeTick: null };
+  let vt = 0;                      // the recording's own time
+  function step(dt, t) {
     try {
       if (mode === "play") {
         acc += dt;
         let n = 0;
         while (acc >= TICK && n < 5) {
+          if (hooks.beforeTick) hooks.beforeTick(cur, L);
           const [mx, mz, j] = stick();
           prev = cur;
           cur = rules.tick(mx, mz, j);
@@ -205,16 +211,31 @@ async function boot() {
         `Rules: LOVA → WebAssembly (${rules.version}) · ${rules.bytes} bytes\n` +
         `Tick: ${tickMs.toFixed(3)} ms · ${tickSteps} steps · Frame: ${fps} FPS · ${quality.name}`;
       // Frames running long: draw fewer pixels.
-      if (fps < 40 && mode === "play") { if (++slow >= 4 && renderer.getPixelRatio() > 0.75) {
+      if (fps < 40 && mode === "play" && !RECORD) { if (++slow >= 4 && renderer.getPixelRatio() > 0.75) {
         renderer.setPixelRatio(renderer.getPixelRatio() * 0.8); post.resize(); slow = 0; } } else slow = 0;
     }
+  }
+  function frame() {
+    step(Math.min(clock.getDelta(), 0.1), clock.elapsedTime);
     requestAnimationFrame(frame);
   }
 
   $("start").disabled = false;
   $("start").textContent = "START";
-  window.__neon = { rules, held, begin, restart, get mode() { return mode; }, get state() { return cur; } };
-  requestAnimationFrame(frame);
+  window.__neon = { rules, held, begin, restart, hooks, sound,
+    get mode() { return mode; }, get state() { return cur; }, get time() { return vt; },
+    step(dt) { vt += dt; sound.time = vt; step(dt, vt); } };
+  if (!RECORD) requestAnimationFrame(frame);
+}
+
+// A stand-in for `Sound` that plays nothing and keeps a log of what it
+// was asked, when: [time, method, argument].
+function loggedSound() {
+  const log = [];
+  const s = { time: 0, log, muted: false, start() {}, toggle() { return false; } };
+  for (const name of ["jump", "land", "spark", "hit", "gate", "win"])
+    s[name] = arg => log.push([s.time, name, arg === undefined ? null : arg]);
+  return s;
 }
 
 boot().catch(fault);
