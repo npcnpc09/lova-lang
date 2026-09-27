@@ -1,0 +1,15 @@
+;;; danmaku_godot.lova  --  the duel's rules, as Godot asks for them
+;;;
+;;; The program `apps/godot/danmaku/build.py` compiles for the Godot
+;;; project: `lib/danmaku.lova` and the four names Godot takes handles
+;;; on.  Nothing about the picture is here.
+
+(use "danmaku")
+
+;; A duel that begins at phase i, for the scripted pictures and for
+;; practice: the same world as a new game, the witch at that card.
+(def start-at [i] (put (put new-game phase i) hp (phase-hp i)))
+
+(example (get (start-at 2) hp) (phase-hp 2))
+
+(rec new new-game tick tick input input scene scene at start-at)

@@ -1,0 +1,27 @@
+; Engine configuration file.
+; The Godot side of apps/godot/danmaku: everything drawn and heard.
+; The rules are lib/danmaku.lova, run by the LovaRuntime extension.
+
+config_version=5
+
+[application]
+
+config/name="Touhou Tenkyuutan - a 3D danmaku duel (fan game)"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[physics]
+
+common/physics_ticks_per_second=60
+common/max_physics_steps_per_frame=4
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=2

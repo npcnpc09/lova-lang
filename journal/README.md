@@ -666,6 +666,89 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 42 (2026-09-27) -- A danmaku duel in three dimensions
+
+The owner asked whether Godot could carry a Touhou Project 3D
+bullet-hell game, and chose, of the two readings offered, the harder
+one: true three-dimensional dodging rather than a flat duel drawn with
+a 3D camera.  The M39 shape once more -- Godot draws, LOVA decides --
+but the first game where the rules own hundreds of moving things a
+tick, which is the load a bullet hell is.
+
+**The rules.** `lib/danmaku.lova`: a shrine maiden who flies in a round
+arena (16 m, 0.5-12 m up, no nearer the witch than 2.5 m) with a
+camera-relative frame -- forward is toward the witch, so left and right
+circle her -- focus, amulets, three bombs, three lives, graze; a witch
+on a slow figure of eight; three phases (a non-spell of 48-point
+Fibonacci shells and aimed fans, "Galaxy Spiral" of five arms whose
+pitch rides a sine so they sweep the sphere, "Stardust Rain" of stars
+falling from 20 m with a cone aimed at her).  **A bullet is never
+moved:** it carries origin, velocity, fall, birth and death, and its
+place at tick t is a closed form, so a tick allocates nothing for the
+bullets that fly on -- it filters on `die` and runs one inlined
+distance test that gives up at the first axis out of reach.  A graze
+is stateless: the one tick the distance falls under the graze radius.
+A bullet lives until it is 20 m from where it was thrown.  The first
+bench (closures for each axis, `append` of the whole list every tick,
+a fixed nine-second life) was 139 steps a bullet a tick and 950 bullets
+in the air; inlined, consed onto the front, and killed at 20 m, it is
+~60 steps and ~400 bullets for the same picture.  On the densest card
+a tick is ~42 000 steps, **5-6 ms in the VM inside Godot**, and `scene`
+(the HUD and every bullet as four integers) 2-3 ms.
+
+**What the examples caught.** Thirty-five examples, relations from the
+rules.  Two failed on the first check and both were informative: the
+mirror relation, written first against the moving witch, was the wrong
+relation (her path is not symmetric) and was rewritten against a still
+one -- whereupon it caught `div` flooring the left strafe one unit past
+the right, the same fault M41 found in Neon Alley; `tdiv` again.  The
+second was an off-by-one in the example, not the rules (the pause is
+PAUSE-1 calm ticks and the first shell lands on the last).
+
+**What the review caught.** An independent Opus reviewer, on a fixed
+checklist, found three rule faults the twenty-nine examples then in
+place could not see, each confirmed by a probe program: a graze was
+tested against the bullet's place a tick ago but the maiden's place
+now, so flying past a still bullet never grazed (the one graze example
+had a moving bullet and a still maiden -- the example chose its inputs
+where the fault is silent, as M40 warned); a cleared duel ignored
+retry, so the only way out was to quit; and a bomb in the pause hurt
+the witch, the next card starting short.  Also undecided until then: a
+hit that ends the game and an amulet that ends the last card on the
+same tick -- now the game over ends the tick.  Each got the relation
+that would have caught it (a still bullet flown past grazes once; a
+bomb in the pause leaves the health; retry leaves a clear and a game
+over; the last hit is not also a clear), 35/35.  Godot side: the card's
+banner came with the phase-end event, ninety ticks before the card and
+never on a `--phase` start; it is keyed to the tick the card begins.
+Godot still reports four leaked objects at exit.  The full suite has
+one failure, `test_brief`'s world-touching program, which fails the
+same way at HEAD with the batch stashed (a Windows temp path in a text
+literal) -- not this batch's.
+
+**The Godot side.** `apps/godot/danmaku/`: `game/main.gd` builds
+everything in code -- a night sky, a ringed arena floor with its edge
+in red, a faint banded wall, torii, cherry trees, lanterns, petals, the
+maiden and the witch from primitives, a turning magic circle, bullets
+as three MultiMeshes written through one float buffer each, shadows on
+the floor for depth, amulets, a rainbow bomb, a HUD with the card's
+name and timer, synthesised sounds and an eight-bar tune written for
+it -- so there is no asset of anyone else's in the project, which a
+Touhou fan game needs (the characters may be used, ZUN's pictures and
+music may not).  `build.py` assembles, compiles, imports, and runs
+`--smoke`, `--run`, `--shot`, `--movie`, with `--phase` to start at a
+card (`start-at`); `bench.py` plays the whole duel against the native
+runtime and prints the cost.  `tests/test_danmaku.py`: the examples
+pass; a scripted fifteen seconds keeps `scene`'s shape and stays under
+80 000 steps a tick.  Tests 1122 -> 1124.
+
+**What the demo showed that no example did:** in twenty seconds of the
+autopilot against "Galaxy Spiral" she was never hit and never grazed.
+The same bullet count that fills a flat screen is sparse in a volume --
+density goes with the cube of the reach, not the square -- so the cards
+as written are easy.  Q148.  And the depth cues (floor shadows, the
+near bullets drawn larger) are the designer's guess, not measured, Q149.
+
 ### Milestone 41 (2026-09-24) -- LOVA in a browser: Neon Alley
 
 The owner showed samsy.ninja -- a graphics engineer's portfolio that
@@ -3131,6 +3214,20 @@ the corpus grows again.
   gigabyte thread; measure the depth a page reaches, and make the
   overflow a `recursion-depth-exceeded` trap rather than a JS
   `RangeError` that ends the instance.
+- **Q148** *(M42)*: difficulty in a volume.  The cards were written
+  as for a flat screen and the autopilot is never hit.  Measure hits
+  and grazes a minute per card for the autopilot and for a person, and
+  tune by that: denser shells, arms that close on her height, aimed
+  patterns with lead -- and whether the tick still fits when the air
+  holds a thousand.
+- **Q149** *(M42)*: reading depth on a flat screen.  Floor shadows and
+  near bullets drawn larger are guesses; compare hits per minute with
+  and without each cue.
+- **Q150** *(M42)*: `scene` is a third of the frame's LOVA time and
+  recomputes every bullet's place the tick already computed for the
+  near test.  Either the tick hands its places over, or Godot is given
+  the closed form at birth and draws from it, the rules keeping only
+  death and collision.
 - **Q121** *(Exp 29)*: examples as the locator's power -- the same
   faults with three, eight and twenty examples; the confident-mislead
   rate (Q116) as a function of the count.

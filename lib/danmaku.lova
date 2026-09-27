@@ -1,0 +1,531 @@
+;;; danmaku.lova  --  the rules of a three-dimensional bullet-hell duel
+;;;
+;;; `(use "danmaku")`.  A fan game in the manner of Touhou Project: a
+;;; shrine maiden flies in a round arena of open sky, a witch hovers at
+;;; its centre and throws spell cards at her -- shells of bullets in
+;;; every direction, spiral arms that sweep the whole sphere, a rain of
+;;; stars from above -- and she weaves through them in three
+;;; dimensions, grazes what passes close, fires her amulets back and
+;;; spends a bomb when there is no way through.  Everything that
+;;; decides is here; Godot draws it (`apps/godot/danmaku/`), calling
+;;; `tick` and `scene` once a physics tick through the runtime as a
+;;; GDExtension class.
+;;;
+;;; Units.  A length is in 65 536ths of a metre (`F`), an angle in
+;;; 256ths of a turn (`lib/fixed.lova`'s, whose sine is in 1024ths), a
+;;; tick one sixtieth of a second.  A velocity is in F a tick.  y is up;
+;;; the arena is centred on the origin.
+;;;
+;;; A bullet is never moved.  It is born with an origin, a velocity, a
+;;; fall and a tick to die at, and where it is at tick t is a formula:
+;;;
+;;;     x = ox + vx a,   y = oy + vy a - g a^2 / 2,   z = oz + vz a,   a = t - born
+;;;
+;;; so a tick allocates nothing for the bullets that simply fly on --
+;;; it keeps the ones whose `die` is still ahead and asks the ones near
+;;; the maiden how near.  A graze needs no memory either: a bullet
+;;; grazes on the one tick its distance falls under the graze radius.
+;;;
+;;;   new-game                              ; the world at the start
+;;;   (input mx mz my focus shoot bomb retry)
+;;;                                         ; mx right / left, mz toward /
+;;;                                         ; away from the witch, my up /
+;;;                                         ; down, as -1 / 0 / 1; the rest 1
+;;;                                         ; while held
+;;;   (tick w in)                           ; one sixtieth of a second later
+;;;   (scene w)                             ; what Godot draws, as integers
+
+(use "fixed")
+
+(def F [] 65536)                        ; a metre
+(def SEC [] 60)                         ; ticks in a second
+(def mps [m] (div (mul m F) SEC))       ; m metres a second, in F a tick
+(def tenths [n] (div (mul n F) 10))     ; n tenths of a metre
+
+;; --- the arena and the two of them ---------------------------------
+
+(def ARENA [] (mul 16 F))               ; the maiden keeps within 16 m of the centre
+(def CEIL [] (mul 12 F))                ; ... below 12 m
+(def FLOOR [] (tenths 5))               ; ... above half a metre
+(def CLOSE [] (tenths 25))              ; ... and no nearer the witch than 2.5 m
+(def FAST [] (mps 8))                   ; her speed
+(def SLOW [] (mps 3))                   ; her speed while focused
+(def DIAG [] 724)                       ; 1 / sqrt 2, in 1024ths
+(def HITBOX [] (tenths 1))              ; her body, where a bullet counts: 0.1 m
+(def GRAZE [] (tenths 7))               ; how close a bullet passes to graze
+(def LIVES [] 3)                        ; spare lives, as Touhou counts them: four hits end it
+(def BOMBS [] 3)
+(def REVIVE [] 180)                     ; ticks untouchable after a hit
+(def BOMB-TIME [] 150)                  ; ... after a bomb
+(def BOMB-DAMAGE [] 80)
+(def START [] (list 0 (mul 4 F) (mul 12 F)))     ; where she starts: 12 m out, 4 up
+(def BOSS-Y [] (mul 5 F))               ; the witch hovers 5 m up
+(def BOSS-R [] (tenths 12))             ; an amulet within 1.2 m of her strikes
+
+;; --- the maiden's amulets ------------------------------------------
+
+(def SHOT-EVERY [] 4)                   ; a pair every fifteenth of a second
+(def SHOT-SPEED [] (mps 45))
+(def SHOT-LIFE [] 40)
+(def SHOT-DAMAGE [] 1)                  ; each; focused, twice that
+(def SHOT-APART [] (tenths 3))          ; the pair's half spacing
+
+;; --- bullets --------------------------------------------------------
+;;
+;; Three kinds: a small round bullet, a star, a large orb.  The radius
+;; is what counts against the maiden's hitbox; Godot draws each kind
+;; a little larger than it hits, as Touhou does.
+
+(def r-of [kind] (cond (eq kind 0) (tenths 1) (eq kind 1) (tenths 2) (tenths 4)))
+
+;; A bullet lives until it is twenty metres from where it was thrown:
+;; the witch is within two of the centre and the maiden within sixteen,
+;; so past that it can reach nobody, and drawing it is waste.
+(def REACH [] (mul 20 F))
+(def life-at [speed] (div REACH speed))
+
+;; A bullet from (x y z) at `vel` -- a list (vx vy vz) -- falling `g`.
+(def bullet [t at vel g kind life]
+  (rec ox (head at) oy (nth at 1) oz (nth at 2)
+       vx (head vel) vy (nth vel 1) vz (nth vel 2)
+       g g born t die (merge t life) kind kind r (r-of kind)
+       reach (merge (r-of kind) GRAZE) hit (merge (r-of kind) HITBOX)))
+
+;; Its place at tick t, one axis at a time, for the scene.
+(def age [b t] (sub t (get b born)))
+(def bx-at [b a] (merge (get b ox) (mul (get b vx) a)))
+(def by-at [b a] (sub (merge (get b oy) (mul (get b vy) a)) (div (mul (get b g) (mul a a)) 2)))
+(def bz-at [b a] (merge (get b oz) (mul (get b vz) a)))
+
+;; Whether it is within graze reach of (px py pz) at tick t: the hot
+;; test, run on every bullet every tick, so written out in full and
+;; given up on at the first axis that is out of reach -- which for all
+;; but the few bullets near her is the first.
+(def close [b t px py pz]
+  (let a (sub t (get b born))
+    (let e (get b reach)
+      (let dx (sub (merge (get b ox) (mul (get b vx) a)) px)
+        (if (gt (abs dx) e)
+            0
+            (let dz (sub (merge (get b oz) (mul (get b vz) a)) pz)
+              (if (gt (abs dz) e)
+                  0
+                  (let dy (sub (by-at b a) py)
+                    (lt (merge (mul dx dx) (merge (mul dy dy) (mul dz dz))) (mul e e))))))))))
+
+;; The square of its distance from (px py pz) at tick t.
+(def d2 [b t px py pz]
+  (let a (sub t (get b born))
+    (let dx (sub (bx-at b a) px)
+      (let dy (sub (by-at b a) py)
+        (let dz (sub (bz-at b a) pz)
+          (merge (mul dx dx) (merge (mul dy dy) (mul dz dz))))))))
+
+(def sq [n] (mul n n))
+
+;; The few new ones in front of the many old, walking only the few
+;; (the filter after it walks the many anyway, once).
+(def onto [xs ys] (fold (lambda acc (lambda x (cons x acc))) ys xs))
+
+;; --- directions -----------------------------------------------------
+;;
+;; A direction is (yaw pitch) in 256ths of a turn: yaw 0 along +x and
+;; 64 along +z, pitch 64 straight up.  `vel` scales its unit vector to
+;; a speed in F a tick.
+
+(def vel [yaw pitch speed]
+  (let c (cos pitch)
+    (list (div (mul (mul speed c) (cos yaw)) 1048576)
+          (div (mul speed (sin pitch)) 1024)
+          (div (mul (mul speed c) (sin yaw)) 1048576))))
+
+;; The unit vector toward a point, as a speed: (dx dy dz) scaled to
+;; `speed` by the length's integer square root.
+(def toward [dx dy dz speed]
+  (let n (max 1 (isqrt (merge (sq dx) (merge (sq dy) (sq dz)))))
+    (list (div (mul dx speed) n) (div (mul dy speed) n) (div (mul dz speed) n))))
+
+;; Forty-eight points spread evenly over a sphere, in 1024ths: the
+;; Fibonacci lattice, heights evenly spaced and each point turned by
+;; the golden angle from the last (0.382 of a turn, 98 of 256).
+(def SHELL-N [] 48)
+(def shell []
+  (map (lambda i
+         (let y (sub 1024 (div (mul 1024 (merge (mul 2 i) 1)) SHELL-N))
+           (let r (isqrt (sub 1048576 (sq y)))
+             (let th (mod (mul i 98) 256)
+               (list (div (mul r (cos th)) 1024) y (div (mul r (sin th)) 1024))))))
+       (range 0 SHELL-N)))
+
+;; A shell point turned by `rot` about the vertical, as a velocity.
+(def turn-y [p rot speed]
+  (let c (cos rot)
+    (let s (sin rot)
+      (list (div (mul speed (sub (mul (head p) c) (mul (nth p 2) s))) 1048576)
+            (div (mul speed (nth p 1)) 1024)
+            (div (mul speed (merge (mul (head p) s) (mul (nth p 2) c))) 1048576)))))
+
+;; A number from a tick, the same every run: a hash, not a generator.
+(def noise [t k] (mod (div (merge (mul (merge (mul t 7919) k) 1103515245) 12345) 65536) 32768))
+
+;; --- the witch ------------------------------------------------------
+;;
+;; She drifts on a slow figure of eight about the centre, 2 m across,
+;; bobbing half a metre.
+
+(def boss-at [t]
+  (list (div (mul (mul 2 F) (sin (div t 3))) 1024)
+        (merge BOSS-Y (div (mul (tenths 5) (sin (div t 2))) 1024))
+        (div (mul (mul 2 F) (sin (div t 6))) 1024)))
+
+;; --- the spell cards ------------------------------------------------
+;;
+;; Each phase is (hp seconds pattern): the witch's health for it, how
+;; long it lasts if she is not beaten, and what it throws on tick k of
+;; the phase, from where she is, at a maiden at `me`.  Godot holds the
+;; names.
+
+;; 0.  A non-spell: a shell of forty-eight every half second, turned a
+;;     little each time so no gap stays open, and every half second
+;;     between them a fan of five aimed at the maiden.
+(def pattern-0 [t k at me]
+  (cond (eq (mod k 30) 0)
+          (map (lambda p (bullet t at (turn-y p (mul k 3) (mps 5)) 0 0 (life-at (mps 5)))) shell)
+        (eq (mod k 30) 15)
+          (let aim (sub-3 me at)
+            (let yaw (atan2 (nth aim 2) (head aim))
+              (let pitch (atan2 (nth aim 1) (isqrt (merge (sq (head aim)) (sq (nth aim 2)))))
+                (map (lambda j (bullet t at (vel (merge yaw (mul j 6)) pitch (mps 9)) 0 1 (life-at (mps 9))))
+                     (range -2 3)))))
+        (nil)))
+
+;; 1.  "Galaxy Spiral": five arms turning round her while their pitch
+;;     rides up and down, so that together they sweep the sphere.
+(def pattern-1 [t k at me]
+  (if (eq (mod k 3) 0)
+      (let pitch (div (mul 40 (sin (mul k 2))) 1024)
+        (map (lambda arm (bullet t at (vel (merge (div (mul arm 256) 5) (mul k 2)) pitch (mps 6)) 0 1 (life-at (mps 6))))
+             (range 0 5)))
+      (nil)))
+
+;; 2.  "Stardust Rain": large stars dropped from twenty metres over the
+;;     maiden and around her, and a cone of twelve at her every three
+;;     quarters of a second.
+(def RAIN-G [] (div (mul 6 F) 3600))    ; they fall at 6 m/s/s
+(def pattern-2 [t k at me]
+  (append
+    (if (eq (mod k 8) 0)
+        (map (lambda j
+               (bullet t
+                       (list (merge (head me) (mul (sub (div (mul (noise t j) 16) 32768) 8) F))
+                             (mul 20 F)
+                             (merge (nth me 2) (mul (sub (div (mul (noise t (merge j 9)) 16) 32768) 8) F)))
+                       (list 0 (neg (mps 2)) 0) RAIN-G 2 150))
+             (range 0 3))
+        (nil))
+    (if (eq (mod k 45) 20)
+        (let aim (sub-3 me at)
+          (let yaw (atan2 (nth aim 2) (head aim))
+            (let pitch (atan2 (nth aim 1) (isqrt (merge (sq (head aim)) (sq (nth aim 2)))))
+              (map (lambda j (bullet t at (vel (merge yaw (mul (sub (mod j 4) 1) 5))
+                                               (merge pitch (mul (sub (div j 4) 1) 5)) (mps 10)) 0 0 (life-at (mps 10))))
+                   (range 0 12)))))
+        (nil))))
+
+(def sub-3 [a b] (list (sub (head a) (head b)) (sub (nth a 1) (nth b 1)) (sub (nth a 2) (nth b 2))))
+
+(def phases []
+  (list (list 1200 30 pattern-0)
+        (list 1800 40 pattern-1)
+        (list 2100 45 pattern-2)))
+
+(def phase-hp [i] (head (nth phases i)))
+(def phase-ticks [i] (mul SEC (nth (nth phases i) 1)))
+(def phase-pattern [i] (nth (nth phases i) 2))
+(def PAUSE [] 90)                       ; ticks of calm between two phases
+
+;; --- the world ------------------------------------------------------
+
+(def input [mx mz my focus shoot bomb retry]
+  (rec mx mx mz mz my my focus focus shoot shoot bomb bomb retry retry))
+(def still [] (input 0 0 0 0 0 0 0))
+
+(def new-game []
+  (rec t 0 x (head START) y (nth START 1) z (nth START 2)
+       lives LIVES bombs BOMBS safe 0 graze 0 score 0
+       x0 (head START) y0 (nth START 1) z0 (nth START 2)
+       phase 0 hp (phase-hp 0) k (neg PAUSE)
+       bullets (nil) shots (nil)
+       over 0 won 0 events 0 grazed 0 bombed 0 held-bomb 0 focus 0
+       fx 0 fz -1024))
+
+;; --- moving the maiden ---------------------------------------------
+;;
+;; The camera looks from her to the witch, so "forward" is toward the
+;; witch across the ground and "right" is forward turned a quarter to
+;; the right.  A diagonal is no faster than one axis.
+
+(def clamp [v lo hi] (max lo (min hi v)))
+;; Division toward zero.  `div` floors, so -9/8 is -2 and 9/8 is 1, and
+;; flying left would carry her further than flying right.
+(def tdiv [a b] (if (lt a 0) (neg (div (neg a) b)) (div a b)))
+
+(def fly [w in boss]
+  (let dx (sub (head boss) (get w x))
+    (let dz (sub (nth boss 2) (get w z))
+      (let yaw (atan2 dz dx)
+        (let fx (cos yaw)
+          (let fz (sin yaw)
+            (let speed (if (get in focus) SLOW FAST)
+              (let mx (get in mx)
+                (let mz (get in mz)
+                  (let s (if (and mx mz) (tdiv (mul speed DIAG) 1024) speed)
+                    ;; right is (-fz, fx); forward is (fx, fz)
+                    (let x (merge (get w x) (tdiv (mul s (sub (mul mz fx) (mul mx fz))) 1024))
+                      (let z (merge (get w z) (tdiv (mul s (merge (mul mz fz) (mul mx fx))) 1024))
+                        (let y (clamp (merge (get w y) (mul (get in my) speed)) FLOOR CEIL)
+                          (let held (keep-out x z boss)
+                            (put (put (put (put (put (put w x (head held)) z (nth held 1)) y y)
+                                           fx fx) fz fz) focus (get in focus))))))))))))))))
+
+;; Within the arena and outside the witch's reach: pushed back along
+;; the line from the centre (or from her) where she has strayed.
+(def keep-out [x z boss]
+  (let r (isqrt (merge (sq x) (sq z)))
+    (let x1 (if (gt r ARENA) (tdiv (mul x ARENA) r) x)
+      (let z1 (if (gt r ARENA) (tdiv (mul z ARENA) r) z)
+        (let ex (sub x1 (head boss))
+          (let ez (sub z1 (nth boss 2))
+            (let e (isqrt (merge (sq ex) (sq ez)))
+              (if (and (lt e CLOSE) (gt e 0))
+                  (list (merge (head boss) (tdiv (mul ex CLOSE) e))
+                        (merge (nth boss 2) (tdiv (mul ez CLOSE) e)))
+                  (list x1 z1)))))))))
+
+;; --- a tick ---------------------------------------------------------
+;;
+;; `events` says what happened this tick, for Godot's sounds and
+;; flashes: 1 a hit, 2 a bomb, 4 a new phase, 8 a graze, 16 amulets
+;; fired, 32 the witch struck, 64 the duel won, 128 the game over.
+
+(def tick [w in]
+  (cond (get w over) (if (get in retry) new-game (put (put w events 0) t (inc (get w t))))
+        (get w won) (if (get in retry) new-game (put (put w events 0) t (inc (get w t))))
+        (duel w in)))
+
+(def duel [w in]
+  (let t (inc (get w t))
+    (let boss (boss-at t)
+      (let w0 (put (put (put (put (put w t t) events 0) x0 (get w x)) y0 (get w y)) z0 (get w z))
+        (let w1 (fly w0 in boss)
+          (let w2 (spend-bomb w1 in)
+            (let w3 (throw w2 boss)
+              (let w4 (weave w3)
+                ;; a hit that ends the game ends the tick: the witch is
+                ;; not beaten on the tick the maiden falls
+                (if (get w4 over)
+                    w4
+                    (advance (strike (fire w4 in boss) boss)))))))))))
+
+;; A bomb goes off on the tick it is pressed, if one is left: every
+;; bullet gone, the witch hurt, the maiden untouchable a while.
+(def spend-bomb [w in]
+  (let press (and (get in bomb) (not (get w held-bomb)))
+    (let w1 (put w held-bomb (get in bomb))
+      (if (and press (gt (get w1 bombs) 0))
+          (put (put (put (put (put (put w1 bombs (sub (get w1 bombs) 1))
+                                   bullets (nil))
+                              safe (max (get w1 safe) BOMB-TIME))
+                         hp (if (ge (get w1 k) 0) (sub (get w1 hp) BOMB-DAMAGE) (get w1 hp)))
+                    bombed (inc (get w1 bombed)))
+               events (merge (get w1 events) 2))
+          w1))))
+
+;; The phase's pattern, from the witch's place, if the phase is under
+;; way (k counts up from minus PAUSE between phases); and the bullets
+;; whose time is up let go.
+(def throw [w boss]
+  (let k (inc (get w k))
+    (let t (get w t)
+      (let fresh (if (ge k 0)
+                     (let pat (phase-pattern (get w phase)) (pat t k boss (list (get w x) (get w y) (get w z))))
+                     (nil))
+        (put (put w k k)
+             bullets (filter (lambda b (lt t (get b die))) (onto fresh (get w bullets))))))))
+
+;; The maiden against every bullet: the ones within graze reach are
+;; looked at twice -- are they inside her hitbox, and were they out of
+;; reach a tick ago, the bullet where it was and she where she was (so
+;; flying past a still bullet grazes it as surely as its flying past
+;; her).  A bullet grazes each time it comes into reach.  A hit while
+;; she is untouchable is nothing.
+(def weave [w]
+  (let t (get w t)
+    (let px (get w x)
+      (let py (get w y)
+        (let pz (get w z)
+          (let near (filter (lambda b (close b t px py pz)) (get w bullets))
+            (let hit (any (lambda b (lt (d2 b t px py pz) (sq (get b hit)))) near)
+              (let grazes (len (filter (lambda b (ge (d2 b (sub t 1) (get w x0) (get w y0) (get w z0))
+                                                     (sq (get b reach))))
+                                       near))
+                (let w1 (put (put (put w graze (merge (get w graze) grazes))
+                                  grazed grazes)
+                             score (merge (get w score) (mul grazes 50)))
+                  (let w2 (if grazes (put w1 events (merge (get w1 events) 8)) w1)
+                    (let safe (get w2 safe)
+                      (if (and hit (eq safe 0))
+                          (fall w2)
+                          (put w2 safe (max 0 (sub safe 1)))))))))))))))
+
+;; A hit: a life gone, the air cleared, the bombs given back, a while
+;; untouchable; a hit with no spare life left is the game over.
+(def fall [w]
+  (let lives (sub (get w lives) 1)
+    (put (put (put (put (put (put w lives lives) bullets (nil)) bombs BOMBS)
+                   safe REVIVE)
+              over (if (lt lives 0) 1 0))
+         events (merge (get w events) (if (lt lives 0) 129 1)))))
+
+;; Amulets: a pair every SHOT-EVERY ticks while shoot is held, flying
+;; from beside her at the witch's place as it was.
+(def fire [w in boss]
+  (let t (get w t)
+    (if (and (get in shoot) (eq (mod t SHOT-EVERY) 0))
+        (let px (get w x)
+          (let py (get w y)
+            (let pz (get w z)
+              (let v (toward (sub (head boss) px) (sub (nth boss 1) py) (sub (nth boss 2) pz) SHOT-SPEED)
+                ;; beside her: along her right, (-fz, fx)
+                (let sx (div (mul SHOT-APART (neg (get w fz))) 1024)
+                  (let sz (div (mul SHOT-APART (get w fx)) 1024)
+                    (let shot (lambda side
+                                (bullet t (list (merge px (mul side sx)) py (merge pz (mul side sz))) v 0 0 SHOT-LIFE))
+                      (put (put w shots (cons (shot 1) (cons (shot -1) (get w shots))))
+                           events (merge (get w events) 16)))))))))
+        w)))
+
+;; An amulet within BOSS-R of the witch strikes her and is spent.
+(def strike [w boss]
+  (let t (get w t)
+    (let bx (head boss)
+      (let by (nth boss 1)
+        (let bz (nth boss 2)
+          (let live (filter (lambda s (lt t (get s die))) (get w shots))
+            (let hits (len (filter (lambda s (lt (d2 s t bx by bz) (sq BOSS-R))) live))
+              (let dmg (mul hits (if (get w focus) (mul 2 SHOT-DAMAGE) SHOT-DAMAGE))
+                (let w1 (put (put (put w shots (filter (lambda s (ge (d2 s t bx by bz) (sq BOSS-R))) live))
+                                  hp (if (ge (get w k) 0) (sub (get w hp) dmg) (get w hp)))
+                             score (merge (get w score) (mul dmg 10)))
+                  (if hits (put w1 events (merge (get w1 events) 32)) w1))))))))))
+
+;; A phase ends when the witch's health is gone or its time runs out;
+;; the air clears, and after a pause the next begins.  The last one
+;; ended is the duel won.
+(def advance [w]
+  (let i (get w phase)
+    (if (and (ge (get w k) 0) (or (le (get w hp) 0) (ge (get w k) (phase-ticks i))))
+        (let beaten (le (get w hp) 0)
+          (let w1 (put (put (put w bullets (nil))
+                            score (merge (get w score) (if beaten 10000 0)))
+                       events (merge (get w events) 4))
+            (if (ge (inc i) (len phases))
+                (put (put w1 won 1) events (merge (get w1 events) 64))
+                (put (put (put w1 phase (inc i)) hp (phase-hp (inc i))) k (neg PAUSE)))))
+        w)))
+
+;; --- what Godot reads ----------------------------------------------
+;;
+;; (hud bullets shots)
+;;   hud:     (x y z bx by bz lives bombs graze score phase hp hp-max
+;;             k ticks safe over won events t fx fz focus count)
+;;            `k` is the tick of the phase, negative in the pause
+;;            before it; `ticks` the phase's length
+;;   bullets: x y z kind, four integers a bullet, in one flat list
+;;   shots:   x y z, three an amulet
+
+(def scene [w]
+  (let t (get w t)
+    (let boss (boss-at t)
+      (let i (get w phase)
+        (list (list (get w x) (get w y) (get w z) (head boss) (nth boss 1) (nth boss 2)
+                    (get w lives) (get w bombs) (get w graze) (get w score)
+                    i (get w hp) (phase-hp i) (get w k) (phase-ticks i)
+                    (get w safe) (get w over) (get w won) (get w events) t
+                    (get w fx) (get w fz) (get w focus) (len (get w bullets)))
+              (fold (lambda acc (lambda b
+                      (let a (sub t (get b born))
+                        (cons (merge (get b ox) (mul (get b vx) a))
+                              (cons (if (get b g) (by-at b a) (merge (get b oy) (mul (get b vy) a)))
+                                    (cons (merge (get b oz) (mul (get b vz) a)) (cons (get b kind) acc)))))))
+                    (nil) (get w bullets))
+              (fold (lambda acc (lambda s
+                      (let a (sub t (get s born))
+                        (cons (bx-at s a) (cons (by-at s a) (cons (bz-at s a) acc))))))
+                    (nil) (get w shots)))))))
+
+;; --- what the rules must satisfy ------------------------------------
+
+(def run [w in n] (if (le n 0) w (run (tick w in) in (sub n 1))))
+
+;; The shell is a sphere: its points sum to near nothing and each is a
+;; unit vector to within a percent.
+(example (all (lambda p (lt (abs (sub (merge (sq (head p)) (merge (sq (nth p 1)) (sq (nth p 2)))) 1048576)) 21000))
+              shell) 1)
+(example (lt (abs (sum (map (lambda p (nth p 1)) shell))) 1024) 1)
+;; Left and right mirror: a second of strafing either way round a
+;; witch held still at the centre ends at the mirror places.
+(def strafe [in n]
+  (if (le n 0) new-game (fly (strafe in (sub n 1)) in (list 0 BOSS-Y 0))))
+(example (get (strafe (input 1 0 0 0 0 0 0) 60) z) (get (strafe (input -1 0 0 0 0 0 0) 60) z))
+(example (get (strafe (input 1 0 0 0 0 0 0) 60) x) (neg (get (strafe (input -1 0 0 0 0 0 0) 60) x)))
+;; Strafing circles her: the distance stays within a metre of the start.
+(example (lt (abs (sub (isqrt (merge (sq (get (strafe (input 1 0 0 0 0 0 0) 120) x))
+                                     (sq (get (strafe (input 1 0 0 0 0 0 0) 120) z))))
+                       (nth START 2))) F) 1)
+;; Focus is slower: forward for half a second covers less.
+(example (gt (get (strafe (input 0 1 0 1 0 0 0) 30) z) (get (strafe (input 0 1 0 0 0 0 0) 30) z)) 1)
+;; The arena holds, and so does the witch's reach.
+(example (le (isqrt (merge (sq (get (run new-game (input 0 -1 0 0 0 0 0) 400) x))
+                           (sq (get (run new-game (input 0 -1 0 0 0 0 0) 400) z)))) ARENA) 1)
+(example (le (get (run new-game (input 0 0 1 0 0 0 0) 400) y) CEIL) 1)
+;; The pause throws nothing; the first phase begins, on its last tick,
+;; with a shell.
+(example (len (get (run new-game still (sub PAUSE 1)) bullets)) 0)
+(example (len (get (run new-game still PAUSE) bullets)) SHELL-N)
+;; A bullet placed on the maiden hits her; one placed a metre off does not.
+(def on-her [dx]
+  (put (put (run new-game still 10) bullets
+            (list (bullet 10 (list (merge (head START) dx) (nth START 1) (nth START 2)) (list 0 0 0) 0 0 100)))
+       safe 0))
+(example (get (tick (on-her 0) still) lives) (sub LIVES 1))
+(example (get (tick (on-her F) still) lives) LIVES)
+;; ... and while untouchable she is not hit.
+(example (get (tick (put (on-her 0) safe 5) still) lives) LIVES)
+;; A bomb clears the air, costs one, and pressing it held does not spend two.
+(example (len (get (tick (run new-game still 120) (input 0 0 0 0 0 1 0)) bullets)) 0)
+(example (get (run (run new-game still 120) (input 0 0 0 0 0 1 0) 10) bombs) (sub BOMBS 1))
+;; A bullet passing half a metre away grazes once, on the tick it comes in reach.
+(def passer []
+  (put (run new-game still 10) bullets
+       (list (bullet 10 (list (merge (head START) (neg (mul 3 F))) (merge (nth START 1) (tenths 5)) (nth START 2))
+                     (list (mps 6) 0 0) 0 0 200))))
+(example (get (run passer still 60) graze) 1)
+(example (get (run passer still 60) lives) LIVES)
+;; ... and so does a still bullet she flies past, half a metre to her side.
+(def post []
+  (put (run new-game still 10) bullets
+       (list (bullet 10 (list (tenths 5) (nth START 1) (sub (nth START 2) (mul 2 F))) (list 0 0 0) 0 0 400))))
+(example (get (run post (input 0 1 0 0 0 0 0) 40) graze) 1)
+(example (get (run post (input 0 1 0 0 0 0 0) 40) lives) LIVES)
+;; A bomb in the pause does not hurt the witch; a clear or a game over
+;; gives way to a new game when retry is pressed.
+(example (get (tick new-game (input 0 0 0 0 0 1 0)) hp) (phase-hp 0))
+(example (get (tick (put new-game won 1) (input 0 0 0 0 0 0 1)) won) 0)
+(example (get (tick (put new-game over 1) (input 0 0 0 0 0 0 1)) over) 0)
+;; A hit with no spare life ends the game on that tick and the witch is
+;; not beaten on it, even by an amulet already upon her.
+(example (get (tick (put (put (put (on-her 0) lives 0) hp 0) k 5) still) won) 0)
+;; Shooting at the witch while she throws hurts her.
+(example (lt (get (run new-game (input 0 0 0 0 1 0 0) 240) hp) (phase-hp 0)) 1)
+
