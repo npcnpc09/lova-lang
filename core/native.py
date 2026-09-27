@@ -309,6 +309,14 @@ def enrich(anomaly: Dict[str, Any], tree: Optional[Node]) -> Dict[str, Any]:
             span = span_for_path(tree, anomaly.get("position_path") or ())
         if span is not None:
             anomaly["span"] = span
+    # where a step budget went, by function name: the runtime reports the
+    # functions by name id, and a session's caller (a game, a script) never
+    # passed through the CLI that named them (journal, 2026-09-27)
+    symbols = getattr(tree, "symbols", None) if tree is not None else None
+    detail = anomaly.get("detail")
+    if symbols is not None and isinstance(detail, dict) and detail.get("calls") and "hot" not in detail:
+        detail["hot"] = [[symbols.name_of(i) or f"#{i}", steps, calls]
+                         for i, steps, calls in detail.pop("calls")]
     return anomaly
 
 

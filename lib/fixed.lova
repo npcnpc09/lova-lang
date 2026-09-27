@@ -76,6 +76,57 @@
 (example (cos 0) 1024)
 
 
+;; --- the fine circle: 4096ths of a turn -----------------------------
+;;
+;; A 256th of a turn is 1.4 degrees, which at twelve metres is 0.3 m: an
+;; aim rebuilt from `atan2` missed a maiden who stood still by 0.12 m
+;; (journal, 2026-09-27).  These are the same sine, read between its
+;; table's entries -- a 4096th of a turn is 0.09 degrees -- and an
+;; `atan2` bisected to the same grain.  The 256ths functions above are
+;; unchanged; a program picks the grain it needs.
+
+(def TURN-FINE [] 4096)
+
+(def sin-fine [ang]
+  (let [a (mod ang 4096)
+        k (div a 16)
+        f (mod a 16)
+        s0 (sin k)
+        s1 (sin (inc k))]
+    (merge s0 (quot (mul (sub s1 s0) f) 16))))
+
+(def cos-fine [ang] (sin-fine (merge ang 1024)))
+
+(def octant-fine [n d]
+  (fold (lambda lo (lambda step
+          (let [mid (merge lo step)]
+            (if (ge (mul n (cos-fine mid)) (mul d (sin-fine mid))) mid lo))))
+        0 (list 512 256 128 64 32 16 8 4 2 1)))
+
+(def atan2-fine [y x]
+  (if (and (eq x 0) (eq y 0))
+    0
+    (let [ax (abs x)
+          ay (abs y)
+          a (if (le ay ax) (octant-fine ay ax) (sub 1024 (octant-fine ax ay)))]
+      (cond (and (ge x 0) (ge y 0)) a
+            (and (lt x 0) (ge y 0)) (sub 2048 a)
+            (and (lt x 0) (lt y 0)) (merge 2048 a)
+            (mod (sub 4096 a) 4096)))))
+
+(example (sin-fine 0) 0)
+(example (sin-fine 1024) 1024)
+(example (sin-fine 2048) 0)
+(example (cos-fine 0) 1024)
+;; between the table's entries, the sine is read on the line between them
+(example (sin-fine 8) 12)
+(example (atan2-fine 1024 1024) 512)
+(example (atan2-fine 0 -1024) 2048)
+(example (atan2-fine -1024 0) 3072)
+;; a direction twelve metres out is recovered to within a 4096th
+(example (le (abs (sub (atan2-fine (sin-fine 700) (cos-fine 700)) 700)) 1) 1)
+
+
 ;; The angle a direction makes, in 256ths of a turn: 0 along +x, 64
 ;; along +y.  The first octant is found by bisection against the sine
 ;; table -- six halvings, the first of which is the whole octant, so

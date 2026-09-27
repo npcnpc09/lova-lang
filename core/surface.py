@@ -326,7 +326,35 @@ def _bound_spellings(tokens: List[str]) -> frozenset:
     """
     found = set()
     in_params = False
+    # `(let [a 1 b (f a)] body)`: of a let's brackets only the names are
+    # bound -- the values are expressions, scanned as any other, and an
+    # operator spelled in one of them is still the operator
+    let_brackets = set()
     for i, tok in enumerate(tokens):
+        if tok == "[" and i >= 2 and tokens[i - 2] == "(" and tokens[i - 1] == "let":
+            j = i + 1
+            want_name = True
+            depth = 0
+            while j < len(tokens) and not (depth == 0 and tokens[j] == "]"):
+                t = tokens[j]
+                if depth == 0 and want_name:
+                    if _is_identifier(t):
+                        found.add(t)
+                    want_name = False
+                elif t == "(":
+                    depth += 1
+                elif t == ")":
+                    depth -= 1
+                    if depth == 0:
+                        want_name = True
+                elif depth == 0:
+                    want_name = True          # an atom value
+                j += 1
+            let_brackets.add(i)
+            let_brackets.add(j)
+    for i, tok in enumerate(tokens):
+        if i in let_brackets:
+            continue
         if tok == "[":
             in_params = True
             continue
@@ -506,6 +534,77 @@ def _parse_defn_inner(
     for param in reversed(params):
         fn = _spanned(Node(op=LAMBDA, args=[Lit(param), fn]), tokens, pos, cursor)
     return name_id, fn, cursor
+
+
+def _parse_let_many(
+    tokens: List[str], pos: int, syms: SymbolTable
+) -> Tuple[Node, int]:
+    """``(let [a 1 b (f a) c 3] body)`` -- several bindings at once.
+
+    Nested `let`s, the first outermost, so each value sees the names
+    before it (and, a chain of lets sharing a frame, the ones after --
+    as `def`s do).  Writing one `let` a name drove a function of a dozen
+    locals twelve levels deep, and two of stage 1's functions lost a
+    closing paren in the nest (journal, 2026-09-27).  Nothing new
+    reaches the core.
+    """
+    cursor = pos + 3  # past `(`, `let`, `[`
+    pairs: List[Tuple[int, Node]] = []
+    while cursor < len(tokens) and tokens[cursor] != "]":
+        name = tokens[cursor]
+        if not _is_identifier(name):
+            raise ParseError(f"let: a binding starts with a name, got {name!r}",
+                             _token_span(tokens, cursor))
+        cursor += 1
+        if cursor >= len(tokens) or tokens[cursor] == "]":
+            raise ParseError(f"let: {name!r} has no value", _token_span(tokens, cursor - 1))
+        name_id = syms.intern(name)
+        value, cursor = _parse_expr(tokens, cursor, syms)
+        pairs.append((name_id, value))
+    if cursor >= len(tokens):
+        raise ValueError("let: unclosed binding list")
+    if not pairs:
+        raise ParseError("let: the binding list is empty", _token_span(tokens, pos, cursor + 1))
+    cursor += 1  # past `]`
+    body, cursor = _parse_expr(tokens, cursor, syms)
+    if cursor >= len(tokens) or tokens[cursor] != ")":
+        raise ParseError("let: expects a binding list and one body", _token_span(tokens, pos, cursor))
+    cursor += 1
+    out = body
+    for name_id, value in reversed(pairs):
+        out = _spanned(Node(op=LET, args=[Lit(name_id), value, out]), tokens, pos, cursor)
+    return out, cursor
+
+
+def _parse_fn(
+    tokens: List[str], pos: int, syms: SymbolTable
+) -> Tuple[Node, int]:
+    """``(fn [a b c] body)`` -- a function of several parameters, curried
+    as `def` curries them: ``(lambda a (lambda b (lambda c body)))``."""
+    cursor = pos + 2
+    if cursor >= len(tokens) or tokens[cursor] != "[":
+        raise ParseError("fn: expected a bracketed parameter list", _token_span(tokens, pos))
+    cursor += 1
+    params: List[int] = []
+    while cursor < len(tokens) and tokens[cursor] != "]":
+        if not _is_identifier(tokens[cursor]):
+            raise ParseError(f"fn: parameter names must be identifiers, got {tokens[cursor]!r}",
+                             _token_span(tokens, cursor))
+        params.append(syms.intern(tokens[cursor]))
+        cursor += 1
+    if cursor >= len(tokens):
+        raise ValueError("fn: unclosed parameter list")
+    if not params:
+        raise ParseError("fn: needs at least one parameter", _token_span(tokens, pos, cursor + 1))
+    cursor += 1
+    body, cursor = _parse_expr(tokens, cursor, syms)
+    if cursor >= len(tokens) or tokens[cursor] != ")":
+        raise ParseError("fn: expects a parameter list and one body", _token_span(tokens, pos, cursor))
+    cursor += 1
+    out = body
+    for p in reversed(params):
+        out = _spanned(Node(op=LAMBDA, args=[Lit(p), out]), tokens, pos, cursor)
+    return out, cursor
 
 
 # --- macros ------------------------------------------------------------------
@@ -749,9 +848,17 @@ def _macro_get(args, syms):
 
 
 def _macro_put(args, syms):
-    """``(put r x v)`` -- the record with field ``x`` set to ``v``."""
-    record, field, value = args
-    return Node(op=MAP_PUT, args=[record, _field_name(field, syms, "put"), value])
+    """``(put r x v)`` -- the record with field ``x`` set to ``v``.
+
+    ``(put r x 1 y 2 z 3)`` sets several fields, left to right, where a
+    world updated in one step used to read ``(put (put (put r x 1) y 2)
+    z 3)`` (journal, 2026-09-27)."""
+    if len(args) < 3 or len(args) % 2 == 0:
+        raise ValueError(f"put: expects a record and field/value pairs, got {len(args)} arguments")
+    out = args[0]
+    for i in range(1, len(args), 2):
+        out = Node(op=MAP_PUT, args=[out, _field_name(args[i], syms, "put"), args[i + 1]])
+    return out
 
 
 # name -> (arity, expander).  Arity ``None`` means variadic.  Arity is
@@ -822,7 +929,7 @@ MACROS = {
     "list": (None, _macro_list),
     "rec": (None, _macro_rec),
     "get": (2, _macro_get),
-    "put": (3, _macro_put),
+    "put": (None, _macro_put),
     "boundary": (2, _macro_boundary),
 }
 
@@ -889,8 +996,22 @@ def _parse_expr_inner(
             raise ValueError("unexpected EOF after an open paren")
         op_sym = tokens[pos + 1]
         if op_sym == "(":
-            raise ValueError("operator must be an identifier, not a sub-expression")
+            # A call whose head is an expression: `((get e shooter) t a)`
+            # is `(apply (get e shooter) t a)`.  The core has had `apply`
+            # all along; only the surface refused to spell it this way,
+            # and a program holding functions in records had to bind one
+            # to a name first (journal, 2026-09-27).
+            head, cursor = _parse_expr(tokens, pos + 1, syms)
+            call_args, cursor = _parse_args(tokens, cursor, syms)
+            if not call_args:
+                raise ParseError("a call needs at least one argument after its head",
+                                 _token_span(tokens, pos, cursor))
+            return _spanned(Node(op=APPLY, args=[head] + call_args), tokens, pos, cursor), cursor
         op_name = SURFACE_ALIASES.get(op_sym, op_sym)
+        if op_name == "let" and pos + 2 < len(tokens) and tokens[pos + 2] == "[":
+            return _parse_let_many(tokens, pos, syms)
+        if op_name == "fn":
+            return _parse_fn(tokens, pos, syms)
         if op_name == "defn":
             raise ValueError(
                 "defn is a top-level form: it introduces a binding for the "

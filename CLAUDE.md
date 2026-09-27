@@ -239,6 +239,18 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M43** (2026-09-27) -- **the danmaku's pain points.** Surface
+sugar, no new byte: `(let [a 1 b (f a)] body)`, `(fn [a b] body)`,
+`(put r x 1 y 2)` and `((expr) args)` compile to exactly the nested
+forms; `quot` (truncating) in the prelude; `sin-fine` / `atan2-fine`
+in `lib/fixed.lova`; native traps name their hot functions; a failed
+`check --native` re-runs only its misses; the CLI survives a GBK
+console; `tools/lova_sugar.py` rewrites old source. Stage-1 rules
+rewritten, 53/53: depth 23 -> 14, lets 175 -> 51, tokens only -3.5%
+-- a win for depth, not tokens. The in-session claim that GDScript
+cannot run headless experiments was corrected. Q151, Q152. Tests
+1133. `journal/README.md`, "Milestone 43".
+
 **M41** (2026-09-24) -- **LOVA in a browser.** `native/lova-wasm`
 links the runtime into a WebAssembly module (no imports, no
 wasm-bindgen; `web/lova.js` is the Godot class's shape in JS); held to

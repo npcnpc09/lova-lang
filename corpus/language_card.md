@@ -12,7 +12,10 @@ floats and no mutable variables.
                                  ; defs may call each other in any order (mutual recursion is fine)
 (f a b)                          ; call a defined function (curried under the hood)
 (lambda x body)                  ; an anonymous function of ONE parameter
+(fn [a b] body)                  ; an anonymous function of several parameters
 (let name value body)            ; bind name in body (recursive under a lambda)
+(let [a 1 b (f a)] body)         ; several bindings, in order; each sees the ones before
+((get r f) x y)                  ; call any expression that yields a function
 (if c then else)                 ; c is an integer: non-zero is true
 (cond c1 v1 c2 v2 ... default)   ; a chain of ifs
 (seq a b c)                      ; evaluate in order, value of the last
@@ -47,7 +50,8 @@ which defs no example reaches: write the relation that would.
 
 ```
 (merge a b)  a + b        (sub a b)  a - b        (mul a b)  a * b
-(div a b)    a // b       (mod a b)  a mod b      (neg a)    -a
+(div a b)    a // b, floors toward -inf   (quot a b) truncates toward 0   (mod a b)  a mod b
+(neg a)    -a
 (inc n) n+1  (abs a)      (min a b)  (max a b)    (pow b e)  b^e
 (gcd a b)    (p n) partitions   (tau n) divisor count   (sigma n) divisor sum
 (mobius n)   (partition n) n // 2
@@ -65,7 +69,8 @@ A string literal `"abc"` is a text (`\n`, `\t`, `\"` and `\\` are
 escapes); `(eq a b)` compares texts, and every list function reads a
 text as its codepoints (`(head "abc")` is 97). `words`, `lines` and
 `split` yield texts. `(rec x 1 y 2)` is a record with named fields,
-`(get r x)` reads one, `(put r x 9)` is `r` with `x` set; a field name
+`(get r x)` reads one, `(put r x 9)` is `r` with `x` set (`(put r x 9 y 0)`
+sets several); a field name
 is a bare symbol, never evaluated, so `x` may also be a variable. Use a
 record, not a list taken apart by position, to carry several values
 through a fold or a recursion: `(get st memo)` rather than `(nth st 2)`.
@@ -84,7 +89,7 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 ; construction
 (repeat x n)
 ; integers
-(even n) (odd n) (inc n) (pow b e) (gcd2 a b) (digits n)
+(even n) (odd n) (inc n) (quot a b) (pow b e) (gcd2 a b) (digits n)
 ; text
 (split text sep) (lines text) (chomp line) (words text) (join parts sep)
 (parse-int text) (text-of n) (text-lt a b)

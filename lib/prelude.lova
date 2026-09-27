@@ -124,6 +124,15 @@
 
 (def inc [n] (merge n 1))
 
+;; Division toward zero.  `div` floors -- -9/8 is -2 and 9/8 is 1 -- so
+;; anything moved by a signed amount and divided goes further one way
+;; than the other: a left strafe outrunning the right one was found by a
+;; mirror example three times, in Neon Alley, the danmaku duel and its
+;; stage 1 (journal, 2026-09-27).  `quot` is what such a program means.
+(def quot [a b]
+  (let [q (div (abs a) (abs b))]
+    (if (eq (lt a 0) (lt b 0)) q (neg q))))
+
 (def pow [b e]
   (merge 0 (head (iterate (cons 1 (cons e (nil)))
                           (lambda s (le (head (tail s)) 0))

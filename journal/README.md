@@ -666,6 +666,105 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### Milestone 43 (2026-09-27) -- the danmaku's pain points
+
+The owner asked, at the end of the M42 stage-1 slice, whether writing
+the game in LOVA had actually been convenient.  The honest answer was
+"half and half", and most of the session's time had gone to Godot
+(rendering, frame rate, assets), not to the rules.  What LOVA did well
+there it did structurally: four faults caught by relations before a
+run (`div` flooring the left strafe, a lead point 0.12 m off, a pause
+boundary, a missed graze); experiments run without opening the game
+(does a circling autopilot ever get hit -- five volleys, thirty
+seconds, answered in a minute); the host split clean.  What it did
+badly, **observed, not measured** -- these are one session's notes:
+
+1. **Nesting.**  A `let` bound one name, so a function of ten locals
+   was ten levels deep; `lib/danmaku.lova` reached depth 23 with 175
+   lets.  Two unbalanced parens (`volley`, `lead-point`) took a
+   hand-written balance script to find.
+2. **No call on an expression.**  `((get e shooter) t a)` was refused;
+   every stored function was let-bound to a name first, and a curried
+   lambda of four parameters was four nested `lambda`s.
+3. **Integers only, and coarsely.**  Angles were 1/256 of a turn, the
+   cause of the 0.12 m lead error; `div` floors, so a truncating
+   division (`tdiv`) was written by hand -- the third program to do so
+   after Neon Alley (M41) and the M42 duel's first draft.
+4. **Tooling.**  A step trap from a native session listed its hot
+   functions by name id; a failed `check --native` re-ran every
+   example in Python to locate the fault (two to three minutes a
+   miss); a GBK console crashed the CLI on the first non-GBK character
+   of a report.
+5. **Cost.**  A bullet was 139 steps a tick until it was rewritten as
+   a closed form by hand (M42); left as it is -- Q150 already names it.
+
+**What changed, all surface or library -- no byte, no operator.**
+
+- `(let [a 1 b (f a)] body)`: several bindings in order, each seeing
+  the ones before, parsed as nested lets -- **the bytes are those of
+  the nested form**.  Only the bracket's names are bound, not its
+  values (`(let b 10 (let [a b b 2] ...))` reads the outer `b`).
+- `(fn [a b c] body)`: curried lambdas, as `def` already was.
+- `(put r x 1 y 2)`: one put for several fields, nested puts.
+- `((expr) args)`: any expression at the head of a call compiles to
+  `apply` -- a function held in a record, a list, a call's result.
+- `(quot a b)` in the prelude, truncating toward zero beside `div`.
+- `lib/fixed.lova`: `sin-fine` / `cos-fine` (the 256-step table
+  interpolated) and `atan2-fine` in 4096ths of a turn, 9 examples,
+  19/19.
+- `core/native.py` `enrich` names a native trap's `calls` as `hot`,
+  so a session's caller (the game, a script) sees `spin 900 steps`
+  and not `#41`.
+- `check --native` re-runs **only the failing examples** in Python for
+  the locator: a failed check of the danmaku 2-3 min -> ~1 min.
+- The CLI sets `errors="replace"` on its streams: a console that cannot
+  print a character shows `?`, it does not crash.
+- `tools/lova_sugar.py` rewrites old source into the sugar
+  mechanically (let chains, put chains, lambda chains, column-aware),
+  and `tools/lova_shape.py` measures the shape.  The card template
+  carries the new forms; the card is regenerated.
+
+**The measurement: the stage-1 rules rewritten.**  `lib/danmaku.lova`
+and `lib/danmaku_stage1.lova` were put through `lova_sugar.py`, the
+let-bound calls turned into expression-head calls by hand, `tdiv`
+replaced by `quot`, and checked: 53/53 examples pass, as before.
+
+| | danmaku.lova before | after | stage1 before | after |
+|---|---|---|---|---|
+| max depth | 23 | 14 | 16 | 13 |
+| forms nested past 10 | 20 | 5 | 14 | 4 |
+| `let` forms | 175 | 51 | -- | -- |
+| parentheses | | -12.5% | | |
+| characters | | -7.5% | | |
+| LLM tokens (cl100k) | | **-3.5%** | | **-1.9%** |
+
+**The honest reading.**  I had estimated 15-25% fewer tokens; the
+measured saving is 3.5% and 1.9%.  A bracketed let still spells every
+name and every value, and a closing paren costs little in a tokenizer
+that folds `)))))` into one token -- so the sugar is a win for
+*depth*, the thing that cost round trips (the balance hunts, the next
+definition blamed for this one's missing paren), and hardly one for
+tokens.  Whether that turns into fewer attempts is unmeasured: the
+depth that hurt was in authoring, and the rewrite was mechanical.
+
+**A correction to what was said in session.**  I told the owner
+"GDScript can't run experiments without opening the game".  That was
+wrong: `godot --headless --script` runs any script, and rules written
+as a pure class test the same way.  What LOVA has that GDScript lacks
+is not the capability but the defaults: the rules *must* be pure (a
+GDScript game rarely is -- `move_and_slide`, nodes, `_process`
+timing); runs are deterministic across the Python, Rust and WASM
+runtimes, so a replay is its inputs; the examples live in the program
+and a miss is located, where GDScript needs GUT or GdUnit and locates
+nothing; and a runaway loop meets a step budget instead of freezing
+the game.  Whether those defaults pay for the surface and the speed is
+Q135's question, still open.
+
+Tests 1133, 1132 passing and `test_brief`'s known Windows-path failure deselected (`tests/test_sugar.py`, 8 new; `tests/test_danmaku.py`
+rewritten for the new scene -- a 39-integer HUD and six lists, road
+and boss, under 120 000 steps a tick and scene; `test_fps`'s count).
+Q151, Q152.
+
 ### Milestone 42 (2026-09-27) -- A danmaku duel in three dimensions
 
 The owner asked whether Godot could carry a Touhou Project 3D
@@ -3228,6 +3327,16 @@ the corpus grows again.
   near test.  Either the tick hands its places over, or Godot is given
   the closed form at birth and draws from it, the rules keeping only
   death and collision.
+- **Q151** *(M43)*: does the sugar cut attempts, or only depth?  The
+  rewrite was mechanical; the pain was in authoring.  Fresh sessions
+  write the same new card (a phase, its pattern, its examples) with
+  the card of before and the card of after; count paren faults,
+  attempts and the characters read to find each.
+- **Q152** *(M43)*: the sugar as a hint.  `lova_sugar.py` knows every
+  let chain, put chain and lambda chain in a program; `analyze` could
+  offer them as warnings with the rewrite, as the lint pass does for
+  an unread parameter -- or the rewriter could be left a tool, if Q151
+  finds the sugar changes nothing a session does.
 - **Q121** *(Exp 29)*: examples as the locator's power -- the same
   faults with three, eight and twenty examples; the confident-mislead
   rate (Q116) as a function of the count.

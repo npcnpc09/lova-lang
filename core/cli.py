@@ -185,12 +185,17 @@ def name_anomaly(anomaly: Any, symbols: Any) -> None:
     if symbols is None or not isinstance(anomaly, dict):
         return
     detail = anomaly.get("detail")
-    if isinstance(detail, dict) and detail.get("calls"):
+    if isinstance(detail, dict) and (detail.get("calls") or detail.get("hot")) and "Where the steps went" not in anomaly.get("repair_hint", ""):
         # Exp 19 / Exp 20: where a step or depth budget went, by function
         # name -- the steps spent in each function's own body, and its
         # calls.  Ranked by steps: three sessions read the call counts
         # of Exp 19 as costs and inlined one-line helpers (journal Exp 20).
-        hot = [(symbols.name_of(i) or f"#{i}", steps, calls) for i, steps, calls in detail.pop("calls")]
+        # A native session's anomaly may already carry `hot` (named by
+        # core.native.enrich).
+        if detail.get("calls"):
+            hot = [(symbols.name_of(i) or f"#{i}", steps, calls) for i, steps, calls in detail.pop("calls")]
+        else:
+            hot = [tuple(row) for row in detail["hot"]]
         detail["hot"] = [[name, steps, calls] for name, steps, calls in hot]
         anomaly["repair_hint"] = (anomaly.get("repair_hint", "") +
             "  Where the steps went: " +
@@ -896,7 +901,22 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _safe_console() -> None:
+    """A character the console cannot show is replaced, never fatal.
+
+    A Chinese Windows console is GBK; a result holding a codepoint GBK
+    lacks -- an operator's Greek spelling, a text beyond the BMP -- made
+    `lova check` die with UnicodeEncodeError after the examples had run
+    (journal, 2026-09-27).  The encoding stays the console's own."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    _safe_console()
     args = build_parser().parse_args(argv)
     return args.func(args)
 

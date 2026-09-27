@@ -92,17 +92,21 @@ def _prepared(source: str, prelude: bool):
 def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
           max_call_depth: Optional[int] = None, granted: int = 0,
           locate_budget_s: float = 2.0,
-          runtime: str = "python") -> List[Dict[str, Any]]:
+          runtime: str = "python",
+          only: Optional[set] = None) -> List[Dict[str, Any]]:
     """Run every example; one result per example, in source order.
 
     ``runtime="native"`` runs them on a native runtime (one process for
     the whole check, because an example is a small tree run twice and
     starting a binary per example costs more than the example).  It is
-    the fast answer to "do they all pass": the moment one misses, or
-    traps, or the program is outside the native runtime's phase, the
-    whole check is re-run in Python, because the located fault, the
-    reach sets and the named anomaly are the Python side's and a
-    half-native report would be two reports.
+    the fast answer to "do they all pass".  An example that misses or
+    traps there is run again in Python -- that example alone, because the
+    located fault, the reach sets and the named anomaly are the Python
+    side's -- and the passing ones keep their native results: re-running
+    a whole check of long simulations in Python cost two or three minutes
+    for one miss (journal, 2026-09-27).  A program outside the native
+    runtime's phase is checked in Python throughout.  ``only`` limits a
+    check to those example indices.
     """
     from core.cli import build, format_value
 
@@ -110,7 +114,13 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
         fast = _check_native(source, prelude=prelude, max_steps=max_steps,
                              max_call_depth=max_call_depth, granted=granted)
         if fast is not None:
-            return fast
+            results_n, redo = fast
+            if not redo:
+                return results_n
+            slow = check(source, prelude=prelude, max_steps=max_steps, max_call_depth=max_call_depth,
+                         granted=granted, locate_budget_s=locate_budget_s, runtime="python", only=set(redo))
+            by_index = {r["index"]: r for r in slow}
+            return [by_index.get(r["index"], r) for r in results_n]
     elif runtime != "python":
         raise ValueError(f"check: runtime is 'python' or 'native', not {runtime!r}")
 
@@ -129,7 +139,7 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
     exprs: Dict[int, str] = {}
     expr_spans: Dict[int, Any] = {}
     for index, ex in enumerate(examples):
-        if ex["span"] is None:
+        if ex["span"] is None or (only is not None and index not in only):
             continue
         a, b = ex["span"]
         # `(example expr expected)` -> the two texts, by their spans.
@@ -202,13 +212,13 @@ def check(source: str, *, prelude: bool = True, max_steps: Optional[int] = None,
 
 def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
                   max_call_depth: Optional[int],
-                  granted: int) -> Optional[List[Dict[str, Any]]]:
-    """Every example on a native runtime, or ``None``.
+                  granted: int):
+    """Every example on a native runtime: ``(results, redo)``, or ``None``.
 
-    ``None`` means "Python has to do this one": no native runtime on the
-    machine, a program outside its phase, or -- the load-bearing case --
-    an example that did not pass, whose report is worth more than the
-    speed.  Nothing here compares values: the protocol carries the
+    ``redo`` lists the examples that missed or trapped, for Python to run
+    again and locate; ``None`` means "Python has to do the whole check":
+    no native runtime on the machine, or a program outside its phase.
+    Nothing here compares values: the protocol carries the
     printed form, so what is compared is the two strings, which is what
     the golden set guarantees the Python runtime would have printed.
     """
@@ -226,6 +236,7 @@ def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
     limits = {"max_steps": max_steps if max_steps is not None else 1_000_000,
               "max_call_depth": max_call_depth if max_call_depth is not None else 10_000}
     results: List[Dict[str, Any]] = []
+    redo: List[int] = []
     try:
         for index, ex in enumerate(examples):
             if ex["span"] is None:
@@ -234,33 +245,40 @@ def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
             expr_span, expected_span = ex["expr"].span, ex["expected"].span
             expr_text = prepared_source[expr_span[0]:expr_span[1]]
             expected_text = prepared_source[expected_span[0]:expected_span[1]]
+            entry = {
+                "index": index, "span": [a, b], "excerpt": prepared_source[a:b],
+                "line": line_col(prepared_source, a)[0],
+                "col": line_col(prepared_source, a)[1], "reaches": [],
+            }
             try:
                 want_tree, _ = build(with_body(expected_text), prelude=prelude)
                 got_tree, _ = build(with_body(expr_text), prelude=prelude)
             except Exception:              # noqa: BLE001 -- Python reports it
-                return None
+                results.append(dict(entry, passed=False))
+                redo.append(index)
+                continue
             # Screened against *this* runtime's list, which its `ping`
             # gave us, not against a copy of a phase's scope kept here.
             if not (supports(want_tree, native) and supports(got_tree, native)):
                 return None
-            want = native.run(want_tree, allow=granted, **limits)
-            got = native.run(got_tree, allow=granted, **limits)
+            try:
+                want = native.run(want_tree, allow=granted, **limits)
+                got = native.run(got_tree, allow=granted, **limits)
+            except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError):
+                results.append(dict(entry, passed=False))   # a trap: the report is Python's
+                redo.append(index)
+                continue
             if got.value_text != want.value_text:
-                return None
-            results.append({
-                "index": index, "span": [a, b], "excerpt": prepared_source[a:b],
-                "line": line_col(prepared_source, a)[0],
-                "col": line_col(prepared_source, a)[1],
-                "passed": True, "value": got.value_text, "steps": got.steps,
-                "reaches": [],
-            })
+                results.append(dict(entry, passed=False, expected=want.value_text,
+                                    got=got.value_text, steps=got.steps))
+                redo.append(index)
+                continue
+            results.append(dict(entry, passed=True, value=got.value_text, steps=got.steps))
     except (NativeUnavailable, NativeUnsupported):
         return None
-    except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError):
-        return None                        # a trap: the report is Python's
     finally:
         native.close()
-    return results
+    return results, redo
 
 
 def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwargs, budget_s,
