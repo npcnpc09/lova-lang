@@ -643,37 +643,45 @@ def encode(node: Node) -> bytes:
 
 
 def _encode_into(node: Node, buf: bytearray) -> None:
-    buf.append(node.op)
-    if node.op == LIT_TEXT:
-        data = str(node.args[0]).encode("utf-8")
-        if len(data) > 0xFFFF:
-            raise ValueError(f"LIT_TEXT too long: {len(data)} bytes")
-        buf.extend(len(data).to_bytes(2, "big"))
-        buf.extend(data)
-        return
-    if node.op == LIT_INT:
-        val: int = node.args[0]
-        # How many bytes needed?  ``bit_length`` + sign bit.
-        bits = val.bit_length() + 1
-        n_bytes = max(1, (bits + 7) // 8)
-        if n_bytes > 255:
-            raise ValueError(f"LIT_INT too large: {val}")
-        buf.append(n_bytes)
-        buf.extend(val.to_bytes(n_bytes, "big", signed=True))
-        return
-    sig = SIGNATURES[node.op]
-    if sig["arity"] == "variadic":
-        for child in node.args:
-            _encode_into(child, buf)
-        buf.append(END)
-    else:
-        expected = sig["arity"]
-        if len(node.args) != expected:
-            raise ValueError(
-                f"token {sig['name']} expects {expected} args, got {len(node.args)}"
-            )
-        for child in node.args:
-            _encode_into(child, buf)
+    # A loop over an explicit stack, not a recursion: a program of many
+    # defs is one chain of nested lets, a level a def, and a game's rules
+    # (the danmaku's, ~1000 defs) ran past Python's recursion limit here.
+    # The stack holds the nodes still to write and, as a bare int, a
+    # variadic's closing END; children go on in reverse to come off in order.
+    stack: list = [node]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, int):
+            buf.append(node)
+            continue
+        buf.append(node.op)
+        if node.op == LIT_TEXT:
+            data = str(node.args[0]).encode("utf-8")
+            if len(data) > 0xFFFF:
+                raise ValueError(f"LIT_TEXT too long: {len(data)} bytes")
+            buf.extend(len(data).to_bytes(2, "big"))
+            buf.extend(data)
+            continue
+        if node.op == LIT_INT:
+            val: int = node.args[0]
+            # How many bytes needed?  ``bit_length`` + sign bit.
+            bits = val.bit_length() + 1
+            n_bytes = max(1, (bits + 7) // 8)
+            if n_bytes > 255:
+                raise ValueError(f"LIT_INT too large: {val}")
+            buf.append(n_bytes)
+            buf.extend(val.to_bytes(n_bytes, "big", signed=True))
+            continue
+        sig = SIGNATURES[node.op]
+        if sig["arity"] == "variadic":
+            stack.append(END)
+        else:
+            expected = sig["arity"]
+            if len(node.args) != expected:
+                raise ValueError(
+                    f"token {sig['name']} expects {expected} args, got {len(node.args)}"
+                )
+        stack.extend(reversed(node.args))
 
 
 # --- decoding ----------------------------------------------------------------
