@@ -928,11 +928,17 @@ class CompileReport:
 
 
 def _count_nodes(node: Node) -> int:
-    if node.op == LIT_INT:
-        return 1
-    return 1 + sum(
-        _count_nodes(c) for c in node.args if isinstance(c, Node)
-    )
+    # A stack, not recursion: a large program (a game's rules with a
+    # thousand examples) nests deeper than Python's C recursion limit,
+    # and a RecursionError here sends callers down their slow fallback.
+    count = 0
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        count += 1
+        if n.op != LIT_INT:
+            stack.extend(c for c in n.args if isinstance(c, Node))
+    return count
 
 
 # --- pass: capability check (M19) -------------------------------------------
