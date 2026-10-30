@@ -80,8 +80,8 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 
 ```
 ; lists
-(len xs) (sum xs) (product xs) (append xs ys) (replace t old new) (nth xs k)
-(last xs) (take n xs) (drop n xs) (contains xs v) (same a b)
+(len xs) (sum xs) (product xs) (append xs ys) (replace t old new) (last xs)
+(take n xs) (drop n xs) (contains xs v) (same a b)
 ; higher order
 (all f xs)
 ; sorting
@@ -89,7 +89,7 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 ; construction
 (repeat x n)
 ; integers
-(even n) (odd n) (inc n) (quot a b) (pow b e) (gcd2 a b) (digits n)
+(even n) (odd n) (inc n) (pow b e) (gcd2 a b) (digits n)
 ; text
 (split text sep) (lines text) (chomp line) (words text) (join parts sep)
 (parse-int text) (text-of n) (text-lt a b)
@@ -101,7 +101,7 @@ The library, always available (this index is generated from `lib/prelude.lova`):
 (println v)
 ```
 
-Notes: `(replace t old new)` Every `old` in `t` replaced by `new` (M32).  `(nth xs k)` The element of `xs` at 0-based index `k`; a fault past the end.  `(words text)` The words of `text`: runs of non-space characters.  `(join parts sep)` Join `parts` with `sep` between them; `sep` a codepoint or a text.  `(text-of n)` An integer as decimal text.  `(text-lt a b)` Lexicographic order on texts or codepoint lists, so `(sort-by text-lt words)`.  `(map-count m k)` `m` with the count under `k` one higher: the word-count step.
+Notes: `(replace t old new)` Every `old` in `t` replaced by `new` (M32).  `(words text)` The words of `text`: runs of non-space characters.  `(join parts sep)` Join `parts` with `sep` between them; `sep` a codepoint or a text.  `(text-of n)` An integer as decimal text.  `(text-lt a b)` Lexicographic order on texts or codepoint lists, so `(sort-by text-lt words)`.  `(map-count m k)` `m` with the count under `k` one higher: the word-count step.
 
 List operators: `map` `filter` `fold` `reverse` `range` `any` `sort-by` `zip`. `(map f xs)`, `(filter f xs)` (keeps x where `(f x)` is
 non-zero), `(fold f acc xs)` (calls `(f acc x)`), `(reverse xs)`,
@@ -109,6 +109,11 @@ non-zero), `(fold f acc xs)` (calls `(f acc x)`), `(reverse xs)`,
 hit), `(sort-by less xs)` (stable; `(less a b)` non-zero puts a first),
 `(zip xs ys)` (two-element lists, to the shorter). One step an element,
 plus the function called.
+
+Fixed-point operators: `sin` `cos` `sin-fine` `cos-fine` `quot` `nth` `isqrt`. `(sin a)`, `(cos a)`: 1024 times the sine of `a` 256ths
+of a turn; `(sin-fine a)`, `(cos-fine a)` the same in 4096ths;
+`(quot a b)` divides toward 0; `(nth xs k)` is the element at 0-based
+`k`, a fault outside; `(isqrt n)` the integer square root. One step each.
 
 Text operators: `text-len` `text-cat` `text-slice` `text-find` `text-split` `text-join` `text-chars` `text-of-chars` `text-cmp` `text-int` `int-text` `text?` `text-trim` `text-match` `text-match-all`. `(text-slice t start end)`, `(text-find t needle)` (-1 if
 absent), `(text-split t sep)` (`""` splits on whitespace), `(text-join

@@ -10,7 +10,11 @@ fold, `stand` and its `turn` written out inside `shot-of`'s map, a
 model's vertices numbered and its reach measured once when the module
 is read, an object that lies wholly behind a camera standing in the
 scene dropped whole, and `lib/fixed.lova`'s sine table read by
-`map-get` rather than walked by `nth`).
+`map-get` rather than walked by `nth`).  6b (2026-10-31): `sin`, `cos`,
+`quot`, `nth` and `isqrt` are operators, one step a node -- the fps
+frame 108534 -> 106310 and its sixty ticks 495525 -> 366395, the
+platformer 145212 -> 141817 and 376232 -> 340461, the city 839669 ->
+825839 and 871166 -> 851816.
 
 The point of pinning them is that a frame's cost is what decides
 whether a window is smooth, and nothing else in the suite would notice
@@ -33,9 +37,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # game -> (steps at n=0, steps at n=60)
 COST = {
-    "platformer": (145212, 376232),
-    "citybuilder": (839669, 871166),
-    "fps": (108534, 495525),
+    "platformer": (141817, 340461),
+    "citybuilder": (825839, 851816),
+    "fps": (106310, 366395),
 }
 
 # A frame is 300 steps a face and the count moves with the models; the

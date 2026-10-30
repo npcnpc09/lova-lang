@@ -107,6 +107,7 @@ from core.tokens import (
     LIT_TEXT, TEXT_LEN, TEXT_CAT, TEXT_SLICE, TEXT_FIND, TEXT_SPLIT, TEXT_JOIN, TEXT_CHARS, TEXT_OF_CHARS, TEXT_CMP, TEXT_INT, INT_TEXT, IS_TEXT, TEXT_TRIM,
     TEXT_MATCH, TEXT_MATCH_ALL,
     LIST_MAP, LIST_FILTER, LIST_FOLD, LIST_REVERSE, LIST_RANGE, LIST_ANY, LIST_SORT_BY, LIST_ZIP,
+    FIX_SIN, FIX_COS, FIX_SIN_FINE, FIX_COS_FINE, FIX_QUOT, FIX_NTH, FIX_ISQRT,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -2623,6 +2624,122 @@ def _op_LIST_ZIP(node: Node, rt: Runtime, chained: bool) -> Any:
     return list_from(list_from([x, y]) for x, y in zip(xs[:n], ys[:n]))
 
 
+# --- the fixed-point family (6b) ----------------------------------------------
+#
+# What lib/fixed.lova and the prelude computed in LOVA -- a sine was
+# thirty-odd steps, a fine sine a hundred and twenty, `quot` twenty --
+# as operators of one step a node, to the bit the same: the quarter
+# table, the floored reflections, the line between two entries rounded
+# toward zero, twelve Newton rounds.  `native/lova-rt/src/fixed.rs` is
+# the port.  Every operand is evaluated before any is coerced.
+
+SIN_Q = (0, 25, 50, 75, 100, 125, 150, 175, 200, 224, 249, 273, 297,
+         321, 345, 369, 392, 415, 438, 460, 483, 505, 526, 548, 569, 590,
+         610, 630, 650, 669, 688, 706, 724, 742, 759, 775, 792, 807, 822,
+         837, 851, 865, 878, 891, 903, 915, 926, 936, 946, 955, 964, 972,
+         980, 987, 993, 999, 1004, 1009, 1013, 1016, 1019, 1021, 1023, 1024, 1024)
+
+
+def fixed_sin(ang: int) -> int:
+    """1024 sin of ``ang`` 256ths of a turn."""
+    k = ang % 256
+    if k <= 64:
+        return SIN_Q[k]
+    if k <= 128:
+        return SIN_Q[128 - k]
+    if k <= 192:
+        return -SIN_Q[k - 128]
+    return -SIN_Q[256 - k]
+
+
+def fixed_quot(a: int, b: int) -> int:
+    """Division toward zero (the caller has ruled out ``b == 0``)."""
+    q = abs(a) // abs(b)
+    return q if (a < 0) == (b < 0) else -q
+
+
+def fixed_sin_fine(ang: int) -> int:
+    """1024 sin of ``ang`` 4096ths of a turn, read between the entries."""
+    a = ang % 4096
+    k, f = a // 16, a % 16
+    s0 = fixed_sin(k)
+    s1 = fixed_sin(k + 1)
+    return s0 + fixed_quot((s1 - s0) * f, 16)
+
+
+def fixed_isqrt(n: int) -> int:
+    """lib/fixed.lova's square root: 0 below 1, 1 to 3, else twelve
+    Newton rounds from ``max(1024, n // 1024)``."""
+    if n < 4:
+        return 1 if n > 0 else 0
+    x = max(1024, n // 1024)
+    for _ in range(12):
+        x = (x + n // x) // 2
+    return x
+
+
+def _nth_outside() -> DomainTrap:
+    return DomainTrap(
+        "domain-error", "nth: the index is outside the list",
+        {"operator": "nth"},
+        "the index is past the end (or negative): guard it with "
+        "`(lt k (len xs))`; indices start at 0",
+    )
+
+
+def fixed_nth(xs: Any, k: int) -> Any:
+    """The element at ``k`` -- a text's codepoint -- or a domain error."""
+    if isinstance(xs, str):
+        if 0 <= k < len(xs):
+            return ord(xs[k])
+        raise _nth_outside()
+    xs = _as_list(xs, "nth")
+    if k < 0:
+        raise _nth_outside()
+    while isinstance(xs, Cons):
+        if k == 0:
+            return xs.head
+        k -= 1
+        xs = xs.tail
+    raise _nth_outside()
+
+
+def _op_FIX_TRIG(node: Node, rt: Runtime, chained: bool) -> Any:
+    op = node.op
+    ang = _as_int(_eval(node.args[0], rt), SIGNATURES[op]["name"])
+    if op == FIX_SIN:
+        return fixed_sin(ang)
+    if op == FIX_COS:
+        return fixed_sin(ang + 64)
+    if op == FIX_SIN_FINE:
+        return fixed_sin_fine(ang)
+    return fixed_sin_fine(ang + 1024)
+
+
+def _op_FIX_QUOT(node: Node, rt: Runtime, chained: bool) -> Any:
+    a = _eval(node.args[0], rt)
+    b = _eval(node.args[1], rt)
+    a = _as_int(a, "quot")
+    b = _as_int(b, "quot")
+    if b == 0:
+        raise DomainTrap(
+            "domain-error", "quot: division by zero",
+            {"operator": "quot"},
+            "guard the divisor with `(if d (quot a d) fallback)`",
+        )
+    return fixed_quot(a, b)
+
+
+def _op_FIX_NTH(node: Node, rt: Runtime, chained: bool) -> Any:
+    xs = _eval(node.args[0], rt)
+    k = _as_int(_eval(node.args[1], rt), "nth")
+    return fixed_nth(xs, k)
+
+
+def _op_FIX_ISQRT(node: Node, rt: Runtime, chained: bool) -> Any:
+    return fixed_isqrt(_as_int(_eval(node.args[0], rt), "isqrt"))
+
+
 def _op_TEXT_CHARS(node: Node, rt: Runtime, chained: bool) -> Any:
     v = _eval(node.args[0], rt)
     return _text_chars(v, "text-chars") if isinstance(v, str) else _as_list(v, "text-chars")
@@ -3555,6 +3672,9 @@ _HANDLERS = {
     TEXT_CHARS: _op_TEXT_CHARS, TEXT_OF_CHARS: _op_TEXT_OF_CHARS, TEXT_CMP: _op_TEXT_CMP,
     TEXT_INT: _op_TEXT_INT, INT_TEXT: _op_INT_TEXT, IS_TEXT: _op_IS_TEXT, TEXT_TRIM: _op_TEXT_TRIM,
     TEXT_MATCH: _op_TEXT_MATCH, TEXT_MATCH_ALL: _op_TEXT_MATCH_ALL,
+    FIX_SIN: _op_FIX_TRIG, FIX_COS: _op_FIX_TRIG, FIX_SIN_FINE: _op_FIX_TRIG,
+    FIX_COS_FINE: _op_FIX_TRIG, FIX_QUOT: _op_FIX_QUOT, FIX_NTH: _op_FIX_NTH,
+    FIX_ISQRT: _op_FIX_ISQRT,
     LIT_INT: _op_LIT_INT,
     IDENTITY: _op_IDENTITY,
     MERGE: _op_MERGE,

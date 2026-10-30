@@ -62,14 +62,13 @@
 ;; steps, where the walk cost ~25 an element and was half of a
 ;; game-tree search's budget.
 
-;; The element of `xs` at 0-based index `k`; a fault past the end.
-(def nth [xs k]
-  (head (text-slice xs k (merge k 1))))
-;; Past the end, `head` of the empty list raises the same domain-error
-;; every other out-of-range access does.  A silent zero here would have
-;; been the one place the standard library broke Constraint 5 -- and it
-;; did, until it was caught in the M13 audit.  `last` is loud the same
-;; way since M22.
+;; `nth` -- the element of `xs` at 0-based index `k` -- is an operator
+;; since 6b (the fixed-point family), one step for its node where this
+;; definition, `(head (text-slice xs k (merge k 1)))`, cost eleven with
+;; the call.  Outside the list it raises a domain-error, as every other
+;; out-of-range access does.  A silent zero here would have been the one
+;; place the standard library broke Constraint 5 -- and it did, until it
+;; was caught in the M13 audit.  `last` is loud the same way since M22.
 
 (def last [xs]
   (head (text-slice xs (sub (len xs) 1) (len xs))))
@@ -124,14 +123,12 @@
 
 (def inc [n] (merge n 1))
 
-;; Division toward zero.  `div` floors -- -9/8 is -2 and 9/8 is 1 -- so
-;; anything moved by a signed amount and divided goes further one way
-;; than the other: a left strafe outrunning the right one was found by a
-;; mirror example three times, in Neon Alley, the danmaku duel and its
-;; stage 1 (journal, 2026-09-27).  `quot` is what such a program means.
-(def quot [a b]
-  (let [q (div (abs a) (abs b))]
-    (if (eq (lt a 0) (lt b 0)) q (neg q))))
+;; Division toward zero is `quot`, an operator since 6b (it was defined
+;; here, twenty steps a call).  `div` floors -- -9/8 is -2 and 9/8 is 1
+;; -- so anything moved by a signed amount and divided goes further one
+;; way than the other: a left strafe outrunning the right one was found
+;; by a mirror example three times, in Neon Alley, the danmaku duel and
+;; its stage 1 (journal, 2026-09-27).  `quot` is what such a program means.
 
 (def pow [b e]
   (merge 0 (head (iterate (cons 1 (cons e (nil)))

@@ -662,6 +662,9 @@ iteration cost.)*
   `int-text`, `text?`, `text-trim`, `text-match` cost **one step**
   each, whatever the length of the text. They are the escape hatch the
   list family's per-element cost creates.
+- The fixed-point family (`sin`, `cos`, `sin-fine`, `cos-fine`,
+  `quot`, `nth`, `isqrt`, §5.11) costs **one step** each; `nth` walks
+  to its element for that one step.
 - `map-put`, `map-get`, `map-pairs` cost **one step** each, whatever
   the size of the map.
 - `hash`, `explain`, `read`, `uid`, `generation`, `ancestor-of`,
@@ -1917,6 +1920,30 @@ zero; if both or neither, they compare equal (which is what makes a
 `range` charges before building the list, so
 `(range 0 100000000)` traps on the step ceiling rather than
 allocating.
+
+### 5.11 Fixed point (0x58–0x5E) *(6b, 2026-10-31)*
+
+What `lib/fixed.lova` and the prelude computed in LOVA, as operators:
+**one step for the node** and nothing beyond it. Every operand is
+evaluated, left to right, **before** any is coerced (no `coerce_after`
+entry). The values are the old definitions' exactly
+(`core/runtime.py`, `fixed_sin` and its neighbours;
+`native/lova-rt/src/fixed.rs`). `SIN_Q` is the 65-entry quarter table,
+`1024 * sin(k * pi / 128)` rounded, k = 0..64.
+
+| Byte | Name | Args | Result |
+|---|---|---|---|
+| 0x58 | `sin` | `(sin a)` | `k = a mod 256` (floored); `SIN_Q[k]` for k ≤ 64, `SIN_Q[128-k]` ≤ 128, `-SIN_Q[k-128]` ≤ 192, else `-SIN_Q[256-k]` |
+| 0x59 | `cos` | `(cos a)` | `(sin (merge a 64))` |
+| 0x5A | `sin-fine` | `(sin-fine a)` | `a' = a mod 4096`, `k = a' // 16`, `f = a' mod 16`: `s0 + quot((s1 - s0) * f, 16)` with `s0 = sin k`, `s1 = sin (k+1)` |
+| 0x5B | `cos-fine` | `(cos-fine a)` | `(sin-fine (merge a 1024))` |
+| 0x5C | `quot` | `(quot a b)` | `abs(a) // abs(b)`, negated when exactly one of `a`, `b` is negative; `b = 0` is `domain-error` "quot: division by zero" |
+| 0x5D | `nth` | `(nth xs k)` | a text: the codepoint at `k`; else `_as_list(xs, "nth")` and the element at 0-based `k`; outside (negative, or past the end) `domain-error` "nth: the index is outside the list", detail `{"operator": "nth"}` |
+| 0x5E | `isqrt` | `(isqrt n)` | `n < 4`: 1 if `n > 0` else 0; otherwise `x = max(1024, n // 1024)` then twelve rounds of `x = (x + n // x) // 2` (not always the exact root for very large `n`: twelve rounds, as the library had) |
+
+The integer slots coerce with `_as_int(v, name)`. `sin`, `cos`,
+`sin-fine`, `cos-fine`, `quot` and `isqrt` are pure and fold at compile
+time (`core/compiler.py`, pass 3) when their operands are literals.
 
 ---
 

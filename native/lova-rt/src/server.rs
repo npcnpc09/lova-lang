@@ -95,7 +95,7 @@ pub fn prepare(request: &J, id: &J) -> Result<Ready, J> {
             )
         }
     };
-    let mut seen = [false; 0x58];
+    let mut seen = [false; crate::tokens::N_OPS];
     operators_used(&arena, root, &mut seen);
     for (op, used) in seen.iter().enumerate() {
         if *used && unsupported(op as u8) {

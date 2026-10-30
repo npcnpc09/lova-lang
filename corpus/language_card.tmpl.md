@@ -87,6 +87,11 @@ hit), `(sort-by less xs)` (stable; `(less a b)` non-zero puts a first),
 `(zip xs ys)` (two-element lists, to the shorter). One step an element,
 plus the function called.
 
+{{FIXED_OPS}} `(sin a)`, `(cos a)`: 1024 times the sine of `a` 256ths
+of a turn; `(sin-fine a)`, `(cos-fine a)` the same in 4096ths;
+`(quot a b)` divides toward 0; `(nth xs k)` is the element at 0-based
+`k`, a fault outside; `(isqrt n)` the integer square root. One step each.
+
 {{TEXT_OPS}} `(text-slice t start end)`, `(text-find t needle)` (-1 if
 absent), `(text-split t sep)` (`""` splits on whitespace), `(text-join
 parts sep)`; a separator may be a text or a codepoint. `(text-match t

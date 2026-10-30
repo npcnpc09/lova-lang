@@ -146,11 +146,18 @@ def operator_examples_block() -> str:
     return chr(10).join(lines)
 
 
+def fixed_ops_line() -> str:
+    from core.tokens import SIGNATURES, FIXED_FAMILY
+    names = [SIGNATURES[t]["name"] for t in sorted(FIXED_FAMILY)]
+    return "Fixed-point operators: " + " ".join(f"`{n}`" for n in names) + "."
+
+
 def render() -> str:
     template = TEMPLATE.read_text(encoding="utf-8")
     return (template.replace("{{LIBRARY}}", library_block())
                     .replace("{{TEXT_OPS}}", text_ops_line())
                     .replace("{{LIST_OPS}}", list_ops_line())
+                    .replace("{{FIXED_OPS}}", fixed_ops_line())
                     .replace("{{OPERATOR_EXAMPLES}}", operator_examples_block()))
 
 

@@ -138,6 +138,14 @@ LIST_ANY        = 0x55   # (any f xs) -- 1 at the first x with (f x) non-zero, e
 LIST_SORT_BY    = 0x56   # (sort-by less xs) -- stable; (less a b) non-zero puts a first
 LIST_ZIP        = 0x57   # (zip xs ys) -- two-element lists, to the shorter
 
+FIX_SIN         = 0x58   # (sin a) -- 1024 sin, `a` in 256ths of a turn (lib/fixed.lova's table)
+FIX_COS         = 0x59   # (cos a) -- (sin (merge a 64))
+FIX_SIN_FINE    = 0x5A   # (sin-fine a) -- `a` in 4096ths, read between the table's entries
+FIX_COS_FINE    = 0x5B   # (cos-fine a) -- (sin-fine (merge a 1024))
+FIX_QUOT        = 0x5C   # (quot a b) -- division toward zero
+FIX_NTH         = 0x5D   # (nth xs k) -- the element at 0-based k; a fault outside
+FIX_ISQRT       = 0x5E   # (isqrt n) -- twelve Newton rounds; 0 below 1
+
 
 # --- signatures (arity + semantic family for the decoder) -------------------
 
@@ -181,6 +189,15 @@ SIGNATURES = {
     LIST_ANY:     {"name": "any",           "arity": 2, "family": "list"},
     LIST_SORT_BY: {"name": "sort-by",       "arity": 2, "family": "list"},
     LIST_ZIP:     {"name": "zip",           "arity": 2, "family": "list"},
+    # Fixed point (6b): lib/fixed.lova's trigonometry and the prelude's
+    # quot and nth, as operators
+    FIX_SIN:      {"name": "sin",           "arity": 1, "family": "fixed"},
+    FIX_COS:      {"name": "cos",           "arity": 1, "family": "fixed"},
+    FIX_SIN_FINE: {"name": "sin-fine",      "arity": 1, "family": "fixed"},
+    FIX_COS_FINE: {"name": "cos-fine",      "arity": 1, "family": "fixed"},
+    FIX_QUOT:     {"name": "quot",          "arity": 2, "family": "fixed"},
+    FIX_NTH:      {"name": "nth",           "arity": 2, "family": "fixed"},
+    FIX_ISQRT:    {"name": "isqrt",         "arity": 1, "family": "fixed"},
     # Number theory
     P:            {"name": "p",             "arity": 1, "family": "nt"},
     TAU:          {"name": "tau",           "arity": 1, "family": "nt"},
@@ -249,7 +266,8 @@ SIGNATURES = {
 CORE_TOKENS = 64          # the original table, 0x00-0x3F
 TEXT_TOKENS = 16          # the Text family, 0x40-0x4F (M25; full at M32)
 LIST_TOKENS = 8           # the List family, 0x50-0x57 (M27)
-assert len(SIGNATURES) == CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS,     f"Token table must have exactly {CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS} entries, found {len(SIGNATURES)}"
+FIXED_TOKENS = 7          # the Fixed-point family, 0x58-0x5E (6b)
+assert len(SIGNATURES) == CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS + FIXED_TOKENS,     f"Token table must have exactly {CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS + FIXED_TOKENS} entries, found {len(SIGNATURES)}"
 
 
 # --- typed-slot extensions (Milestone 2) ------------------------------------
@@ -509,6 +527,22 @@ for _tok, _extra in _LIST_TYPE_INFO.items():
     SIGNATURES[_tok].update(_extra)
 LIST_FAMILY = frozenset(_LIST_TYPE_INFO)
 
+# The fixed-point family (6b): what lib/fixed.lova and the prelude
+# computed in LOVA, one step a node.  Typed for the compiler and the
+# validator, kept out of generation with the text and list families.
+_FIXED_TYPE_INFO = {
+    FIX_SIN:      {"in_types": [INT], "out_type": INT},
+    FIX_COS:      {"in_types": [INT], "out_type": INT},
+    FIX_SIN_FINE: {"in_types": [INT], "out_type": INT},
+    FIX_COS_FINE: {"in_types": [INT], "out_type": INT},
+    FIX_QUOT:     {"in_types": [INT, INT], "out_type": INT},
+    FIX_NTH:      {"in_types": [VALUE, INT], "out_type": VALUE},
+    FIX_ISQRT:    {"in_types": [INT], "out_type": INT},
+}
+for _tok, _extra in _FIXED_TYPE_INFO.items():
+    SIGNATURES[_tok].update(_extra)
+FIXED_FAMILY = frozenset(_FIXED_TYPE_INFO)
+
 # Operators whose result type is their operands' rather than their own.
 #
 # ``(if c a b)`` is whatever its branches are, ``(let n v body)``
@@ -523,7 +557,8 @@ LIST_FAMILY = frozenset(_LIST_TYPE_INFO)
 # is not determined by the slot it sits in.  The compiler checks that
 # case separately.
 RESULT_FOLLOWS_OPERANDS = frozenset({IF_SURPRISE, LET, APPLY, WHEN_ANOMALY, EVAL, HEAD,
-                                     EXTERNAL_BOUNDARY, SIGNAL, MAP_GET, LIST_FOLD})
+                                     EXTERNAL_BOUNDARY, SIGNAL, MAP_GET, LIST_FOLD,
+                                     FIX_NTH})
 
 # ``REF`` is the other operator whose result type is not its declared
 # one: it is whatever the binding holds.  The compiler resolves that

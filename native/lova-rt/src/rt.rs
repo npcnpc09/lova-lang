@@ -1283,6 +1283,7 @@ fn eval_generic(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
         )),
         _ if (0x40..=0x4F).contains(&op) => eval_text_node(a, rt, id, op),
         _ if (0x50..=0x57).contains(&op) => eval_list(a, rt, id, op),
+        _ if (FIX_SIN..=FIX_ISQRT).contains(&op) => eval_fixed(a, rt, id, op),
         _ => Err(Fault::NotImplemented(
             format!("operator {} is outside this runtime's phase-2 scope", op_name(op)).into(),
         )),
@@ -1303,6 +1304,17 @@ fn eval_text_node(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
         });
     }
     text::work_text(a, rt, op, &args)
+}
+
+/// The fixed-point family: every operand evaluated, left to right, no
+/// coercion between them; then the work both evaluators share.
+fn eval_fixed(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
+    let kids = a.kids(id).to_vec();
+    let mut args: Vec<Value> = Vec::with_capacity(kids.len());
+    for k in kids.iter() {
+        args.push(eval(a, rt, *k, false)?);
+    }
+    crate::fixed::work_fixed(a, op, &args)
 }
 
 // --- the list family (spec §5.10) -------------------------------------------

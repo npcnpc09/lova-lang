@@ -9,7 +9,9 @@
 LOVA's core is **64 operators**, one byte each, and since M25 a
 **text family of 14** at 0x40-0x4D (Q85; Axiom 8's ceiling was
 demoted to a preference on 2026-09-10) and since M27 a **list
-family of 8** at 0x50-0x57 (Q94: the walkers, one step an element).
+family of 8** at 0x50-0x57 (Q94: the walkers, one step an element)
+and since 6b a **fixed-point family of 7** at 0x58-0x5E (lib/fixed.lova's
+trigonometry and square root, the prelude's `quot` and `nth`).
 Tokens are grouped into 8 families of 8 operators.  Arguments
 follow each operator as typed-slot tokens; types are positional,
 not annotated.  See `spec/paradigm-inheritance.md` for the
@@ -18,7 +20,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  87 of the 88 tokens are implemented.
+  94 of the 95 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -159,6 +161,18 @@ Legend:
 | 0x56 | `sort-by` | 2 | Fn, Value | List | - | **impl** |
 | 0x57 | `zip` | 2 | Value, Value | List | - | **impl** |
 
+## Fixed point (0x58 - 0x5E)
+
+| Byte | Name | Arity | In types | Out type | Effects | Status |
+|---|---|---|---|---|---|---|
+| 0x58 | `sin` | 1 | Int | Int | - | **impl** |
+| 0x59 | `cos` | 1 | Int | Int | - | **impl** |
+| 0x5A | `sin-fine` | 1 | Int | Int | - | **impl** |
+| 0x5B | `cos-fine` | 1 | Int | Int | - | **impl** |
+| 0x5C | `quot` | 2 | Int, Int | Int | - | **impl** |
+| 0x5D | `nth` | 2 | Value, Int | Value | - | **impl** |
+| 0x5E | `isqrt` | 1 | Int | Int | - | **impl** |
+
 ## Slot conventions
 
 - Every fixed-arity operator is followed immediately by its
@@ -282,9 +296,9 @@ the identifier was a convenience for whoever typed it.
 - 2026-04-23 - initial draft (stub).
 - 2026-04-24 - complete, hand-transcribed from SIGNATURES at M5.
   Recorded as 19/64 implemented; `TYPED_TOKENS` in fact held 18.
-- 2026-09-18 - M9.  0x0B / 0x0C reallocated from the
+- 2026-10-31 - M9.  0x0B / 0x0C reallocated from the
   never-implemented mock-theta placeholders `phi3` / `psi7` to `mul`
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  87/88 operators implemented.
+  94/95 operators implemented.
