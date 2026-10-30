@@ -525,6 +525,76 @@ class Wiring(unittest.TestCase):
         self.assertTrue(all(r["passed"] for r in results))
         self.assertEqual(len(started), 1, "one process for the whole check")
 
+    def test_check_native_does_not_build_per_example(self):
+        """One parse for the whole check, each side's program derived from
+        it: the danmaku's 411 examples were 822 builds of a 50 KB program,
+        1 600 s of a 1 770 s suite (journal, 2026-09-29)."""
+        from core import cli as cli_mod
+        from core import examples as examples_mod
+        text = "(def sq [n] (mul n n))\n" + "".join(
+            f"(example (sq {i}) {i * i})\n" for i in range(1, 7)) + "(sq 2)\n"
+        self._use_mock()
+        builds = []
+        real = cli_mod.build
+
+        def counting(source, **kwargs):
+            builds.append(source)
+            return real(source, **kwargs)
+
+        cli_mod.build = counting
+        try:
+            results = examples_mod.check(text, runtime="native")
+        finally:
+            cli_mod.build = real
+        self.assertEqual(len(results), 6)
+        self.assertTrue(all(r["passed"] for r in results))
+        self.assertEqual(builds, [], "no build per example")
+
+    def test_derived_programs_answer_as_their_own_builds(self):
+        """Every kind of value and of failure, native against Python: the
+        same verdict, the same printed value and the same step count --
+        which is the fresh program's, defs kept and all, so a derived
+        program that kept a def its own build drops, or dropped one it
+        keeps, would show here.  A miss or a trap is Python's report
+        either way.  A closure prints its parameter's name id, which a
+        derived program may number differently, so it is built alone."""
+        from core.cli import format_value
+        from core.examples import check
+        text = (
+            "(def sq [n] (mul n n))\n"
+            "(def f [n] (div 10 n))\n"
+            "(def spin [n] (if n (spin (sub n 1)) 0))\n"
+            "(def tbl [] (fold (fn [a x] (merge a x)) 0 (range 0 2000)))\n"
+            "(def big [] (sq (sq 1000)))\n"
+            "(def ev [n] (if n (od (sub n 1)) 1))\n"
+            "(def od [n] (if n (ev (sub n 1)) 0))\n"
+            "(example (sq 5) 25)\n"
+            "(example (sq 5) 24)\n"
+            "(example (f 0) 1)\n"
+            "(example 3 (f 0))\n"
+            "(example (merge 1 2) 3)\n"
+            "(example (ev 10) 1)\n"
+            "(example (merge tbl big) 1000000001999000)\n"
+            "(example (rec x 1 y (sq 2)) (rec x 1 y 4))\n"
+            "(example (rec x 1 y 2) (rec x 1 y 3))\n"
+            "(example (list 104 105) \"hi\")\n"
+            "(example (let [q 4] (sq q)) 16)\n"
+            "(example ((fn [q] (sq q)) 3) 9)\n"
+            "(example (fn [a] a) (fn [a] a))\n"
+            "(example (spin 200000) 0)\n"
+            "(sq 2)\n")
+        self._use_mock()
+        native = check(text, runtime="native", locate_budget_s=0)
+        python = check(text, runtime="python", locate_budget_s=0)
+        self.assertEqual(len(native), len(python))
+        for n, p in zip(native, python):
+            self.assertEqual(n["passed"], p["passed"], p["excerpt"])
+            if n["passed"]:
+                self.assertEqual(n["value"], format_value(p["value"]), p["excerpt"])
+                self.assertEqual(n["steps"], p["steps"], p["excerpt"])
+            else:
+                self.assertEqual(n, p, p["excerpt"])
+
     def test_mcp_execute_says_which_runtime_ran(self):
         from core.mcp_server import tool_execute
         self._use_mock()

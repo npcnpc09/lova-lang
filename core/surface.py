@@ -1168,14 +1168,17 @@ def load_prelude() -> str:
 
 
 def resolve_library(name: str) -> str:
-    """Where ``(use "name")`` looks: ``lib/name.lova``, then a plain path."""
-    candidates = [os.path.join(LIB_DIR, name + ".lova"),
-                  os.path.join(LIB_DIR, name), name]
+    """Where ``(use "name")`` looks: ``lib/name.lova``, then each directory
+    of ``LOVA_PATH`` (``os.pathsep``-separated; a program kept outside this
+    repository names its own library directory there), then a plain path."""
+    dirs = [LIB_DIR] + [d for d in os.environ.get("LOVA_PATH", "").split(os.pathsep) if d]
+    candidates = [os.path.join(d, n) for d in dirs for n in (name + ".lova", name)]
+    candidates.append(name)
     for path in candidates:
         if os.path.isfile(path):
             return os.path.abspath(path)
     raise ValueError(
-        f"use: no library named {name!r} (looked in {LIB_DIR} and the "
+        f"use: no library named {name!r} (looked in {', '.join(dirs)} and the "
         "working directory)"
     )
 

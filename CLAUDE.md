@@ -239,6 +239,26 @@ enclosing expression, and prints the reach-set suspects on a lead.
 Q122 (a constant the prompt cannot vouch for), Q123 (the report's
 size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
 
+**M44** (2026-09-28) -- **stage 1 of the danmaku, as a game.** The
+owner judged stage 1 finished: an MMD-style opening at the Hakurei
+Shrine (`game/opening.gd`), fairies built in code (two draw calls a
+wave), Reimu's flight posed through springs (the lean never reached
+the spine: `_turn` is absolute), a drawing clock one tick behind the
+newest against tick-arrival judder, the Youkai Mountain backdrop, a
+results talisman, a game-over screen and a fairy's defeat.  Trees in
+the sun's shadow map took the iGPU to 1-5 fps.  Models and the CC0 kit
+stay out of the repository (the owner's choice).  `journal/README.md`,
+"Milestone 44".
+
+**The game moved out** (2026-10-01, the owner's call: not to be
+confused with LOVA). 东方天球谭 lives in `D:\SSH\touhou-tenkyuutan`, its
+own git repository: what was `apps/godot/danmaku/`, the rules that were
+`lib/danmaku*.lova` (now its `rules/`) and `tests/test_danmaku.py`. It
+uses this checkout through `LOVA_HOME` (default `../lova-lang`); LOVA's
+one change for it is `LOVA_PATH`, extra directories `(use ...)` searches
+after `lib/` (`core/surface.py`, `resolve_library`). Mentions of the
+danmaku above and in the journal are history.
+
 **M43** (2026-09-27) -- **the danmaku's pain points.** Surface
 sugar, no new byte: `(let [a 1 b (f a)] body)`, `(fn [a b] body)`,
 `(put r x 1 y 2)` and `((expr) args)` compile to exactly the nested

@@ -47,7 +47,7 @@ class CacheHarness(unittest.TestCase):
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="lova-cache-test-")
-        self._env = {k: os.environ.get(k) for k in ("LOVA_CACHE", "LOVA_CACHE_MIN_MS")}
+        self._env = {k: os.environ.get(k) for k in ("LOVA_CACHE", "LOVA_CACHE_MIN_MS", "LOVA_CACHE_MAX_MB")}
         os.environ["LOVA_CACHE"] = self.dir
         os.environ["LOVA_CACHE_MIN_MS"] = "0"
 
@@ -177,6 +177,44 @@ class Off(CacheHarness):
         os.environ["LOVA_CACHE_MIN_MS"] = "100000"
         build(PROGRAM)
         self.assertEqual(self.entries(), [])
+
+
+class Cap(CacheHarness):
+    """LOVA_CACHE_MAX_MB: the least recently used entries go first."""
+
+    def _fake(self, name, size, age_s):
+        path = os.path.join(self.dir, name + ".pkl")
+        with open(path, "wb") as handle:
+            handle.write(b"x" * size)
+        t = 1_000_000_000 - age_s
+        os.utime(path, (t, t))
+        return path
+
+    def test_a_store_past_the_cap_evicts_the_least_recently_used(self):
+        old = self._fake("old", 600_000, 300)
+        mid = self._fake("mid", 600_000, 200)
+        os.environ["LOVA_CACHE_MAX_MB"] = "1"           # 1 048 576 bytes
+        build(PROGRAM)                                  # the new entry is the newest
+        names = self.entries()
+        self.assertNotIn("old.pkl", names)
+        self.assertIn("mid.pkl", names)
+        self.assertEqual(len(names), 2)
+        self.assertFalse(os.path.exists(old))
+        self.assertTrue(os.path.exists(mid))
+
+    def test_a_hit_is_a_use(self):
+        build(PROGRAM)
+        (entry,) = self.entries()
+        path = os.path.join(self.dir, entry)
+        os.utime(path, (1_000_000, 1_000_000))
+        build(PROGRAM)                                  # a hit
+        self.assertGreater(os.path.getmtime(path), 1_000_000)
+
+    def test_zero_is_no_cap(self):
+        self._fake("big", 2_000_000, 300)
+        os.environ["LOVA_CACHE_MAX_MB"] = "0"
+        build(PROGRAM)
+        self.assertEqual(len(self.entries()), 2)
 
 
 class Failures(CacheHarness):

@@ -25,7 +25,7 @@
 use godot::prelude::*;
 use lova_rt::server::{choose_evaluator, handle, Sessions};
 use serde_json::{json, Value as J};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 
 /// Small allocations go through the runtime's own size-class free
 /// list, as they do in the stdio binary.
@@ -39,13 +39,22 @@ unsafe impl ExtensionLibrary for LovaExtension {}
 
 // --- the evaluator thread ---------------------------------------------------
 
+/// What the evaluator thread is asked to do: one request, or a step --
+/// a call, then a second function applied to its result -- whose reply
+/// is both, so a script can have a tick and what to draw after it
+/// computed off its own thread in one round.
+enum Job {
+    One(J, Sender<J>),
+    Step(J, J, Sender<J>),
+}
+
 struct Worker {
-    tx: Sender<(J, Sender<J>)>,
+    tx: Sender<Job>,
 }
 
 impl Worker {
     fn start() -> Worker {
-        let (tx, rx) = channel::<(J, Sender<J>)>();
+        let (tx, rx) = channel::<Job>();
         std::thread::Builder::new()
             .name("lova-rt".into())
             .stack_size(1 << 30)
@@ -53,9 +62,30 @@ impl Worker {
                 choose_evaluator();
                 let mut sessions = Sessions::new();
                 let mut next: u64 = 0;
-                while let Ok((request, reply_to)) = rx.recv() {
-                    let reply = handle(&request, &mut sessions, &mut next);
-                    let _ = reply_to.send(reply);
+                while let Ok(job) = rx.recv() {
+                    match job {
+                        Job::One(request, reply_to) => {
+                            let reply = handle(&request, &mut sessions, &mut next);
+                            let _ = reply_to.send(reply);
+                        }
+                        Job::Step(first, then, reply_to) => {
+                            let r1 = handle(&first, &mut sessions, &mut next);
+                            let ok = r1.get("ok").and_then(|o| o.as_bool()).unwrap_or(false);
+                            let reply = if ok {
+                                let second = json!({
+                                    "op": "call", "fn": then,
+                                    "args": [r1.get("value").cloned().unwrap_or(J::Null)],
+                                    "session": first.get("session").cloned().unwrap_or(J::Null),
+                                    "max_steps": first.get("max_steps").cloned().unwrap_or(J::Null),
+                                });
+                                let r2 = handle(&second, &mut sessions, &mut next);
+                                json!({"ok": true, "first": r1, "second": r2})
+                            } else {
+                                json!({"ok": false, "first": r1})
+                            };
+                            let _ = reply_to.send(reply);
+                        }
+                    }
                 }
                 // The sender is gone: the LovaRuntime was freed, and the
                 // sessions go with this thread.
@@ -66,13 +96,43 @@ impl Worker {
 
     fn ask(&self, request: J) -> J {
         let (reply_tx, reply_rx) = channel::<J>();
-        if self.tx.send((request, reply_tx)).is_err() {
+        if self.tx.send(Job::One(request, reply_tx)).is_err() {
             return json!({"ok": false, "error": "the evaluator thread is gone"});
         }
         reply_rx
             .recv()
             .unwrap_or_else(|_| json!({"ok": false, "error": "the evaluator thread died"}))
     }
+
+    /// Send a request and do not wait for its reply.
+    fn tell(&self, request: J) {
+        let (reply_tx, _reply_rx) = channel::<J>();
+        let _ = self.tx.send(Job::One(request, reply_tx));
+    }
+
+    fn step(&self, first: J, then: J) -> Option<Receiver<J>> {
+        let (reply_tx, reply_rx) = channel::<J>();
+        self.tx.send(Job::Step(first, then, reply_tx)).ok()?;
+        Some(reply_rx)
+    }
+}
+
+/// A list of integers long enough to be a buffer crosses as a
+/// PackedInt64Array, which a script indexes the same way and which is
+/// built without a Variant per element.
+fn to_variant_packed(j: &J) -> Variant {
+    if let J::Array(items) = j {
+        if items.len() > 32 && items.iter().all(|x| x.is_i64()) {
+            let v: Vec<i64> = items.iter().map(|x| x.as_i64().unwrap_or(0)).collect();
+            return Variant::from(PackedInt64Array::from(v.as_slice()));
+        }
+        let mut arr = VarArray::new();
+        for item in items {
+            arr.push(&to_variant_packed(item));
+        }
+        return Variant::from(arr);
+    }
+    to_variant(j)
 }
 
 // --- Godot values <-> the protocol's JSON -----------------------------------
@@ -151,6 +211,10 @@ pub struct LovaRuntime {
     /// The last anomaly as the protocol reports it, or null.
     anomaly: Variant,
     max_steps: i64,
+    /// A step under way on the evaluator thread.
+    pending: Option<Receiver<J>>,
+    /// The steps of the second half of the last step.
+    then_steps: i64,
     base: Base<RefCounted>,
 }
 
@@ -165,6 +229,8 @@ impl IRefCounted for LovaRuntime {
             error: String::new(),
             anomaly: Variant::nil(),
             max_steps: 1_000_000,
+            pending: None,
+            then_steps: 0,
             base,
         }
     }
@@ -374,6 +440,113 @@ impl LovaRuntime {
         }
         self.session = None;
         self.api = None;
+    }
+
+    /// Start a step off this thread: `(function args...)`, then `then`
+    /// applied to its result.  `false` when a step is already under way
+    /// or no program is open.  `step_take()` gives `[result,
+    /// then(result)]` when it is done -- the first a handle where it is
+    /// not data, a long list of integers in the second a
+    /// PackedInt64Array -- or null while it runs or on a trap.
+    #[func]
+    fn step_async(&mut self, function: Variant, args: VarArray, then: Variant) -> bool {
+        if self.pending.is_some() {
+            return false;
+        }
+        let (fnv, thenv) = match (to_json(&function), to_json(&then)) {
+            (Ok(f), Ok(t)) => (f, t),
+            (Err(e), _) | (_, Err(e)) => {
+                self.error = e;
+                return false;
+            }
+        };
+        let mut encoded = Vec::with_capacity(args.len());
+        for a in args.iter_shared() {
+            match to_json(&a) {
+                Ok(j) => encoded.push(j),
+                Err(e) => {
+                    self.error = e;
+                    return false;
+                }
+            }
+        }
+        let request = match self.with_session(json!({
+            "op": "call", "fn": fnv, "args": encoded, "max_steps": self.max_steps,
+        })) {
+            Some(r) => r,
+            None => {
+                self.error = String::from("no program is open");
+                return false;
+            }
+        };
+        self.pending = self.worker.step(request, thenv);
+        self.pending.is_some()
+    }
+
+    /// Whether a step is under way.
+    #[func]
+    fn step_busy(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// The finished step, or null while it still runs (`error()` is
+    /// then "") or when it trapped (`error()` says why).
+    #[func]
+    fn step_take(&mut self) -> Variant {
+        let reply = match &self.pending {
+            None => {
+                self.error = String::from("no step under way");
+                return Variant::nil();
+            }
+            Some(rx) => match rx.try_recv() {
+                Ok(r) => r,
+                Err(TryRecvError::Empty) => {
+                    self.error.clear();
+                    return Variant::nil();
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.pending = None;
+                    self.error = String::from("the evaluator thread died");
+                    return Variant::nil();
+                }
+            },
+        };
+        self.pending = None;
+        let first = reply.get("first").cloned().unwrap_or(J::Null);
+        if !self.take_reply(&first) {
+            return Variant::nil();
+        }
+        let first_steps = self.steps;
+        let second = reply.get("second").cloned().unwrap_or(J::Null);
+        if !self.take_reply(&second) {
+            return Variant::nil();
+        }
+        self.then_steps = self.steps;
+        self.steps = first_steps;
+        let mut out = VarArray::new();
+        out.push(&to_variant(first.get("value").unwrap_or(&J::Null)));
+        out.push(&to_variant_packed(second.get("value").unwrap_or(&J::Null)));
+        Variant::from(out)
+    }
+
+    /// The steps the second half of the last step took.
+    #[func]
+    fn then_steps(&self) -> i64 {
+        self.then_steps
+    }
+
+    /// Let go of handles without waiting for the evaluator thread.
+    #[func]
+    fn release_later(&mut self, handles: VarArray) {
+        let mut ids = Vec::new();
+        for h in handles.iter_shared() {
+            if let Some(id) = Self::handle_of(&h) {
+                ids.push(id);
+            }
+        }
+        if let Some(request) = self.with_session(json!({"op": "release", "refs": ids})) {
+            self.worker.tell(request);
+        }
     }
 
     /// The steps the last call took.

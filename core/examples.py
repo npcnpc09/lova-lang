@@ -21,7 +21,12 @@ Why text and not the tree: the examples must see the program's
 definitions, and the compiler drops the definitions the expression
 does not use -- so the check is run per example, from source, with
 the example forms blanked to spaces (spans stay put) and the
-expression swapped in.
+expression swapped in.  On the native runtime those programs are
+derived rather than built -- one parse with every example in the body,
+the compiler's own drop-unused and fold per side (`_Specialiser`) --
+and the defs of each distinct program are evaluated once, in a
+session, with a call per side: a build per side and the defs' constants
+evaluated per side were nearly all of a check's time.
 """
 
 from __future__ import annotations
@@ -221,6 +226,16 @@ def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
     Nothing here compares values: the protocol carries the
     printed form, so what is compared is the two strings, which is what
     the golden set guarantees the Python runtime would have printed.
+
+    Each side of an example is its own program, as it always was, but
+    the programs are no longer built one by one (journal, 2026-09-29:
+    the danmaku's 411 examples were 822 builds of a 50 KB program, 1 600
+    s of a 1 770 s suite).  `_Specialiser` parses and checks the program
+    once and derives each side's compiled program from it, and
+    `_Specialiser.settle` evaluates the defs of each distinct program
+    once, in a session, calling each side in it.  A side it cannot vouch
+    for is run as its own derived program; one that cannot be derived is
+    built from source as before.
     """
     from core.cli import build
     from core.native import (
@@ -238,6 +253,13 @@ def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
     results: List[Dict[str, Any]] = []
     redo: List[int] = []
     try:
+        derived = _Specialiser.for_examples(prepared_source, examples, with_body, prelude,
+                                            native.unsupported_ops)
+        settled: Dict[int, Any] = {}
+        if derived is not None:
+            if derived.unsupported:
+                return None                 # what the builds would have found
+            settled = derived.settle(native, granted, limits)
         for index, ex in enumerate(examples):
             if ex["span"] is None:
                 continue
@@ -250,24 +272,45 @@ def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
                 "line": line_col(prepared_source, a)[0],
                 "col": line_col(prepared_source, a)[1], "reaches": [],
             }
-            try:
-                want_tree, _ = build(with_body(expected_text), prelude=prelude)
-                got_tree, _ = build(with_body(expr_text), prelude=prelude)
-            except Exception:              # noqa: BLE001 -- Python reports it
-                results.append(dict(entry, passed=False))
-                redo.append(index)
+            if index in settled:
+                want_text, got_text, got_steps = settled[index]
+                if got_text != want_text:
+                    results.append(dict(entry, passed=False, expected=want_text,
+                                        got=got_text, steps=got_steps))
+                    redo.append(index)
+                else:
+                    results.append(dict(entry, passed=True, value=got_text, steps=got_steps))
                 continue
-            # Screened against *this* runtime's list, which its `ping`
-            # gave us, not against a copy of a phase's scope kept here.
-            if not (supports(want_tree, native) and supports(got_tree, native)):
-                return None
+            sides = derived.programs(index) if derived is not None else None
             try:
-                want = native.run(want_tree, allow=granted, **limits)
-                got = native.run(got_tree, allow=granted, **limits)
+                if sides is not None:
+                    want = native.run(sides[0], allow=granted, **limits)
+                    got = native.run(sides[1], allow=granted, **limits)
+                    if not (_id_free(want.value_text) and _id_free(got.value_text)):
+                        sides = None        # a value that prints a name id: build it
             except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError):
                 results.append(dict(entry, passed=False))   # a trap: the report is Python's
                 redo.append(index)
                 continue
+            if sides is None:
+                try:
+                    want_tree, _ = build(with_body(expected_text), prelude=prelude)
+                    got_tree, _ = build(with_body(expr_text), prelude=prelude)
+                except Exception:          # noqa: BLE001 -- Python reports it
+                    results.append(dict(entry, passed=False))
+                    redo.append(index)
+                    continue
+                # Screened against *this* runtime's list, which its `ping`
+                # gave us, not against a copy of a phase's scope kept here.
+                if not (supports(want_tree, native) and supports(got_tree, native)):
+                    return None
+                try:
+                    want = native.run(want_tree, allow=granted, **limits)
+                    got = native.run(got_tree, allow=granted, **limits)
+                except (BudgetTrap, DeltaTrap, ValueError, NotImplementedError):
+                    results.append(dict(entry, passed=False))   # a trap: the report is Python's
+                    redo.append(index)
+                    continue
             if got.value_text != want.value_text:
                 results.append(dict(entry, passed=False, expected=want.value_text,
                                     got=got.value_text, steps=got.steps))
@@ -279,6 +322,359 @@ def _check_native(source: str, *, prelude: bool, max_steps: Optional[int],
     finally:
         native.close()
     return results, redo
+
+
+def _id_free(text: str) -> bool:
+    """A printed value that shows no name id.  A closure prints its
+    parameter's id and a program its tree, and the ids of the names an
+    example introduces itself depend on what else the parse saw -- so a
+    derived program may print a different number than the example's own
+    build; that example is built from source instead."""
+    return "<closure" not in text and "#<program" not in text and "#<population" not in text
+
+
+def _op_range(first: int, last: int) -> frozenset:
+    return frozenset(range(first, last + 1))
+
+
+def _program_as_data() -> frozenset:
+    from core.tokens import EVAL, QUOTE, READ
+    return _op_range(0x20, 0x27) | _op_range(0x38, 0x3F) | frozenset((EVAL, QUOTE, READ))
+
+
+# A side that can reach one of these reads a program as data -- whose
+# name ids a derived program may number differently -- and is built from
+# source.
+_PROGRAM_AS_DATA = _program_as_data()
+# And one that can reach the IO family is not called in a shared session
+# (its calls would share `stdin` and the world); it runs as its own program.
+_NOT_SHARED = _op_range(0x30, 0x37)
+
+
+class _Unprintable(Exception):
+    """A value a session hands back that cannot be printed from outside."""
+
+
+class _Specialiser:
+    """Each example side's compiled program, derived from one parse.
+
+    ``core.compiler.compile`` is checks, then drop-unused, then fold.  The
+    checks run once, on the program with ``(list expected0 expr0 ...)``
+    as its body: the same defs at the same place, so a name in an example
+    means what it means in the example's own build.  Drop-unused and
+    fold are what make the programs differ, and both are local:
+
+    * a def's value is dropped-inside and folded the same way whatever
+      the body is, so each def is done once, and its bytes encoded once
+      (the encoding is preorder, so a program's bytes are its lets'
+      bytes and then its body's);
+    * which defs a program keeps is the compiler's liveness over the
+      binding groups (`_split_chain`, `_references`, `_subtree_effects`),
+      seeded by the body's references -- redone here per side, from the
+      same helpers and in the same order, which is cheap.
+
+    Two things a derived program can differ in, and what is done about
+    them: the ids of names an example introduces itself (a `fn`
+    parameter) -- values that print one are rebuilt (`_id_free`); and
+    anything that reads a program as data -- those sides are never
+    derived (`_PROGRAM_AS_DATA`).
+    """
+
+    def __init__(self, groups, sides, screen, free_id) -> None:
+        self.groups = groups            # [[(name, refs, effects, prefix bytes, ops)], ...]
+        self.screen = screen
+        self.free_id = free_id          # a name id no program here uses
+        # {(index, side): (lets bytes, folded body, ops) or None}
+        self.sides: Dict[Any, Any] = {}
+        self.unsupported = False
+        for key, body in sides.items():
+            try:
+                derived = self._derive(body)
+            except Exception:          # noqa: BLE001 -- then it is built
+                derived = None
+            self.sides[key] = derived
+            if derived is not None and derived[2] & screen:
+                self.unsupported = True
+
+    @classmethod
+    def for_examples(cls, source, examples, with_body, prelude, unsupported_ops):
+        """The specialiser, or ``None`` when the program is not a chain of
+        lets around its body, or the combined program does not build."""
+        from core.compiler import compile as lova_compile
+        from core.compiler import _split_chain
+        from core.tokens import CONS, LAMBDA, LET, LIT_INT, REF, Node
+        order = [i for i, ex in enumerate(examples) if ex["span"] is not None]
+        if not order:
+            return None
+        texts = []
+        for i in order:
+            for side in (examples[i]["expected"], examples[i]["expr"]):
+                texts.append(source[side.span[0]:side.span[1]])
+        with _build_stack():
+            try:
+                # In chunks of 32: a flat `(list ...)` of a thousand
+                # elements is a chain a thousand cons deep, and the passes'
+                # recursion (through `sum`, which Python 3.12 counts against
+                # its C limit of ~1500) failed on 563 examples, so every
+                # side was built alone (journal, 2026-09-30: 37 minutes).
+                text = with_body("(list " + " ".join(
+                    "(list " + " ".join(texts[k:k + 32]) + ")"
+                    for k in range(0, len(texts), 32)) + ")")
+                tree = parse_with_prelude(text) if prelude else parse(text)
+                checked, _ = lova_compile(tree, drop_unused=False, fold=False)
+                groups = []
+                node = checked
+                while node.op == LET and len(node.args) == 3 and node.args[0].op == LIT_INT:
+                    bindings, node = _split_chain(node)
+                    groups.append([cls._binding(name, value) for name, value in bindings])
+                elements = []
+                while node.op == CONS and len(node.args) == 2:
+                    chunk = node.args[0]
+                    while chunk.op == CONS and len(chunk.args) == 2:
+                        elements.append(chunk.args[0])
+                        chunk = chunk.args[1]
+                    node = node.args[1]
+                if len(elements) != len(texts):
+                    return None
+                sides = {}
+                for k, i in enumerate(order):
+                    sides[(i, 0)] = elements[2 * k]
+                    sides[(i, 1)] = elements[2 * k + 1]
+                # A name id no binder or reference uses, for the
+                # parameter of the closures `settle` wraps a side in.
+                used = [0]
+                stack = [checked]
+                while stack:
+                    n = stack.pop()
+                    if not isinstance(n, Node):
+                        continue
+                    if n.op in (LET, LAMBDA, REF) and n.args and getattr(n.args[0], "op", None) == LIT_INT:
+                        used.append(int(n.args[0].args[0]))
+                    if n.op != LIT_INT:
+                        stack.extend(n.args)
+                return cls(groups, sides, unsupported_ops, max(used) + 1)
+            except Exception:      # noqa: BLE001 -- then each side is built alone
+                return None
+
+    @staticmethod
+    def _binding(name, value):
+        """What a def contributes to every program that keeps it."""
+        from core.compiler import _drop_unused, _fold, _references, _subtree_effects
+        from core.native import operators_of
+        from core.tokens import LET, Lit, encode
+        dropped, _ = _drop_unused(value)
+        refs: set = set()
+        _references(dropped, refs)
+        folded = _fold(dropped)
+        prefix = bytes([LET]) + encode(Lit(name)) + encode(folded)
+        return (name, frozenset(refs), bool(_subtree_effects(dropped)), prefix,
+                operators_of(folded))
+
+    def _derive(self, body):
+        """``(lets bytes, folded body, operators)`` of the compiled program
+        with ``body`` as its body, or ``None`` if it reads a program as
+        data -- `_drop_unused_inner`'s liveness, group by group from the
+        innermost, then the kept lets' bytes."""
+        from core.compiler import _drop_unused, _fold, _references
+        from core.native import operators_of
+        with _build_stack():
+            dropped, _ = _drop_unused(body)
+            ops = set(operators_of(dropped))
+            if ops & _PROGRAM_AS_DATA:
+                return None
+            folded = _fold(dropped)
+            # Innermost group first: its liveness is seeded by the body's
+            # references, the next one out by what the inner one kept.
+            seed: set = set()
+            _references(dropped, seed)
+            kept_groups = []
+            for group in reversed(self.groups):
+                values = {name: refs for name, refs, _e, _p, _o in group}
+                live = set(seed)
+                live |= {name for name, _r, effects, _p, _o in group if effects}
+                frontier = set(live)
+                while frontier:
+                    name = frontier.pop()
+                    refs = values.get(name)
+                    if refs is None:
+                        continue
+                    fresh = refs - live - {name}
+                    live |= fresh
+                    frontier |= fresh
+                kept = [b for b in group if b[0] in live]
+                kept_groups.append(kept)
+                # What the group outside sees is this one as rebuilt: the
+                # kept values' references, and the body's.
+                seed = set(seed)
+                for _n, refs, _e, _p, _o in kept:
+                    seed |= refs
+            parts = []
+            for kept in reversed(kept_groups):
+                for _n, _r, _e, prefix, bops in kept:
+                    parts.append(prefix)
+                    ops |= bops
+            if ops & _PROGRAM_AS_DATA:
+                return None
+            return b"".join(parts), folded, frozenset(ops)
+
+    def programs(self, index):
+        """``(expected bytes, expr bytes)`` of the example's two programs,
+        or ``None`` when they have to be built from source."""
+        from core.tokens import encode
+        out = []
+        for side in (0, 1):
+            derived = self.sides.get((index, side))
+            if derived is None:
+                return None
+            out.append(derived[0] + encode(derived[1]))
+        return tuple(out)
+
+    def settle(self, native, granted, limits):
+        """``{index: (expected text, got text, got steps)}`` for the
+        examples whose two sides it could run in a session.
+
+        Sides that keep the same defs share a program: those defs, and a
+        body that lists every such side as a closure, ``(fn [x] side)``.
+        One session evaluates the defs once; a call per side evaluates the
+        side.  What makes that the side's own run:
+
+        * **Values.**  LOVA is pure outside the IO family, and a side that
+          can reach it is not shared (`_NOT_SHARED`).  A value comes back
+          as data and is printed by `core.cli.format_value`, which is what
+          the runtime prints (the golden set holds it to that); a map as a
+          handle, printed from its `map-pairs` -- the order `format_value`
+          reads; a closure cannot be printed from outside, and that side
+          runs as its own program.
+        * **Steps.**  A run's count is its defs' and then its body's.  The
+          defs' is the session's open less the list's own cost, measured
+          on the same list with no defs; the body's is the call's.  The
+          call's ceiling is the run's less the defs', so it stops where
+          the run would.
+        * **Traps.**  A side that traps in the session -- or overflows,
+          since a call is a frame deeper than a run's body -- runs as its
+          own program, and the session is reopened, so that nothing a trap
+          left behind (a budget frame, the surprise trace) reaches the
+          next call.
+        """
+        from core.cli import format_value
+        from core.native import NativeSession, NativeSessionError, Ref
+        from core.runtime import NIL_VALUE, MapValue, list_from
+        from core.tokens import CONS, LAMBDA, MAP_PAIRS, NIL, REF, Lit, Node as TNode, encode
+        traps = (BudgetTrap, DeltaTrap, ValueError, NotImplementedError)
+        by_lets: Dict[bytes, List[Any]] = {}
+        for key, derived in self.sides.items():
+            if derived is not None and not (derived[2] & _NOT_SHARED):
+                by_lets.setdefault(derived[0], []).append(key)
+        pid = self.free_id
+
+        def listed(bodies):
+            node = TNode(op=NIL, args=[])
+            for body in reversed(bodies):
+                node = TNode(op=CONS, args=[TNode(op=LAMBDA, args=[Lit(pid), body]), node])
+            return node
+
+        helper = TNode(op=MAP_PAIRS, args=[TNode(op=REF, args=[Lit(pid)])])
+        answers: Dict[Any, Any] = {}
+        for lets, keys in by_lets.items():
+            bodies = [helper] + [self.sides[k][1] for k in keys]
+            # the list is a chain of conses as deep as there are sides, and
+            # `encode` recurses on it: past ~990 sides it needs the room a build has
+            with _build_stack():
+                data = lets + encode(listed(bodies))
+                blank = encode(listed([Lit(0)] * len(bodies)))
+            held: List[Any] = [None]
+
+            def session():
+                if held[0] is None:
+                    held[0] = NativeSession(native, None, program=data, allow=granted,
+                                            max_steps=limits["max_steps"],
+                                            max_depth=limits["max_call_depth"])
+                return held[0]
+
+            def drop():
+                s, held[0] = held[0], None
+                if s is not None:
+                    try:
+                        s.close()
+                    except NativeSessionError:
+                        pass
+
+            made: List[Any] = []            # the handles a side's value made
+
+            def printable(value, s):
+                if value is None:
+                    return NIL_VALUE
+                if isinstance(value, (int, str)):
+                    return value
+                if isinstance(value, list):
+                    return list_from([printable(v, s) for v in value])
+                if isinstance(value, Ref):
+                    made.append(value)
+                    try:
+                        pairs = s.call(s.api[0], value, max_steps=limits["max_steps"])
+                    except traps:
+                        raise _Unprintable() from None      # not a map
+                    entries = {}
+                    for n, pair in enumerate(pairs or []):
+                        if not isinstance(pair, list) or len(pair) != 2:
+                            raise _Unprintable()
+                        entries[n] = (printable(pair[0], s), printable(pair[1], s))
+                    return MapValue(entries)
+                raise _Unprintable()
+
+            try:
+                try:
+                    listing = native.run(blank,
+                                         max_steps=limits["max_steps"])
+                    s = session()
+                except traps:
+                    continue                # the defs trap: each side on its own
+                defs_steps = s.steps - listing.steps
+                room = limits["max_steps"] - defs_steps
+                if defs_steps < 0 or room <= 0 or not isinstance(s.api, list) \
+                        or len(s.api) != len(bodies):
+                    continue
+                for j, key in enumerate(keys, start=1):
+                    try:
+                        s = session()
+                        made.clear()
+                        value = s.call(s.api[j], 0, max_steps=room)
+                        steps = defs_steps + s.steps
+                        text = format_value(printable(value, s))
+                        # A world a side returned is its own to forget:
+                        # kept, 813 of them made the runtime three gigabytes.
+                        s.release(*made)
+                        made.clear()
+                    except traps + (_Unprintable,):
+                        drop()
+                        continue
+                    answers[key] = (text, steps)
+            finally:
+                drop()
+        out = {}
+        for (index, side) in self.sides:
+            if side == 0 and (index, 0) in answers and (index, 1) in answers:
+                out[index] = (answers[(index, 0)][0], answers[(index, 1)][0],
+                              answers[(index, 1)][1])
+        return out
+
+
+class _build_stack:
+    """The recursion room a build takes (`core.cli.BUILD_RECURSION`): a
+    program's defs are one chain of nested lets and the passes recurse on it."""
+
+    def __enter__(self):
+        import sys
+        from core.cli import BUILD_RECURSION
+        self.previous = sys.getrecursionlimit()
+        if self.previous < BUILD_RECURSION:
+            sys.setrecursionlimit(BUILD_RECURSION)
+        return self
+
+    def __exit__(self, *_exc):
+        import sys
+        sys.setrecursionlimit(self.previous)
+        return False
 
 
 def _locate_all(results, failed, exprs, wants, source, with_body, prelude, kwargs, budget_s,

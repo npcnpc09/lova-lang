@@ -43,10 +43,14 @@ loaded, a tree too deep for ``pickle``'s recursion limit -- each of
 them means "no cache", and the build proceeds as if there were none.
 An entry that cannot be unpickled is deleted on the way past.
 
-**Size**: there is no eviction.  Entries are small (a megabyte for the
-largest of the 3D libraries) and a stale one is never read, because
-the key names its inputs; a directory that has grown unwelcome is
-deleted, and nothing is lost but the time to build again.  Trivial
+**Size**: capped at ``LOVA_CACHE_MAX_MB`` megabytes (500 by default;
+``0`` means no cap).  A hit touches its entry's modification time, so
+the time is the last use; a store that takes the directory past the
+cap deletes the least recently used entries until it is under it
+again.  A stale entry is never read, because the key names its inputs
+-- but before the cap a checker that built every example twice left
+eight hundred of them a run, and the directory reached 4 GB (journal,
+2026-09-29).  Trivial
 builds are not written at all -- an entry is stored only when the
 build took at least ``LOVA_CACHE_MIN_MS`` milliseconds (50 by
 default), which keeps the thousands of one-line programs a test run or
@@ -103,6 +107,48 @@ def cache_dir() -> Optional[str]:
         if local:
             return os.path.join(local, "lova", "cache")
     return os.path.join(os.path.expanduser("~"), ".cache", "lova")
+
+
+def _max_bytes() -> int:
+    """The directory's cap in bytes; 0 for none."""
+    try:
+        return max(0, int(float(os.environ.get("LOVA_CACHE_MAX_MB", "500")) * 1024 * 1024))
+    except ValueError:
+        return 500 * 1024 * 1024
+
+
+def _prune(directory: str, keep: Optional[str] = None) -> int:
+    """Delete the least recently used entries until the directory is
+    under the cap; the number removed.  ``keep`` (the entry just
+    written) goes last.  Every failure is silent."""
+    cap = _max_bytes()
+    if cap <= 0:
+        return 0
+    try:
+        entries = []
+        total = 0
+        with os.scandir(directory) as it:
+            for item in it:
+                if not item.name.endswith(".pkl") or item.name.startswith(".tmp-"):
+                    continue
+                st = item.stat()
+                total += st.st_size
+                entries.append((item.path == keep, st.st_mtime, st.st_size, item.path))
+    except OSError:
+        return 0
+    if total <= cap:
+        return 0
+    removed = 0
+    for _last, _mtime, size, path in sorted(entries):
+        if total <= cap:
+            break
+        try:
+            os.remove(path)
+            total -= size
+            removed += 1
+        except OSError:
+            pass
+    return removed
 
 
 def _min_seconds() -> float:
@@ -168,6 +214,10 @@ def load(key: str) -> Optional[Tuple[Any, Any]]:
         except OSError:
             pass
         return None
+    try:
+        os.utime(path)                  # the time is the last use: what the cap evicts by
+    except OSError:
+        pass
     return value
 
 
@@ -198,6 +248,7 @@ def store(key: str, value: Tuple[Any, Any], elapsed: float = 1.0) -> bool:
         handle = None
         os.replace(temp, path)          # atomic: no reader sees a half-written entry
         temp = None
+        _prune(directory, keep=path)
         return True
     except Exception:                  # noqa: BLE001 -- a cache that cannot write is no cache
         if handle is not None:

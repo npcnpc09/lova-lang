@@ -666,6 +666,78 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### 2026-09-29 -- a native check that builds once
+
+`tests/test_danmaku.py::test_examples_pass` took 1 624 s of a 1 773 s
+suite.  `lova check --native` built the whole program twice per example
+(`build(with_body(side))`): 822 builds of the danmaku's 50 KB of rules,
+about two seconds each, and a `core/cache.py` entry for each (the cache
+had reached 4.2 GB).  The runtime's share was the defs' constants,
+2.36 M steps evaluated again for every side.  Now (`core/examples.py`):
+
+* `_Specialiser` parses and checks the program once with every
+  example's two sides as the body, and derives each side's compiled
+  program with the compiler's own drop-unused and fold -- a def's value
+  is dropped-inside, folded and encoded once, and the liveness over
+  the binding groups is redone per side from the same helpers.  Sides
+  that read a program as data (`quote`, `eval`, `read`, Meta,
+  Evolution) are built from source, since an example's own name ids
+  depend on the parse.
+* `settle` groups the sides that keep the same defs (59 programs for
+  822 sides on the danmaku) and runs each group in one native session:
+  the defs once, a call per side.  Steps are the defs' (the open less
+  the list's cost) plus the call's, and the call's ceiling is the run's
+  less the defs'; a side that traps, overflows, touches the IO family
+  or returns a closure runs as its own derived program instead.
+* `core/cache.py` has a cap, `LOVA_CACHE_MAX_MB` (500 by default),
+  evicting the least recently used entry.
+
+Every field of every result identical to the per-example check --
+`steps` included -- on the danmaku (411 examples), the fifteen other
+files with examples, and three small programs made to miss, trap and
+hit the step and depth ceilings; the one field that differed,
+`fault.probes` on a Python-located failure, differs between two runs
+of the old code too (the locator's wall-clock budget).  Danmaku check
+1 550 s -> 45 s; the FPS kit 73 s -> 2.6 s, the city builder 83 s ->
+3.1 s.  The Python path (MCP `lova_check`) still builds per example.
+
+### Milestone 44 (2026-09-28) -- stage 1 of the danmaku, as a game
+
+The owner's goal since M42 is a complete, free Touhou fan game; stage 1
+is now what they judged finished, after two days of looking and asking
+for changes.  The rules were M42/M43's (`lib/danmaku.lova`, the stage
+engine; `lib/danmaku_stage1.lova`, the road and Rumia: 53/53 examples);
+this batch is the Godot side, 6 400 lines of GDScript in `game/`:
+
+- **An opening** (`opening.gd`), the owner's storyboard: the Hakurei
+  Shrine at dusk, the donation box empty, the sky turning over, Marisa
+  crashing in.  A shrine, a sky, two posed VRM figures and a scripted
+  camera, built and thrown away; a storyboard written as a coroutine
+  that waits on time or on Z.
+- **Fairies built in code** (`fairy_mesh.gd`): a chibi body and wings,
+  two draw calls a wave, the face painted in the shader; revised once
+  against official art at the owner's word ("not a round face").
+- **Reimu's flight** posed from her speed through springs, the body
+  composed down the bone chain -- `_turn` sets a bone in the figure's
+  frame, so a lean of the hips had never reached the spine, and she had
+  flown "standing still".
+- **A drawing clock** one tick behind the newest: ticks come back from
+  the worker thread unevenly, and positions read at arrival time judder
+  (0.45-0.83 -> 0.25 m/s of velocity noise a frame at 6 m/s).  She blinks
+  only after a hit now, not through a bomb.
+- **The Youkai Mountain** on the horizon, following the camera; **a
+  results talisman** and **a game-over screen**; **a fairy's defeat**
+  (a ring, stars, broken wing panes, "one rest~").
+- Found on the way: the nature kit's trees in the sun's shadow map cost
+  the Vega 8 a frame 150 ms (1-5 fps in the opening); they cast none.
+
+Not in the repository, by the owner's choice: the three VRM models and
+the CC0 nature kit (94 MB; `apps/godot/danmaku/README.md` says where
+they come from).  The models' own metadata allows redistribution --
+Rumia's asks for credit and no commercial use -- so the choice is the
+repository's size, not a licence.  The motion is posed by hand, stiffer
+than captured MMD motion; the music is still synthesised.
+
 ### Milestone 43 (2026-09-27) -- the danmaku's pain points
 
 The owner asked, at the end of the M42 stage-1 slice, whether writing

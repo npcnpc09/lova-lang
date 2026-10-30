@@ -123,6 +123,9 @@ def argument_literal(value: str) -> str:
     return f'"{escaped}"' 
 
 
+BUILD_RECURSION = 12000
+
+
 def build(source: str, *, prelude: bool = True, stage2: bool = False,
           do_compile: bool = True):
     """Source text -> (tree, report or None).
@@ -145,8 +148,19 @@ def build(source: str, *, prelude: bool = True, stage2: bool = False,
         if hit is not None:
             return hit
     started = time.perf_counter()
-    built = _build_uncached(source, prelude=prelude, stage2=stage2,
-                            do_compile=do_compile)
+    # A program's defs are one chain of nested `let`s and every pass walks
+    # it by recursion, about two Python frames a def: the danmaku's rules
+    # and stages are past 900 of the default 1000 (and a test runner's own
+    # frames are on top of that), so a build lifts the limit for its own
+    # duration, as an evaluation does.
+    previous = sys.getrecursionlimit()
+    if previous < BUILD_RECURSION:
+        sys.setrecursionlimit(BUILD_RECURSION)
+    try:
+        built = _build_uncached(source, prelude=prelude, stage2=stage2,
+                                do_compile=do_compile)
+    finally:
+        sys.setrecursionlimit(previous)
     if key is not None:
         cache.store(key, built, time.perf_counter() - started)
     return built
