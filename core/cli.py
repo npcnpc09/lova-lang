@@ -897,6 +897,24 @@ def build_parser() -> argparse.ArgumentParser:
                        help="with --strength: probe this def only (repeatable)")
     check.set_defaults(func=cmd_check)
 
+    prof = common(subparsers.add_parser(
+        "profile", help="where a program's steps go, by function, per tick "
+                        "(native runtime)"))
+    prof.add_argument("--init", required=True, metavar="EXPR",
+                      help="the world before tick 0: an expression in the "
+                           "program's scope (its last form is dropped)")
+    prof.add_argument("--step", required=True, metavar="EXPR",
+                      help="one tick: an expression of `w` (the world) and "
+                           "`k` (the tick) giving the next world")
+    prof.add_argument("--ticks", default="0..59", metavar="A..B",
+                      help="the ticks profiled (those before A run unprofiled)")
+    prof.add_argument("--top", type=int, default=25,
+                      help="rows of each table (default 25)")
+    prof.add_argument("--folded", metavar="FILE",
+                      help="write the range's folded stacks here, for a "
+                           "flame graph (flamegraph.pl, inferno, speedscope)")
+    prof.set_defaults(func=cmd_profile, max_steps=400_000_000)
+
     repl = common(subparsers.add_parser("repl", help="interactive session"),
                   with_file=False)
     repl.set_defaults(func=cmd_repl)
@@ -906,6 +924,36 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.set_defaults(func=cmd_mcp)
 
     return parser
+
+
+def cmd_profile(args: argparse.Namespace) -> int:
+    """`lova profile`: the step profiler over a range of ticks."""
+    from core import profile
+    source = substitute(read_source(args.file), args.args)
+    lo, hi = profile.parse_range(args.ticks)
+    try:
+        prof, costs = profile.run(source, args.init, args.step, (lo, hi),
+                                  max_steps=args.max_steps)
+    except (CompileError, ValueError, NotImplementedError) as exc:
+        return report_error(exc, source)
+    if not costs:
+        print("no tick profiled", file=sys.stderr)
+        return EXIT_OK
+    dear = prof.dearest
+    print(f"ticks {lo}..{hi}: {len(costs)} profiled, {sum(costs)} steps, "
+          f"mean {sum(costs) / len(costs):.0f}, dearest {dear[0]} (tick {dear[1]})")
+    print()
+    print(f"per tick over {lo}..{hi}, by self steps:")
+    print(prof.table(args.top))
+    print()
+    print(f"the dearest tick, {dear[1]} ({dear[0]} steps):")
+    print(prof.dearest_table(args.top))
+    if args.folded:
+        with open(args.folded, "w", encoding="utf-8") as fh:
+            fh.write(prof.folded_text())
+        print()
+        print(f"folded stacks -> {args.folded}")
+    return EXIT_OK
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:

@@ -69,6 +69,8 @@ pub struct Rt {
     /// A closure the VM made carries no `Scope`; this stands in the
     /// field the tree-walker's closures use.
     pub empty_env: Rc<Scope>,
+    /// The step profiler (`callprof.rs`), when a request asked for one.
+    pub prof: Option<Box<crate::callprof::StepProf>>,
 }
 
 impl Rt {
@@ -98,6 +100,7 @@ impl Rt {
             surprise: Vec::new(),
             vm: crate::vm::VmState::new(),
             empty_env: Scope::root(),
+            prof: None,
         }
     }
 
@@ -1505,6 +1508,9 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
 
         #[cfg(feature = "prof")]
         crate::prof::mark(crate::prof::R_CALL);
+        if let Some(p) = rt.prof.as_deref_mut() {
+            p.enter(&cl, rt.steps);
+        }
         let saved_caps = rt.caps;
         let saved_enclosed = rt.enclosed;
         rt.caps = cl.caps;
@@ -1525,6 +1531,9 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
         };
         #[cfg(feature = "prof")]
         crate::prof::mark(crate::prof::R_CALL);
+        if let Some(p) = rt.prof.as_deref_mut() {
+            p.exit(rt.steps);
+        }
 
         rt.caps = saved_caps;
         rt.enclosed = saved_enclosed;

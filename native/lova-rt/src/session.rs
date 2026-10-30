@@ -297,6 +297,10 @@ pub fn call(sessions: &mut HashMap<u64, Session>, request: &J) -> J {
     s.rt.current = std::ptr::null();
     s.rt.output.clear();
     s.rt.path.clear();
+    // `"profile": true`: this call's steps, put down to the closures
+    // that spent them (`callprof.rs`), come back under `profile`.
+    let profiling = request.get("profile").and_then(|v| v.as_bool()).unwrap_or(false);
+    s.rt.prof = if profiling { Some(Box::default()) } else { None };
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         for arg in args {
@@ -307,6 +311,10 @@ pub fn call(sessions: &mut HashMap<u64, Session>, request: &J) -> J {
 
     let mut reply = JMap::new();
     reply.insert("id".into(), id);
+    if let Some(p) = s.rt.prof.take() {
+        let rt = &s.rt;
+        reply.insert("profile".into(), p.finish(rt.steps, |n| rt.ordinal(n)));
+    }
     match outcome {
         Err(_) => {
             reply.insert("ok".into(), J::Bool(false));

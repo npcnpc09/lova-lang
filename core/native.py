@@ -691,6 +691,7 @@ class NativeSession:
         self.owns_runtime = owns_runtime
         self.steps = 0
         self.stdout = ""
+        self.profile: Optional[List[Any]] = None
         self.id: Optional[int] = None
         if program is None:
             program = tree
@@ -817,18 +818,26 @@ class NativeSession:
                            "key": self._encode(key)})
         return self._decode(reply.get("value"))
 
-    def call(self, fn: Any, *args: Any, max_steps: Optional[int] = None) -> Any:
+    def call(self, fn: Any, *args: Any, max_steps: Optional[int] = None,
+             profile: bool = False) -> Any:
         """Apply a closure to its arguments, one at a time.
 
         Fewer arguments than the closure takes gives a closure back (a
         `Ref`); more applies the result to the rest -- which is what
         `core.runtime._call` per argument does, and what the drivers'
         curried records rely on.
+
+        ``profile=True`` asks the runtime to put the call's steps down to
+        the closures that spent them; the rows land in ``self.profile``
+        (`core/profile.py` reads them), None when not asked.
         """
         payload = {"op": "call", "fn": self._encode(fn),
                    "args": [self._encode(a) for a in args]}
         payload["max_steps"] = int(self.max_steps if max_steps is None
                                    else max_steps)
+        self.profile = None
+        if profile:
+            payload["profile"] = True
         try:
             reply = self._ask(payload)
         except Exception as exc:                           # noqa: BLE001
@@ -840,6 +849,7 @@ class NativeSession:
             raise
         self.steps = int(reply.get("steps") or 0)
         self.stdout = reply.get("stdout") or ""
+        self.profile = reply.get("profile")
         return self._decode(reply.get("value"))
 
     def release(self, *refs: Any) -> None:
