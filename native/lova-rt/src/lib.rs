@@ -4,6 +4,7 @@
 //! links this crate calls `server::handle` directly.
 
 pub mod alloc;
+pub mod callprof;
 pub mod conserve;
 pub mod evolve;
 pub mod fx;
