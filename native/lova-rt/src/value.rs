@@ -66,11 +66,13 @@ pub struct ClosureData {
     pub name: Cell<Option<i64>>,
     pub calls: Cell<u64>,
     pub own: Cell<u64>,
-    /// The named closure whose body made this one, for `hot`.  A
-    /// borrowed pointer: every closure that can be an owner is one a
-    /// `let` named, and `Rt::named` holds an `Rc` to each of those for
-    /// the runtime's life.  Null is "no owner".
-    pub owner: Cell<*const ClosureData>,
+    /// The named closure whose body made this one, for `hot`.  Held:
+    /// the steps this closure spends are put down to it, so it lives
+    /// as long as this one does.  (It was a borrowed pointer, kept
+    /// valid by `Rt::named` holding every named closure for the
+    /// runtime's life -- and with it every world a per-tick `let` of a
+    /// lambda reached, for the life of a session; 2026-10-31.)
+    pub owner: Option<Rc<ClosureData>>,
 }
 
 pub struct LoopFn {
@@ -136,6 +138,10 @@ impl Vars {
         if !self.rest.is_empty() {
             self.rest.clear();
         }
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &Value> {
+        self.one.iter().map(|(_, v)| v).chain(self.rest.values())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (i64, &Value)> {

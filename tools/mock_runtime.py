@@ -326,6 +326,9 @@ def session_call(request):
     rt.mark = 0
     rt.current = None
     del rt.output[:]
+    # The surprise trace is the call's own too: kept across calls it grew
+    # by one entry per `abs` for the life of the session.
+    del rt.surprise.events[:]
     reply = {"id": request.get("id")}
     try:
         try:

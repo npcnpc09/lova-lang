@@ -155,7 +155,8 @@ as data where it is data and as a handle where it is not.
   `steps` is this call's own, and `max_steps` (default: the session's)
   is this call's ceiling.  The budget stack, the call depth, `hot`
   attribution and the surprise trace behave as in a fresh `run` that
-  made this call at the top level.  `stdout` in the reply is what this
+  made this call at the top level (the trace starts empty for every
+  call: see the rulings below).  `stdout` in the reply is what this
   call wrote.  A trap is reported as in `run` (`anomaly` with
   `position_path` and `position_nodes`; frames inside a closure from
   the session's program have their ordinals in that program), and the
@@ -181,10 +182,17 @@ this section, so that a third implementation does not have to ask:
   `null`.** The table has one encoding for nil, and a driver that must
   tell them apart asks a closure.
 * **What a `call` resets is what `Rules.call` resets:** `steps`, the
-  `hot` interval (`mark` / `current`) and the output buffer.  The
-  surprise trace and the budget stack are not cleared -- a handler
-  unwinds the stack, and `trace-surprise` across ticks needs the trace.
-  Step counts do not depend on this either way.
+  `hot` interval (`mark` / `current`), the output buffer and the
+  surprise trace.  The budget stack is not cleared -- a handler unwinds
+  it.  The trace was once kept across calls, for a `trace-surprise`
+  across ticks; nothing reads it there (`trace` reads its own sandbox's
+  trace), and kept, it grew by one entry per `abs` / `surprise` for the
+  life of the session -- a game's session lasts a whole stage
+  (2026-10-31).  Step counts do not depend on this either way.
+  Nor is a value kept for `hot`'s sake: a closure a call bound with
+  `let` and nothing holds any more is let go between calls, its steps
+  and calls kept under its name, so the eight rows a trap reports are
+  the same as if every such closure were still held.
 * **A call runs outside `evaluate`,** which is what makes room for
   `max_depth` in the Python runtime: a session makes that room once,
   at open, and a recursion overflow inside a call is the same

@@ -70,6 +70,9 @@ fn take_frame(
 }
 
 fn give_frame(rt: &mut Rt, mut frame: Rc<Frame>) {
+    if Rc::strong_count(&frame) > 1 {
+        break_frame_cycle(&frame);
+    }
     if rt.vm.frame_pool.len() < POOL && Rc::strong_count(&frame) == 1 {
         if let Some(f) = Rc::get_mut(&mut frame) {
             f.parent = None;
@@ -79,6 +82,43 @@ fn give_frame(rt: &mut Rt, mut frame: Rc<Frame>) {
             rt.vm.frame_pool.push(frame);
         }
     }
+}
+
+/// `rt::break_scope_cycle` for a heap frame: a frame held only by
+/// closures in its own slots that nothing else holds (a `let` of a
+/// lambda) is an `Rc` cycle the call leaves behind; emptied, it goes.
+#[inline(never)]
+fn break_frame_cycle(frame: &Rc<Frame>) {
+    let n = frame.unit.nslots as usize;
+    let slots = frame.slots.borrow();
+    let mut inner: Vec<*const ClosureData> = Vec::new();
+    for v in slots.iter(n) {
+        if let Value::Closure(c) = v {
+            let here = matches!(&c.vm, Some(code)
+                if code.frame.as_ref().map_or(false, |f| Rc::ptr_eq(f, frame)));
+            if here {
+                let p = Rc::as_ptr(c);
+                if inner.contains(&p) {
+                    continue;
+                }
+                let held_here = slots
+                    .iter(n)
+                    .filter(|w| matches!(w, Value::Closure(d) if Rc::ptr_eq(c, d)))
+                    .count();
+                let named = c.name.get().is_some() as usize;
+                if Rc::strong_count(c) != held_here + named {
+                    return;
+                }
+                inner.push(p);
+            }
+        }
+    }
+    if inner.is_empty() || Rc::strong_count(frame) != 1 + inner.len() {
+        return;
+    }
+    drop(slots);
+    let spent = std::mem::take(&mut *frame.slots.borrow_mut());
+    drop(spent);
 }
 
 /// `depth` frames up the captured chain; 1 is the nearest enclosing
@@ -366,7 +406,7 @@ fn run(
                 if let Value::Closure(c) = &v {
                     if c.name.get().is_none() {
                         c.name.set(Some(unit.names[slot as usize]));
-                        rt.named.push(c.clone());
+                        rt.named.push(crate::rt::Named::Live(c.clone()));
                     }
                 }
                 slot_set!(slot, v);
@@ -396,7 +436,7 @@ fn run(
                     name: Cell::new(None),
                     calls: Cell::new(0),
                     own: Cell::new(0),
-                    owner: Cell::new(rt.current),
+                    owner: rt.owner_now(),
                     vm: Some(VmCode { unit: child, frame: captured, parent_mask: captured_mask }),
                 })));
             }

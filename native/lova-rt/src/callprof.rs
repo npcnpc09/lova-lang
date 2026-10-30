@@ -60,13 +60,9 @@ impl StepProf {
         let at = match self.index.get(&key) {
             Some(i) => *i,
             None => {
-                let owner = cl.owner.get();
-                let owner_name = if owner.is_null() {
-                    NO_NAME
-                } else {
-                    // Safety: an owner is a named closure, which
-                    // `Rt::named` holds for the runtime's life.
-                    unsafe { &*owner }.name.get().unwrap_or(NO_NAME)
+                let owner_name = match &cl.owner {
+                    None => NO_NAME,
+                    Some(o) => o.name.get().unwrap_or(NO_NAME),
                 };
                 let i = self.nodes.len() as u32;
                 self.nodes.push(Node {

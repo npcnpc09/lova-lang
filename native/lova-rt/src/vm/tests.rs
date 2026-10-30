@@ -837,3 +837,65 @@ fn the_families_agree() {
         same_everywhere(name, build.as_ref());
     }
 }
+
+/// A session calls a def that binds a lambda with `let` (2026-10-31):
+/// the lambda holds the frame it is bound in, an `Rc` cycle, and
+/// `named` held every such lambda for the runtime's life -- the game's
+/// sessions grew by tens of kilobytes a tick.  The call's frame is
+/// emptied once nothing else holds the pair, `compact_named` lets the
+/// lambda go, and `hot`'s counters for its name are kept.
+#[test]
+fn a_let_bound_lambda_does_not_outlive_its_call() {
+    for vm in [false, true] {
+        let mut a = Arena::new();
+        // (let 1 (lambda 2 (let 3 (lambda 4 (ref 2))
+        //                       (sub (apply (ref 3) (ref 2)) 0)))
+        //   (ref 1))
+        let p4 = lit(&mut a, 4);
+        let r2 = lit(&mut a, 2);
+        let inner_body = op(&mut a, REF, vec![r2]);
+        let inner = op(&mut a, LAMBDA, vec![p4, inner_body]);
+        let r3 = lit(&mut a, 3);
+        let head = op(&mut a, REF, vec![r3]);
+        let r2b = lit(&mut a, 2);
+        let argv = op(&mut a, REF, vec![r2b]);
+        let call = op(&mut a, APPLY, vec![head, argv]);
+        // Not in tail position: a tail call takes the lambda out of the
+        // frame with it, and the frame cannot be emptied under it.
+        let zero = lit(&mut a, 0);
+        let used = sub(&mut a, call, zero);
+        let n3 = lit(&mut a, 3);
+        let let3 = op(&mut a, LET, vec![n3, inner, used]);
+        let p2 = lit(&mut a, 2);
+        let outer = op(&mut a, LAMBDA, vec![p2, let3]);
+        let r1 = lit(&mut a, 1);
+        let body = op(&mut a, REF, vec![r1]);
+        let n1 = lit(&mut a, 1);
+        let root = op(&mut a, LET, vec![n1, outer, body]);
+        let mut rt = Rt::new(u64::MAX, 10_000, 0, "");
+        rt.ordinals = std::rc::Rc::new(preorder_ordinals(&a, root));
+        rt.vm.on = vm;
+        let f = if vm { exec::run_program(&mut a, &mut rt, root) } else { rt::eval(&mut a, &mut rt, root, false) };
+        let f = match f {
+            Ok(v) => v,
+            Err(_) => panic!("the program traps"),
+        };
+        for i in 0..2000 {
+            rt.compact_named();
+            rt.steps = 0;
+            let v = rt::call(&mut a, &mut rt, f.clone(), crate::value::Value::Int(Int::from_i64(i)));
+            assert!(v.is_ok());
+        }
+        assert!(rt.named.len() < 2 + rt::NAMED_SLACK, "vm {}: {} named", vm, rt.named.len());
+        let calls: u64 = rt
+            .named
+            .iter()
+            .map(|e| match e {
+                rt::Named::Live(c) if c.name.get() == Some(3) => c.calls.get(),
+                rt::Named::Folded { name: 3, calls, .. } => *calls,
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(calls, 2000, "vm {}", vm);
+    }
+}
