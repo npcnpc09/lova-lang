@@ -665,6 +665,8 @@ iteration cost.)*
 - The fixed-point family (`sin`, `cos`, `sin-fine`, `cos-fine`,
   `quot`, `nth`, `isqrt`, §5.11) costs **one step** each; `nth` walks
   to its element for that one step.
+- The swarm family (`swarm-age`, `swarm-hit`, §5.12) costs **one step**
+  each, however many records it walks.
 - `map-put`, `map-get`, `map-pairs` cost **one step** each, whatever
   the size of the map.
 - `hash`, `explain`, `read`, `uid`, `generation`, `ancestor-of`,
@@ -1944,6 +1946,62 @@ entry). The values are the old definitions' exactly
 The integer slots coerce with `_as_int(v, name)`. `sin`, `cos`,
 `sin-fine`, `cos-fine`, `quot` and `isqrt` are pure and fold at compile
 time (`core/compiler.py`, pass 3) when their operands are literals.
+
+### 5.12 Swarm (0x5F–0x60) *(6c, 2026-10-31)*
+
+A shooter's bullets as records (maps keyed by field-name texts) whose
+place is a function of their age `a = t - born`; the two walks a
+danmaku world made over all of them every tick, in LOVA (~140 steps a
+bullet), as operators: **one step for the node**, the walk the
+runtime's. Every operand is evaluated, left to right, before any is
+coerced. `core/runtime.py` (`swarm_age`, `swarm_hit`) is the reference,
+`native/lova-rt/src/swarm.rs` the port. All arithmetic is on unbounded
+integers, `//` floored. A field is read only in the case that needs it
+(below); a needed field that is absent is `get`'s fault, `signalled`
+code 17; a field present but not an integer is `type-violation`. A
+record slot reads through `_as_map` (a list of pairs is a map).
+
+**`(swarm-age t new pending live)`** → `(list live' pending')`. Let
+`every` = `new` reversed, then `pending`. Each of `every` has its `born`
+read; then `due` = those with `born <= t`, `later` = those with
+`born > t`, each in `every`'s order. `live'` = `due` reversed, then
+`live`, keeping those with `t < die` (`die` read for each of these, in
+this order); `pending'` = `later`. The records themselves, not copies.
+
+**`(swarm-hit bs t at before wave)`** → `(list hit fakes grazes waved)`.
+`at` and `before` are `(list x y z)`, `before` may be `nil` (no grazes);
+`wave` is `(list wave wave-r wave-o wave-sp)`; another length is
+`domain-error`. For each record `b` of `bs`, in order: `a = t - born`,
+`kind` read; it is a **rod** when `kind = 125`.
+
+- Its place at age `a`: when `w ≠ 0` (spun), with `qx = (ox - cx) + vx·a`,
+  `qz = (oz - cz) + vz·a`, `n = w·a`, `C = fs(n + 16384)`, `S = fs(n)`:
+  `x = cx + (qx·C - qz·S) // 1024`, `z = cz + (qx·S + qz·C) // 1024`;
+  otherwise `x = ox + vx·a`, `z = oz + vz·a`. Always
+  `y = (oy + vy·a) - (g·a²) // 2`. `fs(n)`: `i = n // 256`,
+  `s0 = sin i`, `s0 + ((sin (i+1) - s0)·(n - 256·i)) // 256` (§5.11's
+  `sin`; floored, unlike `sin-fine`).
+- `d2(a, p)`: a point, `|place(a) - p|²`; a rod, with `(sx sy sz)` and
+  `d = p - place(a)`, `l2 = max(1, sx² + sy² + sz²)`,
+  `f = (clamp(d·s, 0, l2)·1024) // l2`, `e_i = d_i - (s_i·f) // 1024`:
+  `|e|²`.
+- **close** (`e = reach`, read first): a point, `dx = x - px`, then
+  `|dx| > e` → not; `dz = z - pz`, `|dz| > e` → not;
+  `dx² + dy² + dz² < e²`. A rod: out on the box first, x then z then y,
+  `d_i = p_i - place_i` against `s_i` (`s < 0`: `d < s - e` or `d > e`;
+  else `d < -e` or `d > s + e`), then `d2(a, at) < e²`.
+- A record not close is passed over. One that is: **real** unless
+  `70 ≤ kind ≤ 99` and then `c = (kind - 60) // 10` is ≥ 3, or `wave ≠ 0`
+  and `c ≠` the current wave: `wave` when `wave-r = 0`, else
+  `1 + ((wave-sp·a + (2·wave-r - wave-o)) // wave-r) mod 2`.
+- `inside` = `d2(a, at) < hit²`. A fake one inside adds 1 to `fakes`;
+  a real one inside sets `hit` to 1. A real one, when `before` is a
+  place, with `d2(a - 1, before) ≥ reach²` adds 1 to `grazes`, and to
+  `waved` when `70 ≤ kind < 100`.
+
+These are exactly 东方天球谭's `throw` / `roll` let-in and let-go and
+`weave`'s `close`, `d2`, `wave-real` and graze test (rules/danmaku.lova,
+2026-10-31), which `tests/test_swarm_family.py` keeps as the oracle.
 
 ---
 

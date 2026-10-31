@@ -8,6 +8,7 @@ pub mod callprof;
 pub mod conserve;
 pub mod evolve;
 pub mod fixed;
+pub mod swarm;
 pub mod fx;
 pub mod int;
 pub mod lineage;

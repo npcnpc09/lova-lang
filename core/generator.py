@@ -30,7 +30,7 @@ from core.tokens import (
     APPLY, END, IF_SURPRISE, LAMBDA, LET, LIT_INT, REF,
     RESULT_FOLLOWS_OPERANDS, RESULT_NOT_STATIC, SIGNATURES, TYPED_TOKENS,
     WHEN_ANOMALY, CAPABILITY_OF, EXTERNAL_BOUNDARY, LIT_TEXT, TEXT_FAMILY,
-    LIST_FAMILY, FIXED_FAMILY,
+    LIST_FAMILY, FIXED_FAMILY, SWARM_FAMILY,
 )
 from core.types import INT, LITERAL_INT, Type
 
@@ -213,7 +213,7 @@ class GenState:
         from core.types import LITERAL_INT, TEXT, is_subtype
         if not generate and slot.role not in ("binder", "ref-name", "caps")                 and is_subtype(TEXT, slot.expected_type):
             valid.add(LIT_TEXT)
-        for tok in TYPED_TOKENS if generate else (TYPED_TOKENS | TEXT_FAMILY | LIST_FAMILY | FIXED_FAMILY):
+        for tok in TYPED_TOKENS if generate else (TYPED_TOKENS | TEXT_FAMILY | LIST_FAMILY | FIXED_FAMILY | SWARM_FAMILY):
             sig = SIGNATURES[tok]
             out_type = sig.get("out_type")
             if out_type is None:

@@ -325,6 +325,8 @@ pub fn work(a: &Arena, rt: &mut Rt, op: u8, args: &[Value]) -> R<Value> {
         )),
         _ if (TEXT_LEN..=TEXT_MATCH_ALL).contains(&op) => text::work_text(a, rt, op, args),
         _ if (FIX_SIN..=FIX_ISQRT).contains(&op) => crate::fixed::work_fixed(a, op, args),
+        SWARM_AGE => crate::swarm::swarm_age(a, args),
+        SWARM_HIT => crate::swarm::swarm_hit(a, args),
         _ => Err(Fault::NotImplemented(
             format!("operator {} is outside this runtime's phase-2 scope", op_name(op)).into(),
         )),

@@ -42,6 +42,7 @@ FAMILIES = [
     ("Text", 0x40, 0x4D),
     ("List", 0x50, 0x57),
     ("Fixed point", 0x58, 0x5E),
+    ("Swarm", 0x5F, 0x60),
 ]
 
 
@@ -52,11 +53,11 @@ def _implemented() -> set:
     ``_TYPE_INFO`` exactly when the runtime learned to evaluate it, and
     that same set is what type-directed generation may emit.
     """
-    from core.tokens import LIT_TEXT, TEXT_FAMILY, LIST_FAMILY, FIXED_FAMILY
-    # The text, list and fixed-point families are typed but not
-    # generated (M25, M27, 6b).
+    from core.tokens import LIT_TEXT, TEXT_FAMILY, LIST_FAMILY, FIXED_FAMILY, SWARM_FAMILY
+    # The text, list, fixed-point and swarm families are typed but not
+    # generated (M25, M27, 6b, 6c).
     return (set(TYPED_TOKENS) | set(TEXT_FAMILY) | set(LIST_FAMILY)
-            | set(FIXED_FAMILY) | {LIT_TEXT})
+            | set(FIXED_FAMILY) | set(SWARM_FAMILY) | {LIT_TEXT})
 
 
 def _in_types(sig: dict) -> str:
@@ -111,7 +112,9 @@ def render() -> str:
         "demoted to a preference on 2026-09-10) and since M27 a **list",
         "family of 8** at 0x50-0x57 (Q94: the walkers, one step an element)",
         "and since 6b a **fixed-point family of 7** at 0x58-0x5E (lib/fixed.lova's",
-        "trigonometry and square root, the prelude's `quot` and `nth`).",
+        "trigonometry and square root, the prelude's `quot` and `nth`)",
+        "and since 6c a **swarm family of 2** at 0x5F-0x60 (a shooter's",
+        "bullet records let in, let go and looked at against one body, natively).",
         "Tokens are grouped into 8 families of 8 operators.  Arguments",
         "follow each operator as typed-slot tokens; types are positional,",
         "not annotated.  See `spec/paradigm-inheritance.md` for the",

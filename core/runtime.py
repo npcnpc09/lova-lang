@@ -108,6 +108,7 @@ from core.tokens import (
     TEXT_MATCH, TEXT_MATCH_ALL,
     LIST_MAP, LIST_FILTER, LIST_FOLD, LIST_REVERSE, LIST_RANGE, LIST_ANY, LIST_SORT_BY, LIST_ZIP,
     FIX_SIN, FIX_COS, FIX_SIN_FINE, FIX_COS_FINE, FIX_QUOT, FIX_NTH, FIX_ISQRT,
+    SWARM_AGE, SWARM_HIT,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -2740,6 +2741,185 @@ def _op_FIX_ISQRT(node: Node, rt: Runtime, chained: bool) -> Any:
     return fixed_isqrt(_as_int(_eval(node.args[0], rt), "isqrt"))
 
 
+# --- the swarm family (6c) ------------------------------------------------------
+#
+# A shooter's bullets are records whose place is a function of their
+# age (spec/runtime-semantics.md §5.12 has the fields).  Every tick a
+# danmaku world let the due ones in and the spent ones go, and looked at
+# each against the player's body, in LOVA -- ~140 steps a bullet, most
+# of the tick.  Two operators of one step a node; the walk is the
+# runtime's.  `native/lova-rt/src/swarm.rs` is the port: the same
+# integer arithmetic (floor division), the same order, a field read only
+# in the case that needs it -- so a field a case never needs may be
+# absent, as it could be under the LOVA these replace.  A field that is
+# needed and absent is `get`'s signal 17.
+
+_SW_NAMES = ("born", "die", "kind", "reach", "hit", "w", "ox", "oy", "oz",
+             "vx", "vy", "vz", "g", "cx", "cz", "sx", "sy", "sz")
+_SW_KEY = {name: _map_key(name, "swarm") for name in _SW_NAMES}
+SWARM_ROD = 125          # a rod: hits along (sx sy sz) from where it is
+
+
+def _sw_get(m: Any, name: str, ctx: str) -> int:
+    hit = m.entries.get(_SW_KEY[name])
+    if hit is None:
+        raise DomainTrap(
+            "signalled", "signal 17", {"operator": "signal", "code": 17},
+            "catch it with `when-anomaly` and branch on the code",
+        )
+    return _as_int(hit[1], ctx)
+
+
+def _sw_ints(v: Any, n: int, ctx: str) -> List[int]:
+    xs = list_to_python(_as_list(v, ctx))
+    if len(xs) != n:
+        raise DomainTrap(
+            "domain-error", f"{ctx}: expected a list of {n} integers, got {len(xs)} elements",
+            {"operator": ctx, "length": len(xs)},
+            f"give `{ctx}` the place as `(list x y z)` and the wave as "
+            "`(list wave wave-r wave-o wave-sp)`",
+        )
+    return [_as_int(x, ctx) for x in xs]
+
+
+def _sw_fine_sin(an: int) -> int:
+    """A spun bullet's sine: the 256ths table read between its entries
+    with floor division (not `sin-fine`'s rounding toward zero)."""
+    i = an // 256
+    s0 = fixed_sin(i)
+    return s0 + ((fixed_sin(i + 1) - s0) * (an - i * 256)) // 256
+
+
+class _SwBullet:
+    """One bullet record at age ``a``; its fields read as they are needed."""
+
+    __slots__ = ("m", "a", "ctx")
+
+    def __init__(self, m: Any, t: int, ctx: str):
+        self.m, self.ctx = m, ctx
+        self.a = t - _sw_get(m, "born", ctx)
+
+    def f(self, name: str) -> int:
+        return _sw_get(self.m, name, self.ctx)
+
+    def _spin(self, a: int):
+        qx = (self.f("ox") - self.f("cx")) + self.f("vx") * a
+        qz = (self.f("oz") - self.f("cz")) + self.f("vz") * a
+        an = self.f("w") * a
+        return qx, qz, _sw_fine_sin(an + 16384), _sw_fine_sin(an)
+
+    def x(self, a: int) -> int:
+        if self.f("w") != 0:
+            qx, qz, c, s = self._spin(a)
+            return self.f("cx") + (qx * c - qz * s) // 1024
+        return self.f("ox") + self.f("vx") * a
+
+    def z(self, a: int) -> int:
+        if self.f("w") != 0:
+            qx, qz, c, s = self._spin(a)
+            return self.f("cz") + (qx * s + qz * c) // 1024
+        return self.f("oz") + self.f("vz") * a
+
+    def y(self, a: int) -> int:
+        return (self.f("oy") + self.f("vy") * a) - (self.f("g") * (a * a)) // 2
+
+    def rod_d2(self, a: int, px: int, py: int, pz: int) -> int:
+        sx, sy, sz = self.f("sx"), self.f("sy"), self.f("sz")
+        dx, dy, dz = px - self.x(a), py - self.y(a), pz - self.z(a)
+        l2 = max(1, sx * sx + (sy * sy + sz * sz))
+        f = (max(0, min(l2, dx * sx + (dy * sy + dz * sz))) * 1024) // l2
+        ex = dx - (sx * f) // 1024
+        ey = dy - (sy * f) // 1024
+        ez = dz - (sz * f) // 1024
+        return ex * ex + (ey * ey + ez * ez)
+
+    def d2(self, rod: bool, a: int, px: int, py: int, pz: int) -> int:
+        if rod:
+            return self.rod_d2(a, px, py, pz)
+        dx, dy, dz = self.x(a) - px, self.y(a) - py, self.z(a) - pz
+        return dx * dx + (dy * dy + dz * dz)
+
+    def close(self, rod: bool, px: int, py: int, pz: int) -> bool:
+        a, e = self.a, self.f("reach")
+        if rod:
+            def out(d: int, s: int) -> bool:
+                return (d < s - e or d > e) if s < 0 else (d < -e or d > s + e)
+            if out(px - self.x(a), self.f("sx")):
+                return False
+            if out(pz - self.z(a), self.f("sz")):
+                return False
+            if out(py - self.y(a), self.f("sy")):
+                return False
+            return self.rod_d2(a, px, py, pz) < e * e
+        dx = self.x(a) - px
+        if abs(dx) > e:
+            return False
+        dz = self.z(a) - pz
+        if abs(dz) > e:
+            return False
+        dy = self.y(a) - py
+        return dx * dx + (dy * dy + dz * dz) < e * e
+
+
+def swarm_age(t: int, new: Any, pending: Any, live: Any) -> Any:
+    """``(swarm-age t new pending live)`` -> ``(list live' pending')``."""
+    ctx = "swarm-age"
+    every = list_to_python(_as_list(new, ctx))[::-1] + list_to_python(_as_list(pending, ctx))
+    old = list_to_python(_as_list(live, ctx))
+    borns = [_sw_get(_as_map(b, ctx), "born", ctx) for b in every]
+    due = [b for b, born in zip(every, borns) if born <= t]
+    kept = [b for b in due[::-1] + old if t < _sw_get(_as_map(b, ctx), "die", ctx)]
+    later = [b for b, born in zip(every, borns) if born > t]
+    return list_from([list_from(kept), list_from(later)])
+
+
+def swarm_hit(bs: Any, t: int, at: Any, before: Any, wave: Any) -> Any:
+    """``(swarm-hit bs t at before wave)`` -> ``(list hit fakes grazes waved)``."""
+    ctx = "swarm-hit"
+    px, py, pz = _sw_ints(at, 3, ctx)
+    prev = None if before is NIL_VALUE else _sw_ints(before, 3, ctx)
+    wv, wr, wo, wsp = _sw_ints(wave, 4, ctx)
+    hit = fakes = grazes = waved = 0
+    for m in list_to_python(_as_list(bs, ctx)):
+        b = _SwBullet(_as_map(m, ctx), t, ctx)
+        kind = b.f("kind")
+        rod = kind == SWARM_ROD
+        if not b.close(rod, px, py, pz):
+            continue
+        if kind < 70 or kind > 99:
+            real = True
+        else:
+            c = (kind - 60) // 10
+            if c >= 3:
+                real = False
+            elif wv == 0:
+                real = True
+            else:
+                cur = wv if wr == 0 else 1 + ((wsp * b.a + (2 * wr - wo)) // wr) % 2
+                real = c == cur
+        inside = b.d2(rod, b.a, px, py, pz) < b.f("hit") ** 2
+        if not real:
+            fakes += int(inside)
+            continue
+        hit = hit or int(inside)
+        if prev is not None:
+            r = b.f("reach")
+            if b.d2(rod, b.a - 1, prev[0], prev[1], prev[2]) >= r * r:
+                grazes += 1
+                waved += int(70 <= kind < 100)
+    return list_from([hit, fakes, grazes, waved])
+
+
+def _op_SWARM_AGE(node: Node, rt: Runtime, chained: bool) -> Any:
+    args = [_eval(a, rt) for a in node.args]
+    return swarm_age(_as_int(args[0], "swarm-age"), args[1], args[2], args[3])
+
+
+def _op_SWARM_HIT(node: Node, rt: Runtime, chained: bool) -> Any:
+    args = [_eval(a, rt) for a in node.args]
+    return swarm_hit(args[0], _as_int(args[1], "swarm-hit"), args[2], args[3], args[4])
+
+
 def _op_TEXT_CHARS(node: Node, rt: Runtime, chained: bool) -> Any:
     v = _eval(node.args[0], rt)
     return _text_chars(v, "text-chars") if isinstance(v, str) else _as_list(v, "text-chars")
@@ -3675,6 +3855,7 @@ _HANDLERS = {
     FIX_SIN: _op_FIX_TRIG, FIX_COS: _op_FIX_TRIG, FIX_SIN_FINE: _op_FIX_TRIG,
     FIX_COS_FINE: _op_FIX_TRIG, FIX_QUOT: _op_FIX_QUOT, FIX_NTH: _op_FIX_NTH,
     FIX_ISQRT: _op_FIX_ISQRT,
+    SWARM_AGE: _op_SWARM_AGE, SWARM_HIT: _op_SWARM_HIT,
     LIT_INT: _op_LIT_INT,
     IDENTITY: _op_IDENTITY,
     MERGE: _op_MERGE,

@@ -145,6 +145,9 @@ for _tok, _sym in zip(range(0x50, 0x58), "ΠΡΣΤΥΦΧΨ"):
 # quot, nu nth, rho root.
 for _tok, _sym in zip(range(0x58, 0x5F), "σκφχθνρ"):
     SYMBOLS[_tok] = _sym
+# The swarm family (6c): alpha for age, eta for hit.
+for _tok, _sym in zip(range(0x5F, 0x61), "αη"):
+    SYMBOLS[_tok] = _sym
 assert len(SYMBOLS) == len(SIGNATURES), f"symbol table must cover every token, has {len(SYMBOLS)}"
 assert len(set(SYMBOLS.values())) == len(SYMBOLS), "symbols must be distinct"
 assert not (set(SYMBOLS.values()) & set("0123456789-")), \

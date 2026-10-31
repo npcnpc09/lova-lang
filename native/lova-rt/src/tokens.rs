@@ -124,6 +124,8 @@ pub const FIX_COS_FINE: u8 = 0x5B;
 pub const FIX_QUOT: u8 = 0x5C;
 pub const FIX_NTH: u8 = 0x5D;
 pub const FIX_ISQRT: u8 = 0x5E;
+pub const SWARM_AGE: u8 = 0x5F;
+pub const SWARM_HIT: u8 = 0x60;
 
 // --- capabilities (spec §5.7) ----------------------------------------------
 
