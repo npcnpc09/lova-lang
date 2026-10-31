@@ -12,8 +12,9 @@ demoted to a preference on 2026-09-10) and since M27 a **list
 family of 8** at 0x50-0x57 (Q94: the walkers, one step an element)
 and since 6b a **fixed-point family of 7** at 0x58-0x5E (lib/fixed.lova's
 trigonometry and square root, the prelude's `quot` and `nth`)
-and since 6c a **swarm family of 2** at 0x5F-0x60 (a shooter's
-bullet records let in, let go and looked at against one body, natively).
+and since 6c a **swarm family** at 0x5F-0x61 (a shooter's
+bullet records let in, let go, looked at against one body and packed
+for drawing, natively; `swarm-draw` since 6d).
 Tokens are grouped into 8 families of 8 operators.  Arguments
 follow each operator as typed-slot tokens; types are positional,
 not annotated.  See `spec/paradigm-inheritance.md` for the
@@ -22,7 +23,7 @@ invariants.
 
 Legend:
 - **impl**: the runtime (`core.runtime`) evaluates this operator.
-  96 of the 97 tokens are implemented.
+  97 of the 98 tokens are implemented.
 - **Reserved**: the operator has a declared slot but no runtime
   support.  Evaluating one raises `NotImplementedError`, and it is
   excluded from type-directed generation (`TYPED_TOKENS`).
@@ -175,12 +176,13 @@ Legend:
 | 0x5D | `nth` | 2 | Value, Int | Value | - | **impl** |
 | 0x5E | `isqrt` | 1 | Int | Int | - | **impl** |
 
-## Swarm (0x5F - 0x60)
+## Swarm (0x5F - 0x61)
 
 | Byte | Name | Arity | In types | Out type | Effects | Status |
 |---|---|---|---|---|---|---|
 | 0x5F | `swarm-age` | 4 | Int, Value, Value, Value | List | - | **impl** |
 | 0x60 | `swarm-hit` | 5 | Value, Int, Value, Value, Value | List | - | **impl** |
+| 0x61 | `swarm-draw` | 4 | Value, Int, Value, Value | List | - | **impl** |
 
 ## Slot conventions
 
@@ -310,4 +312,4 @@ the identifier was a convenience for whoever typed it.
   and `mod`; `threshold` (0x1B), `deviation` (0x1F), `loop-until`
   (0x2B), `lambda` (0x2C) and `apply` (0x2D) implemented; `Fn` and
   `Value` types added; this file made genuinely generated.
-  96/97 operators implemented.
+  97/98 operators implemented.

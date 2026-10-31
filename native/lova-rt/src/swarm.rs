@@ -1,7 +1,7 @@
-//! The swarm family (0x5F-0x60): `swarm-age` and `swarm-hit` -- a
-//! shooter's bullet records walked natively (spec/runtime-semantics.md
-//! §5.12; `core/runtime.py`, `swarm_age` and `swarm_hit`, is the
-//! reference).  One step for the node, like a fixed-point operator; the
+//! The swarm family (0x5F-0x61): `swarm-age`, `swarm-hit` and
+//! `swarm-draw` -- a shooter's bullet records walked natively
+//! (spec/runtime-semantics.md §5.12; `core/runtime.py`, `swarm_age`,
+//! `swarm_hit` and `swarm_draw`, is the reference).  One step for the node, like a fixed-point operator; the
 //! values are the reference's to the bit: unbounded integers, floor
 //! division, the same order, each field read only in the case that
 //! needs it.  A needed field that is absent is `get`'s signal 17.
@@ -108,11 +108,12 @@ struct Bullet<'k> {
     m: MapValue,
     keys: &'k Keys,
     a: Int,
+    ctx: &'static str,
 }
 
 impl<'k> Bullet<'k> {
     fn f(&self, ar: &Arena, n: usize) -> R<Int> {
-        field(ar, &self.m, self.keys, n, "swarm-hit")
+        field(ar, &self.m, self.keys, n, self.ctx)
     }
 
     fn spun(&self, ar: &Arena) -> R<bool> {
@@ -283,7 +284,7 @@ pub fn swarm_hit(a: &Arena, args: &[Value]) -> R<Value> {
     for v in list_walk(&as_list(a, &args[0], ctx)?) {
         let m = as_map(a, &v, ctx)?;
         let born = field(a, &m, &keys, BORN, ctx)?;
-        let b = Bullet { m, keys: &keys, a: t.sub(&born) };
+        let b = Bullet { m, keys: &keys, a: t.sub(&born), ctx };
         let kind = b.f(a, KIND)?;
         let k = kind.to_i64();
         let rod = k == Some(ROD);
@@ -333,4 +334,67 @@ pub fn swarm_hit(a: &Arena, args: &[Value]) -> R<Value> {
         Value::Int(i(grazes)),
         Value::Int(i(waved)),
     ]))
+}
+
+/// The kind Godot draws for kind `k` at age `a` while the wave `wv` is
+/// above 0: the game's `shown-band` when the wave runs in bands
+/// (`wave-r > 0`), else its `shown-flat`.
+fn shown(k: Int, a: &Int, wv: &Int, wr: &Int, wo: &Int, wsp: &Int) -> Int {
+    let c10 = i(10);
+    let zero = i(0);
+    if *wr > zero {
+        if k < i(70) || k > i(99) {
+            return k;
+        }
+        let n = wsp.mul(a).add(&i(2).mul(wr).sub(wo));
+        let cur = i(1).add(&n.div_floor(wr).mod_floor(&i(2)));
+        if k.div_floor(&c10) == i(6).add(&cur) {
+            return k;
+        }
+        if k < i(90) {
+            return k.add(&i(100));
+        }
+        return k.mod_floor(&c10).add(&i(if cur == i(1) { 180 } else { 170 }));
+    }
+    if k < i(70) {
+        return k;
+    }
+    if k.div_floor(&c10) == i(6).add(wv) {
+        return k;
+    }
+    if k < i(90) {
+        return k.add(&i(100));
+    }
+    if k > i(99) {
+        return k;
+    }
+    k.mod_floor(&c10).add(&i(if *wv == i(1) { 180 } else { 170 }))
+}
+
+/// `(swarm-draw bs t wave tail)` -> each record's `x y z kind` consed
+/// onto `tail`, the first record's deepest (a left fold).
+pub fn swarm_draw(a: &Arena, args: &[Value]) -> R<Value> {
+    let ctx = "swarm-draw";
+    let t = as_int(a, &args[1], ctx)?;
+    let wave = ints(a, &args[2], 4, ctx)?;
+    let (wv, wr, wo, wsp) = (&wave[0], &wave[1], &wave[2], &wave[3]);
+    let wavy = *wv > i(0);
+    let mut out = as_list(a, &args[3], ctx)?;
+    let keys = Keys::new();
+    for v in list_walk(&as_list(a, &args[0], ctx)?) {
+        let m = as_map(a, &v, ctx)?;
+        let born = field(a, &m, &keys, BORN, ctx)?;
+        let b = Bullet { m, keys: &keys, a: t.sub(&born), ctx };
+        let x = b.x(a, &b.a)?;
+        let y = b.y(a, &b.a)?;
+        let z = b.z(a, &b.a)?;
+        let mut k = b.f(a, KIND)?;
+        if wavy {
+            k = shown(k, &b.a, wv, wr, wo, wsp);
+        }
+        for n in [k, z, y, x] {
+            out = Value::Cons(Rc::new(ConsCell { head: Value::Int(n), tail: out }));
+        }
+    }
+    Ok(out)
 }

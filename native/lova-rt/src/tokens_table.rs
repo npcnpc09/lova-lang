@@ -3,7 +3,7 @@
 use crate::tokens::{Arity, Sig};
 
 /// The number of operators: every byte below this is one.
-pub const N_OPS: usize = 0x61;
+pub const N_OPS: usize = 0x62;
 
 pub static SIGS: [Sig; N_OPS] = [
     Sig { name: "end", arity: Arity::N(0) },
@@ -103,4 +103,5 @@ pub static SIGS: [Sig; N_OPS] = [
     Sig { name: "isqrt", arity: Arity::N(1) },
     Sig { name: "swarm-age", arity: Arity::N(4) },
     Sig { name: "swarm-hit", arity: Arity::N(5) },
+    Sig { name: "swarm-draw", arity: Arity::N(4) },
 ];

@@ -108,7 +108,7 @@ from core.tokens import (
     TEXT_MATCH, TEXT_MATCH_ALL,
     LIST_MAP, LIST_FILTER, LIST_FOLD, LIST_REVERSE, LIST_RANGE, LIST_ANY, LIST_SORT_BY, LIST_ZIP,
     FIX_SIN, FIX_COS, FIX_SIN_FINE, FIX_COS_FINE, FIX_QUOT, FIX_NTH, FIX_ISQRT,
-    SWARM_AGE, SWARM_HIT,
+    SWARM_AGE, SWARM_HIT, SWARM_DRAW,
 )
 from core.lineage import LineageStore, _deep_copy_node
 
@@ -2910,6 +2910,47 @@ def swarm_hit(bs: Any, t: int, at: Any, before: Any, wave: Any) -> Any:
     return list_from([hit, fakes, grazes, waved])
 
 
+def _sw_shown(k: int, a: int, wv: int, wr: int, wo: int, wsp: int) -> int:
+    """The kind Godot draws for a bullet of kind ``k`` at age ``a`` while
+    the wave is ``wv > 0``: the game's `shown-band` when the wave runs in
+    bands (``wave-r > 0``), else its `shown-flat`."""
+    if wr > 0:
+        if k < 70 or k > 99:
+            return k
+        cur = 1 + ((wsp * a + (2 * wr - wo)) // wr) % 2
+        if k // 10 == 6 + cur:
+            return k
+        if k < 90:
+            return k + 100
+        return k % 10 + (180 if cur == 1 else 170)
+    if k < 70:
+        return k
+    if k // 10 == 6 + wv:
+        return k
+    if k < 90:
+        return k + 100
+    if k > 99:
+        return k
+    return k % 10 + (180 if wv == 1 else 170)
+
+
+def swarm_draw(bs: Any, t: int, wave: Any, tail: Any) -> Any:
+    """``(swarm-draw bs t wave tail)`` -> each record's ``x y z kind``
+    consed onto ``tail``, the first record's deepest (a left fold)."""
+    ctx = "swarm-draw"
+    wv, wr, wo, wsp = _sw_ints(wave, 4, ctx)
+    out = _as_list(tail, ctx)
+    for m in list_to_python(_as_list(bs, ctx)):
+        b = _SwBullet(_as_map(m, ctx), t, ctx)
+        a = b.a
+        x, y, z = b.x(a), b.y(a), b.z(a)
+        k = b.f("kind")
+        if wv > 0:
+            k = _sw_shown(k, a, wv, wr, wo, wsp)
+        out = Cons(x, Cons(y, Cons(z, Cons(k, out))))
+    return out
+
+
 def _op_SWARM_AGE(node: Node, rt: Runtime, chained: bool) -> Any:
     args = [_eval(a, rt) for a in node.args]
     return swarm_age(_as_int(args[0], "swarm-age"), args[1], args[2], args[3])
@@ -2918,6 +2959,11 @@ def _op_SWARM_AGE(node: Node, rt: Runtime, chained: bool) -> Any:
 def _op_SWARM_HIT(node: Node, rt: Runtime, chained: bool) -> Any:
     args = [_eval(a, rt) for a in node.args]
     return swarm_hit(args[0], _as_int(args[1], "swarm-hit"), args[2], args[3], args[4])
+
+
+def _op_SWARM_DRAW(node: Node, rt: Runtime, chained: bool) -> Any:
+    args = [_eval(a, rt) for a in node.args]
+    return swarm_draw(args[0], _as_int(args[1], "swarm-draw"), args[2], args[3])
 
 
 def _op_TEXT_CHARS(node: Node, rt: Runtime, chained: bool) -> Any:
@@ -3855,7 +3901,7 @@ _HANDLERS = {
     FIX_SIN: _op_FIX_TRIG, FIX_COS: _op_FIX_TRIG, FIX_SIN_FINE: _op_FIX_TRIG,
     FIX_COS_FINE: _op_FIX_TRIG, FIX_QUOT: _op_FIX_QUOT, FIX_NTH: _op_FIX_NTH,
     FIX_ISQRT: _op_FIX_ISQRT,
-    SWARM_AGE: _op_SWARM_AGE, SWARM_HIT: _op_SWARM_HIT,
+    SWARM_AGE: _op_SWARM_AGE, SWARM_HIT: _op_SWARM_HIT, SWARM_DRAW: _op_SWARM_DRAW,
     LIT_INT: _op_LIT_INT,
     IDENTITY: _op_IDENTITY,
     MERGE: _op_MERGE,

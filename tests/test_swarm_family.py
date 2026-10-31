@@ -1,9 +1,10 @@
-"""The swarm family (6c): swarm-age and swarm-hit, checked against the
-LOVA they replace.
+"""The swarm family (6c, 6d): swarm-age, swarm-hit and swarm-draw,
+checked against the LOVA they replace.
 
 The oracle is the danmaku game's own walk (东方天球谭, rules/danmaku.lova
 as of 2026-10-31: `throw`'s let-in and let-go, `weave`'s `close`, `d2`,
-`wave-real`, the graze test), copied here with its arithmetic untouched.
+`wave-real`, the graze test; `scene`'s packing of the bullets with
+`shown-band` / `shown-flat`), copied here with its arithmetic untouched.
 Random swarms near a random body -- plain, spun, falling, rods, harmless
 (reach and hit 0), on the waves, in and out of their time -- must give
 the operators' answer to the bit, on the Python runtime and, when one is
@@ -19,7 +20,7 @@ from pathlib import Path
 from core.cli import build, format_value
 from core.native import NativeRuntime
 from core.runtime import DomainTrap, Runtime, evaluate
-from core.tokens import SIGNATURES, SWARM_AGE, SWARM_FAMILY, SWARM_HIT
+from core.tokens import SIGNATURES, SWARM_AGE, SWARM_DRAW, SWARM_FAMILY, SWARM_HIT
 
 ROOT = Path(__file__).resolve().parent.parent
 BIN = next((p for p in (ROOT / "native" / "lova-rt" / "target" / "release" / n
@@ -126,6 +127,37 @@ ORACLE = r"""
   (swarm-hit bs t (list px py pz)
              (if (get w blinked) (nil) (list (get w x0) (get w y0) (get w z0)))
              (list (get w wave) (get w wave-r) (get w wave-o) (get w wave-sp))))
+(def shown-flat [w b t ill]
+  (let k (get b kind)
+    (cond (lt k 70) k
+          (eq (div k 10) (merge 6 (get w wave))) k
+          (lt k 90) (merge k 100)
+          (gt k 99) k
+          (merge (mod k 10) ill))))
+(def shown-band [k cur]
+  (cond (eq (div k 10) (merge 6 cur)) k
+        (lt k 90) (merge k 100)
+        (merge (mod k 10) (if (eq cur 1) 180 170))))
+(def o-draw [w bs t tail]
+  (let [wavy (gt (get w wave) 0)
+        ill (if (eq (get w wave) 1) 180 170)
+        rr (get w wave-r)
+        roff (sub (mul 2 rr) (get w wave-o))
+        rsp (get w wave-sp)
+        shown (if (gt rr 0)
+                  (fn [w b t ill]
+                    (let k (get b kind)
+                      (if (or (lt k 70) (gt k 99)) k (shown-band k (inc (mod (div (merge (mul rsp (sub t (get b born))) roff) rr) 2))))))
+                  shown-flat)]
+    (fold (fn [acc b]
+            (let a (sub t (get b born))
+              (cons (if (get b w) (spin-x b a) (merge (get b ox) (mul (get b vx) a)))
+                    (cons (if (get b g) (by-at b a) (merge (get b oy) (mul (get b vy) a)))
+                          (cons (if (get b w) (spin-z b a) (merge (get b oz) (mul (get b vz) a)))
+                                (cons (if wavy (shown w b t ill) (get b kind)) acc))))))
+          tail bs)))
+(def n-draw [w bs t tail]
+  (swarm-draw bs t (list (get w wave) (get w wave-r) (get w wave-o) (get w wave-sp)) tail))
 """
 
 F = 65536
@@ -164,7 +196,8 @@ def _case(rnd):
     step = rnd.choice([F // 8, F // 2, F])
     was = [me[0] + rnd.randint(-step, step), me[1] + rnd.randint(-step, step), me[2] + rnd.randint(-step, step)]
     wave = rnd.choice([(0, 0, 0, 0), (1, 0, 0, 0), (2, 0, 0, 0),
-                       (1, 3 * F, rnd.randint(0, 6 * F), F // 6), (2, 2 * F, rnd.randint(-F, F), F // 4)])
+                       (1, 3 * F, rnd.randint(0, 6 * F), F // 6), (2, 2 * F, rnd.randint(-F, F), F // 4),
+                       (0, 3 * F, 5, F // 6), (1, -F, 0, F // 6), (3, 0, 0, 0), (-1, 2 * F, 0, F // 4)])
     w = dict(wave=wave[0], **{"wave-r": wave[1], "wave-o": wave[2], "wave-sp": wave[3]},
              blinked=rnd.choice([0, 0, 0, 1]), x0=was[0], y0=was[1], z0=was[2])
     bs = [_bullet(rnd, i, t, me) for i in range(rnd.randint(0, 40))]
@@ -180,6 +213,10 @@ def _program(seed: int, cases: int) -> str:
         lst = "(list " + " ".join(_rec(b) for b in bs) + ")"
         args = f"{world} {lst} {t} {me[0]} {me[1]} {me[2]}"
         checks.append(f"(list (o-hit {args}) (n-hit {args}))")
+        tail = rnd.choice(["(nil)", "(list 1 2 3)", "(list (list 4) 5)"])
+        dargs = f"{world} {lst} {t} {tail}"
+        # wrapped once, so the tally below passes these over
+        checks.append(f"(list (list (o-draw {dargs})) (list (n-draw {dargs})))")
         k = rnd.randint(0, len(bs))
         fresh = "(list " + " ".join(_rec(b) for b in bs[:k // 2]) + ")"
         pend = "(list " + " ".join(_rec(b) for b in bs[k // 2:k]) + ")"
@@ -190,11 +227,12 @@ def _program(seed: int, cases: int) -> str:
 
 class TheTable(unittest.TestCase):
 
-    def test_the_family_is_two_operators_at_0x5f(self):
-        self.assertEqual(sorted(SWARM_FAMILY), [0x5F, 0x60])
-        self.assertEqual((SWARM_AGE, SWARM_HIT), (0x5F, 0x60))
-        self.assertEqual([SIGNATURES[t]["name"] for t in (SWARM_AGE, SWARM_HIT)], ["swarm-age", "swarm-hit"])
-        self.assertEqual([SIGNATURES[t]["arity"] for t in (SWARM_AGE, SWARM_HIT)], [4, 5])
+    def test_the_family_is_three_operators_at_0x5f(self):
+        self.assertEqual(sorted(SWARM_FAMILY), [0x5F, 0x60, 0x61])
+        self.assertEqual((SWARM_AGE, SWARM_HIT, SWARM_DRAW), (0x5F, 0x60, 0x61))
+        self.assertEqual([SIGNATURES[t]["name"] for t in (SWARM_AGE, SWARM_HIT, SWARM_DRAW)],
+                         ["swarm-age", "swarm-hit", "swarm-draw"])
+        self.assertEqual([SIGNATURES[t]["arity"] for t in (SWARM_AGE, SWARM_HIT, SWARM_DRAW)], [4, 5, 4])
 
 
 def _python(src: str):
@@ -251,7 +289,8 @@ class Steps(unittest.TestCase):
         """However many records, the walk is the operator's one step."""
         bs = "(list " + " ".join(f"(rec born {i} die {i + 5} kind 0 reach 9 hit 3 w 0 ox 0 oy 0 oz 0 "
                                  f"vx 0 vy 0 vz 0 g 0)" for i in range(50)) + ")"
-        for call in ("(swarm-age 3 xs xs xs)", "(swarm-hit xs 9 (list 0 0 0) (list 0 0 0) (list 0 0 0 0))"):
+        for call in ("(swarm-age 3 xs xs xs)", "(swarm-hit xs 9 (list 0 0 0) (list 0 0 0) (list 0 0 0 0))",
+                     "(swarm-draw xs 9 (list 1 0 0 0) (nil))"):
             _, many = _python(f"(let xs {bs} {call})")
             _, none = _python(f"(let xs (nil) {call})")
             self.assertEqual(many - none, _python(bs)[1] - _python("(nil)")[1])
@@ -268,6 +307,14 @@ class Faults(unittest.TestCase):
         # not spun: no cx, cz; not a rod: no sx sy sz; far away: nothing past x
         v, _ = _python("(swarm-hit (list (rec born 0 kind 0 reach 10 w 0 ox 100 vx 0)) 5 (list 0 0 0) (nil) (list 0 0 0 0))")
         self.assertEqual(format_value(v), "(0 0 0 0)")
+
+    def test_draw_reads_only_what_its_case_needs(self):
+        # not spun: no cx, cz; off the waves: kind as it is, nothing else
+        v, _ = _python("(swarm-draw (list (rec born 2 kind 7 w 0 ox 100 vx 3 oy 5 vy 0 g 0 oz 1 vz -1)) 5 (list 0 0 0 0) (list 9))")
+        self.assertEqual(format_value(v), "(109 5 -2 7 9)")
+        with self.assertRaises(DomainTrap) as cm:
+            _python("(swarm-draw (list (rec born 2 kind 7 w 1 ox 100 vx 3 oy 5 vy 0 g 0 oz 1 vz -1)) 5 (list 0 0 0 0) (nil))")
+        self.assertEqual(cm.exception.anomaly["detail"]["code"], 17)
 
     def test_a_place_is_three_integers(self):
         with self.assertRaises(DomainTrap):

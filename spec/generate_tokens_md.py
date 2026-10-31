@@ -42,7 +42,7 @@ FAMILIES = [
     ("Text", 0x40, 0x4D),
     ("List", 0x50, 0x57),
     ("Fixed point", 0x58, 0x5E),
-    ("Swarm", 0x5F, 0x60),
+    ("Swarm", 0x5F, 0x61),
 ]
 
 
@@ -113,8 +113,9 @@ def render() -> str:
         "family of 8** at 0x50-0x57 (Q94: the walkers, one step an element)",
         "and since 6b a **fixed-point family of 7** at 0x58-0x5E (lib/fixed.lova's",
         "trigonometry and square root, the prelude's `quot` and `nth`)",
-        "and since 6c a **swarm family of 2** at 0x5F-0x60 (a shooter's",
-        "bullet records let in, let go and looked at against one body, natively).",
+        "and since 6c a **swarm family** at 0x5F-0x61 (a shooter's",
+        "bullet records let in, let go, looked at against one body and packed",
+        "for drawing, natively; `swarm-draw` since 6d).",
         "Tokens are grouped into 8 families of 8 operators.  Arguments",
         "follow each operator as typed-slot tokens; types are positional,",
         "not annotated.  See `spec/paradigm-inheritance.md` for the",

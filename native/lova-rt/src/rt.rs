@@ -1360,7 +1360,7 @@ fn eval_generic(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
         _ if (0x40..=0x4F).contains(&op) => eval_text_node(a, rt, id, op),
         _ if (0x50..=0x57).contains(&op) => eval_list(a, rt, id, op),
         _ if (FIX_SIN..=FIX_ISQRT).contains(&op) => eval_fixed(a, rt, id, op),
-        SWARM_AGE | SWARM_HIT => eval_fixed(a, rt, id, op),
+        SWARM_AGE | SWARM_HIT | SWARM_DRAW => eval_fixed(a, rt, id, op),
         _ => Err(Fault::NotImplemented(
             format!("operator {} is outside this runtime's phase-2 scope", op_name(op)).into(),
         )),
@@ -1394,6 +1394,7 @@ fn eval_fixed(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
     match op {
         SWARM_AGE => crate::swarm::swarm_age(a, &args),
         SWARM_HIT => crate::swarm::swarm_hit(a, &args),
+        SWARM_DRAW => crate::swarm::swarm_draw(a, &args),
         _ => crate::fixed::work_fixed(a, op, &args),
     }
 }

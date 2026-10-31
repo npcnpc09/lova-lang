@@ -13,7 +13,7 @@ from core.tokens import (
 class TokenTableInvariants(unittest.TestCase):
 
     def test_exactly_64_signatures(self):
-        self.assertEqual(len(SIGNATURES), 97)      # 64 core + 16 text (M25, M32) + 8 list (M27) + 7 fixed point (6b) + 2 swarm (6c)
+        self.assertEqual(len(SIGNATURES), 98)      # 64 core + 16 text (M25, M32) + 8 list (M27) + 7 fixed point (6b) + 3 swarm (6c, 6d)
 
     def test_all_signatures_have_name_and_family(self):
         for tok, sig in SIGNATURES.items():

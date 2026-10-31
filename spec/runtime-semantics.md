@@ -665,8 +665,8 @@ iteration cost.)*
 - The fixed-point family (`sin`, `cos`, `sin-fine`, `cos-fine`,
   `quot`, `nth`, `isqrt`, §5.11) costs **one step** each; `nth` walks
   to its element for that one step.
-- The swarm family (`swarm-age`, `swarm-hit`, §5.12) costs **one step**
-  each, however many records it walks.
+- The swarm family (`swarm-age`, `swarm-hit`, `swarm-draw`, §5.12)
+  costs **one step** each, however many records it walks.
 - `map-put`, `map-get`, `map-pairs` cost **one step** each, whatever
   the size of the map.
 - `hash`, `explain`, `read`, `uid`, `generation`, `ancestor-of`,
@@ -1947,7 +1947,7 @@ The integer slots coerce with `_as_int(v, name)`. `sin`, `cos`,
 `sin-fine`, `cos-fine`, `quot` and `isqrt` are pure and fold at compile
 time (`core/compiler.py`, pass 3) when their operands are literals.
 
-### 5.12 Swarm (0x5F–0x60) *(6c, 2026-10-31)*
+### 5.12 Swarm (0x5F–0x61) *(6c, 6d, 2026-10-31)*
 
 A shooter's bullets as records (maps keyed by field-name texts) whose
 place is a function of their age `a = t - born`; the two walks a
@@ -1999,8 +1999,24 @@ this order); `pending'` = `later`. The records themselves, not copies.
   place, with `d2(a - 1, before) ≥ reach²` adds 1 to `grazes`, and to
   `waved` when `70 ≤ kind < 100`.
 
-These are exactly 东方天球谭's `throw` / `roll` let-in and let-go and
-`weave`'s `close`, `d2`, `wave-real` and graze test (rules/danmaku.lova,
+**`(swarm-draw bs t wave tail)`** *(6d)* → a list: `tail` (through
+`_as_list`) with, for each record `b` of `bs` in order, `x y z k`
+consed in front of what is there so far -- a left fold, so the last
+record's four come first and the first record's lie just before
+`tail`. `x y z` is its place at `a = t - born` as above (`w`, then the
+fields of the spun or straight case, `oy vy g`); `k` is its `kind`,
+and while `wave > 0` the kind drawn instead (`wave` is `(list wave
+wave-r wave-o wave-sp)`, as for `swarm-hit`): when `wave-r > 0`, a `k`
+outside 70–99 as it is, else with `cur = 1 + ((wave-sp·a + (2·wave-r -
+wave-o)) // wave-r) mod 2`: `k` when `k // 10 = 6 + cur`, `k + 100`
+when `k < 90`, else `k mod 10 + (180 if cur = 1 else 170)`; when
+`wave-r ≤ 0`: `k` when `k < 70`, `k` when `k // 10 = 6 + wave`,
+`k + 100` when `k < 90`, `k` when `k > 99`, else `k mod 10 + (180 if
+wave = 1 else 170)`.
+
+These are exactly 东方天球谭's `throw` / `roll` let-in and let-go,
+`weave`'s `close`, `d2`, `wave-real` and graze test, and `scene`'s
+packing of the bullets (`shown-band`, `shown-flat`; rules/danmaku.lova,
 2026-10-31), which `tests/test_swarm_family.py` keeps as the oracle.
 
 ---

@@ -126,6 +126,7 @@ pub const FIX_NTH: u8 = 0x5D;
 pub const FIX_ISQRT: u8 = 0x5E;
 pub const SWARM_AGE: u8 = 0x5F;
 pub const SWARM_HIT: u8 = 0x60;
+pub const SWARM_DRAW: u8 = 0x61;
 
 // --- capabilities (spec §5.7) ----------------------------------------------
 

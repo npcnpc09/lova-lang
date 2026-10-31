@@ -153,6 +153,7 @@ FIX_ISQRT       = 0x5E   # (isqrt n) -- twelve Newton rounds; 0 below 1
 # ~140 steps a bullet.  One step a node, the walk native.
 SWARM_AGE       = 0x5F   # (swarm-age t new pending live) -- (list live' pending'): born <= t let in, die <= t let go
 SWARM_HIT       = 0x60   # (swarm-hit bs t at before wave) -- (list hit fakes grazes waved) against the body at `at`
+SWARM_DRAW      = 0x61   # (swarm-draw bs t wave tail) -- each record's x y z kind consed onto `tail`, as Godot draws them
 
 
 # --- signatures (arity + semantic family for the decoder) -------------------
@@ -209,6 +210,7 @@ SIGNATURES = {
     # Swarm (6c): a shooter's bullet records, walked natively
     SWARM_AGE:    {"name": "swarm-age",     "arity": 4, "family": "swarm"},
     SWARM_HIT:    {"name": "swarm-hit",     "arity": 5, "family": "swarm"},
+    SWARM_DRAW:   {"name": "swarm-draw",    "arity": 4, "family": "swarm"},
     # Number theory
     P:            {"name": "p",             "arity": 1, "family": "nt"},
     TAU:          {"name": "tau",           "arity": 1, "family": "nt"},
@@ -278,7 +280,7 @@ CORE_TOKENS = 64          # the original table, 0x00-0x3F
 TEXT_TOKENS = 16          # the Text family, 0x40-0x4F (M25; full at M32)
 LIST_TOKENS = 8           # the List family, 0x50-0x57 (M27)
 FIXED_TOKENS = 7          # the Fixed-point family, 0x58-0x5E (6b)
-SWARM_TOKENS = 2          # the Swarm family, 0x5F-0x60 (6c)
+SWARM_TOKENS = 3          # the Swarm family, 0x5F-0x61 (6c, 6d)
 assert len(SIGNATURES) == CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS + FIXED_TOKENS + SWARM_TOKENS,     f"Token table must have exactly {CORE_TOKENS + TEXT_TOKENS + LIST_TOKENS + FIXED_TOKENS + SWARM_TOKENS} entries, found {len(SIGNATURES)}"
 
 
@@ -560,6 +562,7 @@ FIXED_FAMILY = frozenset(_FIXED_TYPE_INFO)
 _SWARM_TYPE_INFO = {
     SWARM_AGE:    {"in_types": [INT, VALUE, VALUE, VALUE], "out_type": LIST},
     SWARM_HIT:    {"in_types": [VALUE, INT, VALUE, VALUE, VALUE], "out_type": LIST},
+    SWARM_DRAW:   {"in_types": [VALUE, INT, VALUE, VALUE], "out_type": LIST},
 }
 for _tok, _extra in _SWARM_TYPE_INFO.items():
     SIGNATURES[_tok].update(_extra)
