@@ -17,63 +17,40 @@
 ;; --- the unit and the circle ----------------------------------------
 ;;
 ;; ONE is 1.0.  A position is in 1024ths of a cell; an angle is in
-;; 256ths of a turn, so 64 units is a right angle.  `sin-q` is the
-;; first quarter of a sine, 1024 * sin(k * pi / 128), and the other
-;; three quarters are the same numbers reflected.
+;; 256ths of a turn, so 64 units is a right angle.  `sin` is 1024 times
+;; the sine: the first quarter is a table, 1024 * sin(k * pi / 128) for
+;; k = 0..64, and the other three quarters are the same numbers
+;; reflected.
+;;
+;; `sin`, `cos` and `isqrt` are operators since 6b (2026-10-31), with
+;; `sin-fine`, `cos-fine` below and the prelude's `quot` and `nth`: the
+;; fixed-point family, 0x58-0x5E.  They were defined here -- the table
+;; a map built when the module was read, the reflections a `cond`, the
+;; root twelve rounds of a `fold` -- and a sine cost thirty-odd steps, a
+;; fine sine a hundred and twenty, a root sixty; the dearest tick of a
+;; danmaku card that turns six rings of blades (东方天球谭, Yorihime's
+;; Gion card) spent half its 181k steps in them, and is 89k with the
+;; operators.  An operator is one step for its node.  The values are the definitions'
+;; to the bit (`core/runtime.py`, `fixed_sin` and its neighbours, keeps
+;; the table and says how each is read), and the examples below are the
+;; ones the definitions had.
+;;
+;; `isqrt` is the integer square root by Newton from above -- x becomes
+;; the mean of x and n/x, twelve times, from max(ONE, n / ONE), so a
+;; distance across a whole map settles in as few rounds as the round
+;; edge of an orb; nought below 1, one from 1 to 3.
 
 (def ONE [] 1024)
 (def TURN [] 256)
-
-(def sin-table []
-  (list 0 25 50 75 100 125 150 175 200 224 249 273 297
-        321 345 369 392 415 438 460 483 505 526 548 569 590
-        610 630 650 669 688 706 724 742 759 775 792 807 822
-        837 851 865 878 891 903 915 926 936 946 955 964 972
-        980 987 993 999 1004 1009 1013 1016 1019 1021 1023 1024 1024))
-
-;; The quarter table as a map from k to sin, not as a list: `sin` is
-;; the most called function in a 3D frame -- four times an object in
-;; `lib/scene3d.lova`, and the FPS enemies' aim is its hottest caller
-;; -- and `nth` walks to the k'th cons cell, which for the middle of
-;; the quarter is thirty of them.  The map is built once, when the
-;; module is read (719 steps, so a program that calls `sin` fewer than
-;; eighty times pays a little more than it did), and `sin-table` is
-;; bound before it because a nought-argument definition is evaluated
-;; where it stands in the group.  A lookup past the table would be
-;; unreachable -- `k` is a floored `mod` -- and if it ever were, the
-;; default is `nth`'s own loud fault, not a silent nought: `map-get`
-;; evaluates its default only on a miss, so it costs nothing here.
-(def sin-q []
-  (fold (lambda m (lambda pr (map-put m (head (tail pr)) (head pr))))
-        (nil)
-        (zip sin-table (range 0 (len sin-table)))))
-
-(def sin [ang]
-  (let k (mod ang TURN)
-    (cond (le k 64) (map-get sin-q k (head (nil)))
-          (le k 128) (map-get sin-q (sub 128 k) (head (nil)))
-          (le k 192) (neg (map-get sin-q (sub k 128) (head (nil))))
-          (neg (map-get sin-q (sub TURN k) (head (nil)))))))
-
-(def cos [ang] (sin (merge ang 64)))
-
-;; The integer square root, by Newton from above -- x becomes the mean
-;; of x and n/x, which halves the error while it is far and squares the
-;; accuracy once it is near.  The first guess is n / ONE where that is
-;; the larger, so a distance across a whole map settles in as few
-;; rounds as the round edge of an orb.
-(def isqrt [n]
-  (if (lt n 4)
-    (if (gt n 0) 1 0)
-    (fold (lambda x (lambda i (div (merge x (div n x)) 2)))
-          (max ONE (div n ONE))
-          (range 0 12))))
 
 (example (sin 0) 0)
 (example (sin 64) 1024)
 (example (sin 128) 0)
 (example (sin 192) -1024)
 (example (cos 0) 1024)
+(example (isqrt 1048576) 1024)
+(example (isqrt 3) 1)
+(example (isqrt -5) 0)
 
 
 ;; --- the fine circle: 4096ths of a turn -----------------------------
@@ -83,19 +60,11 @@
 ;; (journal, 2026-09-27).  These are the same sine, read between its
 ;; table's entries -- a 4096th of a turn is 0.09 degrees -- and an
 ;; `atan2` bisected to the same grain.  The 256ths functions above are
-;; unchanged; a program picks the grain it needs.
+;; unchanged; a program picks the grain it needs.  `sin-fine` and
+;; `cos-fine` are operators (6b): the sine read on the line between the
+;; table's entries, the step rounded toward zero.
 
 (def TURN-FINE [] 4096)
-
-(def sin-fine [ang]
-  (let [a (mod ang 4096)
-        k (div a 16)
-        f (mod a 16)
-        s0 (sin k)
-        s1 (sin (inc k))]
-    (merge s0 (quot (mul (sub s1 s0) f) 16))))
-
-(def cos-fine [ang] (sin-fine (merge ang 1024)))
 
 (def octant-fine [n d]
   (fold (lambda lo (lambda step

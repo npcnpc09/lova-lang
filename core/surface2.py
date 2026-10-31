@@ -140,6 +140,11 @@ for _tok, _sym in zip(sorted(t for t in SYMBOLS if t >= 0x40), "ΑΒΓΔΕΖΗΘ
 # is not Latin O, and a reader should not have to check).
 for _tok, _sym in zip(range(0x50, 0x58), "ΠΡΣΤΥΦΧΨ"):
     SYMBOLS[_tok] = _sym
+# The fixed-point family (6b) takes Greek small letters, mnemonic where
+# one offers: sigma sin, kappa cos, phi and chi the fine pair, theta
+# quot, nu nth, rho root.
+for _tok, _sym in zip(range(0x58, 0x5F), "σκφχθνρ"):
+    SYMBOLS[_tok] = _sym
 assert len(SYMBOLS) == len(SIGNATURES), f"symbol table must cover every token, has {len(SYMBOLS)}"
 assert len(set(SYMBOLS.values())) == len(SYMBOLS), "symbols must be distinct"
 assert not (set(SYMBOLS.values()) & set("0123456789-")), \

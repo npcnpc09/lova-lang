@@ -29,6 +29,17 @@ pub struct Budget {
     pub spent: i64,
 }
 
+/// How many entries `named` may gain before a session compacts it: a
+/// pass costs one look per entry, a game's tick adds a few.
+pub const NAMED_SLACK: usize = 256;
+
+/// An entry of `Rt::named`: a closure a `let` named, or the counters of
+/// ones gone (`Rt::compact_named`).
+pub enum Named {
+    Live(Rc<ClosureData>),
+    Folded { name: i64, own: u64, calls: u64 },
+}
+
 pub struct Rt {
     pub env: Rc<Scope>,
     pub budget_stack: Vec<Budget>,
@@ -50,7 +61,9 @@ pub struct Rt {
     /// two refcount pairs.
     pub current: *const ClosureData,
     pub mark: u64,
-    pub named: Vec<Rc<ClosureData>>,
+    pub named: Vec<Named>,
+    /// `named.len()` after the last `compact_named`.
+    pub named_kept: usize,
     pub output: String,
     pub input: Vec<String>,
     pub input_pos: usize,
@@ -88,6 +101,7 @@ impl Rt {
             current: std::ptr::null(),
             mark: 0,
             named: Vec::new(),
+            named_kept: 0,
             output: String::new(),
             input: split_lines(stdin),
             input_pos: 0,
@@ -101,6 +115,63 @@ impl Rt {
             vm: crate::vm::VmState::new(),
             empty_env: Scope::root(),
             prof: None,
+        }
+    }
+
+    /// Let go of the named closures nothing else holds, keeping what
+    /// `hot` reads of them: their steps and calls, folded into one entry
+    /// per name where the first of them stood, so `cost_by_function`
+    /// answers as before.  A closure only `named` holds can never be
+    /// called again (an owner is held by the closures it owns), so its
+    /// counters are final.  Run between calls, with nothing in flight:
+    /// a session does it before a call once `named` has grown by
+    /// `NAMED_SLACK` since the last time.
+    pub fn compact_named(&mut self) {
+        if self.named.len() < self.named_kept + NAMED_SLACK {
+            return;
+        }
+        let old = std::mem::take(&mut self.named);
+        let mut out: Vec<Named> = Vec::with_capacity(old.len() / 2 + 64);
+        let mut folded_at: HashMap<i64, usize> = HashMap::new();
+        for e in old {
+            let (name, own, calls) = match e {
+                Named::Live(c) if Rc::strong_count(&c) == 1 => {
+                    (c.name.get().unwrap_or(i64::MIN), c.own.get(), c.calls.get())
+                }
+                Named::Folded { name, own, calls } => (name, own, calls),
+                live => {
+                    out.push(live);
+                    continue;
+                }
+            };
+            match folded_at.get(&name) {
+                Some(&i) => {
+                    if let Named::Folded { own: o, calls: k, .. } = &mut out[i] {
+                        *o += own;
+                        *k += calls;
+                    }
+                }
+                None => {
+                    folded_at.insert(name, out.len());
+                    out.push(Named::Folded { name, own, calls });
+                }
+            }
+        }
+        self.named = out;
+        self.named_kept = self.named.len();
+    }
+
+    /// The closure in flight, held, as the owner of one being made.
+    #[inline]
+    pub fn owner_now(&self) -> Option<Rc<ClosureData>> {
+        if self.current.is_null() {
+            return None;
+        }
+        // Safety: `current` is a closure in a call on this runtime's
+        // stack, alive in an `Rc` for that call's length.
+        unsafe {
+            Rc::increment_strong_count(self.current);
+            Some(Rc::from_raw(self.current))
         }
     }
 
@@ -575,18 +646,23 @@ fn cost_by_function(rt: &Rt) -> J {
     let mut order: Vec<i64> = Vec::new();
     let mut steps: HashMap<i64, u64> = HashMap::new();
     let mut calls: HashMap<i64, u64> = HashMap::new();
-    for f in &rt.named {
-        let name = match f.name.get() {
-            Some(n) => n,
-            None => continue,
+    for e in &rt.named {
+        let (name, own, f_calls) = match e {
+            Named::Live(f) => {
+                let name = match f.name.get() {
+                    Some(n) => n,
+                    None => continue,
+                };
+                let same_as_current = std::ptr::eq(Rc::as_ptr(f), rt.current);
+                (name, f.own.get() + if same_as_current { open_steps } else { 0 }, f.calls.get())
+            }
+            Named::Folded { name, own, calls } => (*name, *own, *calls),
         };
-        let same_as_current = std::ptr::eq(Rc::as_ptr(f), rt.current);
-        let own = f.own.get() + if same_as_current { open_steps } else { 0 };
         if !steps.contains_key(&name) {
             order.push(name);
         }
         *steps.entry(name).or_insert(0) += own;
-        *calls.entry(name).or_insert(0) += f.calls.get();
+        *calls.entry(name).or_insert(0) += f_calls;
     }
     let mut rows: Vec<(i64, u64)> = order.iter().map(|n| (*n, steps[n])).collect();
     rows.sort_by(|x, y| y.1.cmp(&x.1)); // stable: ties keep first-seen order
@@ -925,7 +1001,7 @@ fn eval_node(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool, op: u8) -> R<Value
                 name: std::cell::Cell::new(None),
                 calls: std::cell::Cell::new(0),
                 own: std::cell::Cell::new(0),
-                owner: std::cell::Cell::new(rt.current),
+                owner: rt.owner_now(),
                 vm: None,
             })))
         }
@@ -1020,7 +1096,7 @@ fn eval_let(a: &mut Arena, rt: &mut Rt, id: u32, tail: bool) -> R<Value> {
         if let Value::Closure(c) = &value {
             if c.name.get().is_none() {
                 c.name.set(Some(name));
-                rt.named.push(c.clone());
+                rt.named.push(Named::Live(c.clone()));
             }
         }
         rt.env.vars.borrow_mut().insert(name, value);
@@ -1283,6 +1359,7 @@ fn eval_generic(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
         )),
         _ if (0x40..=0x4F).contains(&op) => eval_text_node(a, rt, id, op),
         _ if (0x50..=0x57).contains(&op) => eval_list(a, rt, id, op),
+        _ if (FIX_SIN..=FIX_ISQRT).contains(&op) => eval_fixed(a, rt, id, op),
         _ => Err(Fault::NotImplemented(
             format!("operator {} is outside this runtime's phase-2 scope", op_name(op)).into(),
         )),
@@ -1303,6 +1380,17 @@ fn eval_text_node(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
         });
     }
     text::work_text(a, rt, op, &args)
+}
+
+/// The fixed-point family: every operand evaluated, left to right, no
+/// coercion between them; then the work both evaluators share.
+fn eval_fixed(a: &mut Arena, rt: &mut Rt, id: u32, op: u8) -> R<Value> {
+    let kids = a.kids(id).to_vec();
+    let mut args: Vec<Value> = Vec::with_capacity(kids.len());
+    for k in kids.iter() {
+        args.push(eval(a, rt, *k, false)?);
+    }
+    crate::fixed::work_fixed(a, op, &args)
 }
 
 // --- the list family (spec §5.10) -------------------------------------------
@@ -1481,7 +1569,7 @@ pub fn call(a: &mut Arena, rt: &mut Rt, mut fnv: Value, mut arg: Value) -> R<Val
             cl.calls.set(cl.calls.get() + 1);
         }
         let me_at: *const ClosureData =
-            if named { Rc::as_ptr(&cl) } else { cl.owner.get() };
+            if named { Rc::as_ptr(&cl) } else { cl.owner.as_ref().map_or(std::ptr::null(), Rc::as_ptr) };
         let now_at: *const ClosureData = rt.current;
         let changed = me_at != now_at;
         let mut outer: *const ClosureData = std::ptr::null();
@@ -1600,6 +1688,9 @@ fn open_frame(rt: &mut Rt, parent: &Rc<Scope>) -> Rc<Scope> {
 
 #[inline]
 fn recycle_frame(rt: &mut Rt, mut frame: Rc<Scope>) {
+    if Rc::strong_count(&frame) > 1 {
+        break_scope_cycle(&frame);
+    }
     if rt.scope_pool.len() < SCOPE_POOL && Rc::strong_count(&frame) == 1 {
         if let Some(f) = Rc::get_mut(&mut frame) {
             // emptied now, not on the way out: a pooled frame must not
@@ -1609,6 +1700,42 @@ fn recycle_frame(rt: &mut Rt, mut frame: Rc<Scope>) {
             rt.scope_pool.push(frame);
         }
     }
+}
+
+/// A frame whose only other holders are closures bound in it that
+/// nothing else holds -- `(let f (lambda ...) body)` makes one, the
+/// lambda holding the frame it is bound in -- is garbage once the
+/// `let` is done, but an `Rc` cycle; emptied, it goes.  Anything else
+/// holding the frame or one of those closures keeps it as it is.
+#[inline(never)]
+fn break_scope_cycle(frame: &Rc<Scope>) {
+    let vars = frame.vars.borrow();
+    let mut inner: Vec<*const ClosureData> = Vec::new();
+    for v in vars.values() {
+        if let Value::Closure(c) = v {
+            if c.vm.is_none() && Rc::ptr_eq(&c.env, frame) {
+                let p = Rc::as_ptr(c);
+                if inner.contains(&p) {
+                    continue;
+                }
+                let held_here = vars
+                    .values()
+                    .filter(|w| matches!(w, Value::Closure(d) if Rc::ptr_eq(c, d)))
+                    .count();
+                let named = c.name.get().is_some() as usize;
+                if Rc::strong_count(c) != held_here + named {
+                    return;
+                }
+                inner.push(p);
+            }
+        }
+    }
+    if inner.is_empty() || Rc::strong_count(frame) != 1 + inner.len() {
+        return;
+    }
+    drop(vars);
+    let spent = std::mem::take(&mut *frame.vars.borrow_mut());
+    drop(spent);
 }
 
 const SCOPE_POOL: usize = 1024;

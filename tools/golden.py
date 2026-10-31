@@ -461,6 +461,22 @@ LIB_PROGRAMS: List[Tuple[str, str, int]] = [
     ("prelude-text", '(let t (text-join (map int-text (range 0 40)) ",") '
                      '(list (len (text-split t ",")) (text-len t) (text-find t "37")))', 5_000_000),
     ("prelude-digits", '(map (lambda n (sum (digits n))) (range 1000 1100))', 5_000_000),
+    # The fixed-point family (6b): lib/fixed.lova's arithmetic and the
+    # prelude's quot and nth as operators, folded into one number each
+    # so a port's every value is checked, not only its last.
+    ("fixed-trig", '(def h [a x] (mod (merge (mul a 31) x) 1000000007))\n'
+                   '(list (fold h 0 (map (lambda a (sin a)) (range -600 600)))'
+                   ' (fold h 0 (map (lambda a (cos a)) (range -600 600)))'
+                   ' (fold h 0 (map (lambda a (sin-fine a)) (range -5000 5000)))'
+                   ' (fold h 0 (map (lambda a (cos-fine a)) (range -5000 5000))))', 5_000_000),
+    ("fixed-quot-isqrt", '(def h [a x] (mod (merge (mul a 31) x) 1000000007))\n'
+                         '(list (fold h 0 (map (lambda a (quot a 7)) (range -500 500)))'
+                         ' (fold h 0 (map (lambda a (quot 1000 a)) (range -500 0)))'
+                         ' (fold h 0 (map (lambda a (isqrt (mul a (mul a a)))) (range -50 3000)))'
+                         ' (isqrt 1000000000000000000000000000000) (quot -100000000000000000000007 3))', 5_000_000),
+    ("fixed-nth", '(let xs (range 100 160) (list (map (lambda k (nth xs k)) (range 0 60))'
+                  ' (map (lambda k (nth "東方 text" k)) (range 0 7))))', 5_000_000),
+    ("fixed-use", '(use "fixed")\n(list (atan2-fine 1024 1024) (atan2 -1024 0) (sin TURN) (isqrt (mul ONE ONE)))', 5_000_000),
 ]
 
 
@@ -592,6 +608,18 @@ TRAPS: List[Tuple[str, str, Dict[str, Any]]] = [
 ]
 
 
+# The fixed-point family's faults (6b).  After the hand-built trees, so
+# the records before them keep their numbers.
+FIXED_TRAPS = [
+    ("nth-past-end", "(apply (lambda k (nth (list 5 6 7) k)) 3)"),
+    ("nth-negative", "(apply (lambda k (nth (list 5 6 7) k)) -1)"),
+    ("nth-not-a-list", "(apply (lambda k (nth k 0)) 7)"),
+    ("nth-text-past-end", "(apply (lambda k (nth \"ab\" k)) 2)"),
+    ("quot-by-zero", "(apply (lambda b (quot 7 b)) 0)"),
+    ("sin-of-a-list", "(apply (lambda x (sin x)) (list 1))"),
+]
+
+
 def _hand_built_trees() -> List[Tuple[str, str, Node]]:
     """Trees no surface text can spell, for the byte decoder's sake.
 
@@ -641,6 +669,12 @@ def group_traps() -> List[Dict[str, Any]]:
     for slug, note, tree in _hand_built_trees():
         index += 1
         record = make_record("traps", index, slug, note, prelude=False, tree=tree)
+        if record is not None:
+            records.append(record)
+    for slug, source in FIXED_TRAPS:
+        index += 1
+        record = make_record("traps", index, slug, source,
+                             max_steps=DEF_STEPS, max_depth=DEF_DEPTH)
         if record is not None:
             records.append(record)
     return records

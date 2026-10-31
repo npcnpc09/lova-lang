@@ -297,6 +297,12 @@ pub fn call(sessions: &mut HashMap<u64, Session>, request: &J) -> J {
     s.rt.current = std::ptr::null();
     s.rt.output.clear();
     s.rt.path.clear();
+    // The surprise trace is the call's own too: kept across calls it
+    // grew by one entry per `abs` for the life of the session.
+    s.rt.surprise.clear();
+    // And the named closures the calls before left with nothing else
+    // holding them go, their `hot` counters kept (`Rt::compact_named`).
+    s.rt.compact_named();
     // `"profile": true`: this call's steps, put down to the closures
     // that spent them (`callprof.rs`), come back under `profile`.
     let profiling = request.get("profile").and_then(|v| v.as_bool()).unwrap_or(false);

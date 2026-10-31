@@ -123,6 +123,7 @@ class Rules:
         self.rt.steps = 0
         self.rt.mark = 0
         self.rt.current = None
+        del self.rt.surprise.events[:]
         fn = self.fn[name]
         for arg in args:
             fn = _call(fn, arg, self.rt)

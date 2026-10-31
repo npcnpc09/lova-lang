@@ -365,6 +365,13 @@ fn fusable(op: u8) -> bool {
             | TEXT_LEN
             | IS_TEXT
             | INT_TEXT
+            | FIX_SIN
+            | FIX_COS
+            | FIX_SIN_FINE
+            | FIX_COS_FINE
+            | FIX_QUOT
+            | FIX_NTH
+            | FIX_ISQRT
     )
 }
 

@@ -7,6 +7,7 @@ pub mod alloc;
 pub mod callprof;
 pub mod conserve;
 pub mod evolve;
+pub mod fixed;
 pub mod fx;
 pub mod int;
 pub mod lineage;

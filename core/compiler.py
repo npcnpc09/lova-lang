@@ -46,6 +46,7 @@ from core.tokens import (
     SIGNATURES, SURPRISE, SEQ, TAIL, TAU, THRESHOLD, TRACE_SURPRISE,
     VIOLATE, WHEN_ANOMALY, QUOTE, Lit, Node,
     CAPABILITY_OF, EXTERNAL_BOUNDARY, capability_names, LIT_TEXT,
+    FIX_SIN, FIX_COS, FIX_SIN_FINE, FIX_COS_FINE, FIX_QUOT, FIX_ISQRT,
 )
 from core.types import (
     FN, INT, LIST, LITERAL_INT, VALUE, FnType, Type, fn_type, is_subtype,
@@ -661,6 +662,9 @@ _PURE_OPS = frozenset({
     # a way SURPRISE is not: SURPRISE writes to the surprise trace, so
     # folding it would erase an observation the program asked for.
     MUL, MOD, DEVIATION, THRESHOLD,
+    # 6b: the fixed-point family, all but `nth` (whose list is never a
+    # literal).  `(sin 64)` written out is the 1024 it always was.
+    FIX_SIN, FIX_COS, FIX_SIN_FINE, FIX_COS_FINE, FIX_QUOT, FIX_ISQRT,
 })
 
 # Pure, but folding them is pointless: their result is a list, and the

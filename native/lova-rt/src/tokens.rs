@@ -14,7 +14,7 @@ pub struct Sig {
     pub arity: Arity,
 }
 
-pub use crate::tokens_table::SIGS;
+pub use crate::tokens_table::{N_OPS, SIGS};
 
 pub fn sig(op: u8) -> Option<&'static Sig> {
     SIGS.get(op as usize)
@@ -117,6 +117,13 @@ pub const LIST_RANGE: u8 = 0x54;
 pub const LIST_ANY: u8 = 0x55;
 pub const LIST_SORT_BY: u8 = 0x56;
 pub const LIST_ZIP: u8 = 0x57;
+pub const FIX_SIN: u8 = 0x58;
+pub const FIX_COS: u8 = 0x59;
+pub const FIX_SIN_FINE: u8 = 0x5A;
+pub const FIX_COS_FINE: u8 = 0x5B;
+pub const FIX_QUOT: u8 = 0x5C;
+pub const FIX_NTH: u8 = 0x5D;
+pub const FIX_ISQRT: u8 = 0x5E;
 
 // --- capabilities (spec §5.7) ----------------------------------------------
 
@@ -385,7 +392,7 @@ fn fill(arena: &Arena, id: u32, next: &mut u32, out: &mut Vec<u32>) {
 }
 
 /// The set of operators a tree uses -- the scan D7 asks for before a run.
-pub fn operators_used(arena: &Arena, id: u32, seen: &mut [bool; 0x58]) {
+pub fn operators_used(arena: &Arena, id: u32, seen: &mut [bool; N_OPS]) {
     let n = arena.get(id);
     seen[n.op as usize] = true;
     for k in arena.kids(id) {

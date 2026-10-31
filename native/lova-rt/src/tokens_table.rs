@@ -2,7 +2,10 @@
 // regenerate if the table ever changes (it is the byte contract).
 use crate::tokens::{Arity, Sig};
 
-pub static SIGS: [Sig; 0x58] = [
+/// The number of operators: every byte below this is one.
+pub const N_OPS: usize = 0x5F;
+
+pub static SIGS: [Sig; N_OPS] = [
     Sig { name: "end", arity: Arity::N(0) },
     Sig { name: "lit", arity: Arity::N(0) },
     Sig { name: "partition", arity: Arity::N(1) },
@@ -91,4 +94,11 @@ pub static SIGS: [Sig; 0x58] = [
     Sig { name: "any", arity: Arity::N(2) },
     Sig { name: "sort-by", arity: Arity::N(2) },
     Sig { name: "zip", arity: Arity::N(2) },
+    Sig { name: "sin", arity: Arity::N(1) },
+    Sig { name: "cos", arity: Arity::N(1) },
+    Sig { name: "sin-fine", arity: Arity::N(1) },
+    Sig { name: "cos-fine", arity: Arity::N(1) },
+    Sig { name: "quot", arity: Arity::N(2) },
+    Sig { name: "nth", arity: Arity::N(2) },
+    Sig { name: "isqrt", arity: Arity::N(1) },
 ];
