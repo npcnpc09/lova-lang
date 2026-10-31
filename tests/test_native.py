@@ -483,6 +483,26 @@ class Wiring(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("=> 41", err)
 
+    def test_a_program_refused_after_the_hand_over_keeps_its_stdin(self):
+        """A runtime older than an operator passes the screen and refuses.
+
+        Its list names what it knows it lacks, not what came after it, so
+        the program is handed over, stdin and all, and the refusal comes
+        from the run (tictactoe on a lova-rt built before `nth` was an
+        operator said "bye", 2026-10-31).  The fake here declares nothing
+        and never runs a program: the Python run must get the line.
+        """
+        path = self._write("i.lova", "(text-int (text-trim (stdin)))\n")
+        self._use_fake([])
+        stdin = sys.stdin
+        sys.stdin = io.StringIO("41\n")
+        try:
+            code, _out, err = self._cli(["run", path, "--native", "auto"])
+        finally:
+            sys.stdin = stdin
+        self.assertEqual(code, 0)
+        self.assertIn("=> 41", err)
+
     def test_check_native_agrees_with_check(self):
         text = ("(def sq [n] (mul n n))\n(example (sq 5) 25)\n"
                 "(example (sq 3) 9)\n(sq 2)\n")

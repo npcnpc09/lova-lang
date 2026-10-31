@@ -21,9 +21,10 @@ and exit non-zero.
 from __future__ import annotations
 
 import argparse
+import io
 import sys
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from core import cache, surface2
 from core.compiler import CompileError, compile as lova_compile
@@ -502,13 +503,20 @@ def report_error(exc: Exception, source: Optional[str] = None) -> int:
 # --- commands ----------------------------------------------------------------
 
 def _run_native(args: argparse.Namespace, tree: Any, source: str,
-                granted: int) -> Optional[int]:
+                granted: int) -> Tuple[Optional[int], Optional[str]]:
     """Run this program on a native runtime, or say it is Python's.
 
-    ``None`` means "not run here": under ``--native auto`` there is no
-    native runtime, or the program uses an operator outside its phase.
-    Under ``--native on`` either of those is an error instead, because a
-    host that asked for the native runtime wants to be told.
+    The exit code, and the input if it was read: a code of ``None``
+    means "not run here": under ``--native auto`` there is no native
+    runtime, or the program uses an operator outside its phase.  Under
+    ``--native on`` either of those is an error instead, because a host
+    that asked for the native runtime wants to be told.  The input comes
+    back with a ``None`` because the screen can pass a program the
+    runtime then refuses -- a binary older than an operator does not
+    list it as unsupported, it fails to decode it -- and the Python
+    runtime that takes the program over must have the input it was
+    going to read (until 2026-10-31 it ran with none: tictactoe, on a
+    lova-rt built before `nth` was an operator, said "bye").
     """
     from core.native import (
         NativeUnavailable, NativeUnsupported, choose, operators_of,
@@ -519,9 +527,9 @@ def _run_native(args: argparse.Namespace, tree: Any, source: str,
         native = choose(tree, args.native)
     except (NativeUnavailable, NativeUnsupported) as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return EXIT_ERROR
+        return EXIT_ERROR, None
     if native is None:
-        return None
+        return None, None
     # The protocol carries the whole of stdin up front, where the Python
     # runtime reads it a line at a time -- so it is read only when the
     # program has a `stdin` in it.
@@ -535,23 +543,22 @@ def _run_native(args: argparse.Namespace, tree: Any, source: str,
         name_anomaly(getattr(trap, "anomaly", None), getattr(tree, "symbols", None))
         sys.stdout.write(getattr(trap, "stdout", "") or "")
         sys.stdout.flush()
-        return report_error(trap, source)
+        return report_error(trap, source), None
     except (NativeUnavailable, NativeUnsupported) as exc:
         if args.native == "on":
             print(f"error: {exc}", file=sys.stderr)
-            return EXIT_ERROR
-        # Fall back to the Python runtime.  A program that had already
-        # read its input falls back without it, which is the one thing
-        # this hand-over cannot undo; `--native off` is the way to be
-        # sure, and `on` the way to be told.
-        return None
+            return EXIT_ERROR, None
+        # Fall back to the Python runtime, with the input already read.
+        # What the native runtime printed before it stopped is not
+        # shown: the Python run prints it again.
+        return None, feed
     sys.stdout.write(result.stdout)
     sys.stdout.flush()
     if not args.quiet:
         print(f"=> {result.value_text}", file=sys.stderr)
         if args.stats:
             print(f"   [{result.steps} steps, native]", file=sys.stderr)
-    return EXIT_OK
+    return EXIT_OK, None
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -569,13 +576,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     except ValueError as exc:
         return report_error(exc, source)
 
+    input_source = sys.stdin.readline
     if getattr(args, "native", "off") != "off":
-        code = _run_native(args, tree, source, granted)
+        code, feed = _run_native(args, tree, source, granted)
         if code is not None:
             return code
+        if feed is not None:
+            input_source = io.StringIO(feed).readline
 
     runtime = Runtime(out_stream=sys.stdout,
-                      input_source=sys.stdin.readline,
+                      input_source=input_source,
                       max_steps=args.max_steps,
                       max_call_depth=args.max_depth,
                       granted=granted,
