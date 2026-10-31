@@ -73,7 +73,7 @@ class Needed(unittest.TestCase):
 
     def test_a_program_that_touches_the_world_is_not_run_twice(self):
         import os, tempfile
-        path = os.path.join(tempfile.mkdtemp(), "count.txt")
+        path = os.path.join(tempfile.mkdtemp(), "count.txt").replace("\\", "/")  # a Windows "\t..." would read as a tab
         src = ('(boundary "fs-write fs-read" (seq (fs-write "%s" (text-cat (fs-read "%s") "x")) '
                '(fold merge 0 (range 1 60000))))' % (path, path))
         with open(path, "w") as fp:
