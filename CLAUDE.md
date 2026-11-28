@@ -1,1390 +1,220 @@
-# LOVA — AI-native Integer-Sequence Language
+# LOVA — a language built for an AI to write, check and repair
 
-> A programming language designed for **AI authorship, AI review, and AI
-> execution**. Human readability is an explicit non-goal of the
-> substrate. Human-readable projections are tooling — they exist to
-> bootstrap the project and to audit on demand, not to constrain the
-> language design.
+> Orientation for a session working in this repository. It says what
+> holds **now**. The history — every milestone, experiment and ruling —
+> is in `journal/README.md`; this file was 82 KB of it until
+> 2026-11-28 and that text is in git (`git show 6a96281:CLAUDE.md`).
+> When a milestone lands, write the journal entry and change the facts
+> here; do not append the story here.
 
-## TL;DR — 60-second orientation
+## What it is
 
-**LOVA is a language where AI is the sole first-class user.** Code is
-not text. Code is a **typed integer sequence** that lives in a
-conservation-preserving partitioned substrate. An AI generates code by
-emitting integer tokens; an AI reads code by consuming integer tokens.
-The language's semantics, type system, error model, and evolution
-machinery are all designed around what AI (LLM and successors) can do
-well, not what humans find readable.
+Code is a **typed integer sequence** (one byte a token), not text. A
+program is written as a tree, stored and identified as an integer,
+checked before it runs, run under a step budget and a capability
+boundary, and when it fails it says where and what would fix it.
+Human readability is not a goal of the substrate; the s-expression
+surface is a projection.
 
-Three-stage roadmap:
-
-1. **Stage 1 — Text-surface LOVA** (current). Human-readable textual
-   surface syntax that compiles to integer-sequence AST. Lets humans
-   bootstrap the language, generate training corpora, build tooling,
-   and validate the design empirically. **Where we start.**
-2. **Stage 2 — AI-primary LOVA.** AI is the dominant code author;
-   humans review exceptionally. **The surface exists** as of Exp 14
-   (`core/surface2.py`): the text projection of the byte encoding, one
-   character per byte, no delimiters — measured at 1.13× Python on
-   algorithmic code and 5.38× sympy-Python on LOVABench, lossless
-   2150/2150. The fine-tuned model is still M8, and whether a model can
-   *emit* this surface is untested (Q47).
-3. **Stage 3 — Pure-AI LOVA.** No text. Programs are integer
-   sequences. Human access only through `(explain program)` on-demand
-   projection. **The north star** -- and, since Exp 24 (2026-09-11)
-   and the audit of 2026-09-18, a serialisation format until an
-   experiment shows a model composing in it: every session that has
-   emitted the substrate composed a tree first and transcribed it.
-
-**Design thesis**: if you believe "AI writes most code by 2030-2035,"
-then current languages (Python / TypeScript / Rust) are transitional —
-they optimize for human readers. LOVA optimizes for AI
-generation/reading while preserving machine-verifiable correctness via
-conservation contracts, lineage tracking, and substrate-level integrity
-invariants.
-
-**Positioning — LOVA is paradigm evolution, not invention.** LOVA
-is the **synthesis** of seven long-running PL-design trajectories:
-homoiconicity (Lisp → Unison), effect tracking (Haskell → Koka → linear
-Rust), program synthesis (Template Haskell → Copilot → grammar-decoding),
-concurrency (Actors → CSP → dataflow), verification (types → dependent
-types → proof assistants), variance/evolution (generics → GP → AutoML),
-and provenance (git → Unison → SBOM). Each trajectory has a natural next
-step; LOVA is where all seven next-steps converge. See
-`spec/paradigm-inheritance.md` for the full ancestor map. *The rule
-that followed here from 2026-04-23 to 2026-09-11 -- "if a proposed
-feature has no ancestor trajectory, it is suspicious" -- is reversed
-by the ruling below: an ancestor is not a reason, and a feature enters
-the language only with evidence that an AI needs it.*
-
-## What this project IS
-
-- A language whose **core representation** is a typed integer sequence
-- A substrate where **every program is an integer** that carries
-  lineage and conservation metadata — and, since M14, can be held,
-  hashed, explained, run, cloned and mutated *by another program*
-  (`quote` / `eval` and the Meta family). "Heat" was part of this
-  sentence from M1 to M14 and never had an implementation; it was
-  ruled a dead concept at M14 and its slots hold `cons`/`head`/`tail`.
-- A type system where **generation is constrained to well-typed
-  successors** (zero syntax/type errors reachable by valid generation)
-- An execution model where **functions are populations of variants**
-  that compete evolutionarily at dispatch time
-- A debug model where **"debug" means surprise-guided mutation**, not
-  stack traces
-
-## What this project IS NOT
-
-- **Not a human pair-programming language.** Stage 1 has text surface
-  only as a bootstrap; it is not the product. Designers should resist
-  adding features motivated by "humans find it more readable."
-- **Not a replacement for MCP / agent communication protocols.** LOVA
-  is a **language** (expression of computation), not a wire protocol.
-  It can be transported over MCP, HTTP, or anything.
-- **Not a trading / quantitative system.** No PnL objective. This is
-  inherited from DNA OS's Axiom 5 — surprise is the learning signal,
-  not reward. (See `spec/axioms.md`.)
-- **Not an OS.** LOVA is the language layer. It *assumes* a
-  substrate (DNA OS is the natural fit, but LOVA can also target
-  LLVM / WASM / JVM in Stage 1).
-- **Not a general-purpose language for all tasks.** It targets tasks
-  where AI-first authorship matters: agent tooling, self-modifying
-  systems, long-running autonomous infra, safety-critical generated code.
-
-## Parent lineage
-
-LOVA is the conceptual descendant of **DNA OS v3**
-(`../dna-os-v2.1/dna-os-v2.1/dna_os_v3/`). The architectural vocabulary
-— PFS, conservation, lineage, surprise, evolution, Δ-security — is
-inherited.
-
-**Important**: LOVA does NOT import DNA OS v3 code. It reimplements
-the relevant primitives cleanly, free of experiment-era technical debt.
-The conceptual lineage is real; the code is independent.
-
-See `../dna-os-v2.1/dna-os-v2.1/dna_os_v3/CLAUDE.md` for the DNA OS
-vocabulary. Key transferred concepts:
-
-| DNA OS v3 concept | LOVA realisation |
-|---|---|
-| PFS `PartitionedFile<n>` | Program representation |
-| Conservation `sum(n) ≡ budget` | Type system + runtime check |
-| Δ-security (conservation + plasticity) | Effect type enforcement |
-| Mock theta (φ₃, ψ₇) driver | *(not realised — the 0x0B / 0x0C slots reserved for it were reallocated to `mul` / `mod` in M9, unimplemented)* |
-| Surprise (per-theory, Exp 78) | Debug / mutation signal |
-| Evolution engine (dedup, clone, mutate) | `defpop` / variant dispatch |
-| Lineage (uid/parent/root, Exp 55) | Program provenance chain |
-
-## The design method (owner's ruling, 2026-09-11)
-
-The owner's finding, after twenty-one experiments: LOVA was designed
-with existing languages as its template. The Stage-1 surface is a
-Lisp; the prelude is a standard library; the last four milestones
-each made LOVA more like Python; the yardstick measures Python's
-workflow with Python as the baseline, so parity is its ceiling; and
-every experiment judged right and wrong by human-written hidden
-tests, which is a human reviewer under another name. None of it was
-designed from the purpose -- an AI writing, checking and repairing
-programs with no person reading -- outward. Left to itself the model
-doing this design will build another human language, because human
-code is all it has learned from. So three rules, structural, not a
-matter of intent:
-
-1. **Design from the AI's operations, not from syntax.** List what an
-   unsupervised AI actually does in a task -- read the task, emit
-   tokens, check, run, observe the deviation, repair, leave evidence --
-   and admit only primitives that serve one of those actions. Nothing
-   enters because another language has it. The paradigm-lineage rule
-   above is reversed: an ancestor is not a reason.
-2. **Text takes no part in design.** Every decision is made on the
-   integer sequence; experiments have the model emit tokens directly
-   (Q47, never yet run); text exists only as the `explain` output for
-   a person auditing after the fact. The moment a decision is made on
-   an s-expression, human-language intuition is back in the room.
-3. **The model's behaviour decides the language, not the designer's
-   taste.** A representation earns its place by experiment: the same
-   semantics, the same tasks, and the form the model emits most
-   reliably, repairs most cheaply and verifies by itself wins. A
-   design that has not been put against an alternative in a measured
-   run is a proposal, not a decision.
-
-The honest limit: what the model produces will still carry the shape
-of human code, because it has no other source. What the rules buy is
-that every part of the language holds its place by an experiment
-saying an AI needs it, not by a lineage saying a language had it.
-
-First step under the rules, now run (Exp 22, Q100): the same ten
-closed tasks emitted in Stage-1 text, the Stage-2 surface and raw
-tokens. Stage-2 costs a third fewer LLM tokens on dense code, raw
-bytes cost 2.71x more; first-try reliability was 100% / 85% / 60%
-across the three forms, degrading toward the substrate. The finding is
-the ruling's own: a card projected from the s-expression carries its
-comparison/branch macros (which the substrate has no byte for) and
-omits the arities its parentheses supply, so the substrate forms could
-not be fairly tested from it -- a substrate-native card is Q101, and
-whether compare and `if` should be operators rather than text macros
-is Q102. **Q101 corrected the reliability half the same day:** with
-the s2/tok cards rebuilt from the substrate's own operators, three
-sessions wrote all ten tasks first-try in both substrate forms (s2
-20/20, tok 10/10), honestly -- so the Exp-22 gap was the card, and at
-this size the three forms tie on reliability and separate only on cost,
-Stage-2 dominating the s-expression. The text layer is not required to
-author small closed programs; its remaining case is zero-shot
-familiarity and the untested scaling risks (global lambda numbering,
-silent digit-run spacing), which is Q104. `journal/experiment_22.md`.
-
-**Exp 23** (2026-09-11) ran Q104 at 2x-5x the program size: all three
-forms written first-try by every session (30/30), no wrong values, and
-Stage-2's cost edge grew to 2.0x the s-expression on what was actually
-emitted. The qualification is the result: **neither Stage-2 session
-authored in Stage-2** -- both composed a tree and flattened it, keeping
-an external name-to-letter table -- so the substrate is demonstrated as
-a storage and transport form and remains untested as an authoring one
-(Q105). All three substrate sessions named the same silent risk: a
-swapped or shadowed reference stays well-typed, so the one mistake the
-form invites is a wrong value with no diagnostic, outside Axiom 3's
-guarantee (Q106). The byte encoding itself proved the easy part; the
-cost is the substrate's missing vocabulary. `journal/experiment_23.md`.
-
-**Exp 24** (2026-09-11) answered Q105 and it is the sharpest result of
-the series. Four sessions emitted programs left to right into the
-generation state machine -- Axiom 3 offered as an authoring interface,
-nothing revisable -- and passed 16 of 16 with **zero refused tokens and
-zero restarts**, producing identical programs whether or not the
-machine told them what could come next. Then every one of them, asked
-directly, said it had **composed the tree first and transcribed it**:
-"the linearisation was a mechanical transcription step, not an act of
-composition", and "the tell is the refusal count -- zero refusals is
-what reading out a finished plan looks like". One traced the cause to
-the write-once rule itself, which "did not produce linear composition,
-it produced *more* up-front composition". So the substrate is
-**emittable but not authorable** by a current model, and Stage 2 and
-Stage 3 are serialisation formats rather than a way of thinking. The
-type constraint proved inert except at function-typed slots, and
-disjoint from the three real costs -- the variadic `;`, the arity debt,
-and semantic guesses that are well-typed and therefore silent. What
-every session wanted instead of the valid-token list was a rendering of
-the pending stack, which the machine already holds (Q108).
-`journal/experiment_24.md`.
-
-**Exp 29** (2026-09-18) ran Q95: the repair leg at 110-160 lines,
-where reading is not cheap -- the 2048 engine and a memoised
-noughts-and-crosses, each with a Python transliteration, two faults
-planted in each at the analogous place, three fresh sessions a
-language. 12/12 first-try on both sides; LOVA read 14 244 characters
-against Python's 27 259 and program text 3 882 against 27 259; nine of
-twelve LOVA repairs were applied with no program text read, on a line
-that said "fixes all 8 examples" and was right every time, and the one
-lead that said "may be elsewhere" was distrusted and wrong. The Python
-sessions read by the prompt's clauses over the free def list and all
-three asked for a test run that is not an attempt. **The repair half
-of the fourth number is won at this size** on faults the locator can
-express; Q118 (a control arm with free tests), Q119 (a node dropped as
-an edit class), Q120 (pairs split, fixes not in the prompt), Q121
-(examples as the locator's power). **M31**, the same day and before
-the run, fixed four locator faults these programs exposed: the frame
-(a def taking a prelude name splits the letrec), runaway probes (73 s
-of 74), the probe order (spectrum suspicion over `reaches`, exact
-spellings before additions), and traps never located. **Run 2, the
-same night (Q118, Q120):** Python with a test run that is not an
-attempt reads 10 922 in all -- below LOVA's 14 244, the fault report's
-reprinted examples being the cost -- but 7 679 of program text against
-3 882 and a def before every patch against none on nine of twelve;
-LOVA on split pairs and two helper-constant faults 6/6, five blind by
-span, the cold repairs identical to the warm. The locator gained
-constants (a value computed from a probed def is recomputed; a
-constant's own value is probed) and the report groups identical
-failures (ttt-b 1 257 -> 604 characters), names the def and the
-enclosing expression, and prints the reach-set suspects on a lead.
-Q122 (a constant the prompt cannot vouch for), Q123 (the report's
-size as a number). Tests 966 -> 972. `journal/experiment_29.md`.
-
-**M44** (2026-09-28) -- **stage 1 of the danmaku, as a game.** The
-owner judged stage 1 finished: an MMD-style opening at the Hakurei
-Shrine (`game/opening.gd`), fairies built in code (two draw calls a
-wave), Reimu's flight posed through springs (the lean never reached
-the spine: `_turn` is absolute), a drawing clock one tick behind the
-newest against tick-arrival judder, the Youkai Mountain backdrop, a
-results talisman, a game-over screen and a fairy's defeat.  Trees in
-the sun's shadow map took the iGPU to 1-5 fps.  Models and the CC0 kit
-stay out of the repository (the owner's choice).  `journal/README.md`,
-"Milestone 44".
-
-**The game moved out** (2026-10-01, the owner's call: not to be
-confused with LOVA). 东方天球谭 lives in `D:\SSH\touhou-tenkyuutan`, its
-own git repository: what was `apps/godot/danmaku/`, the rules that were
-`lib/danmaku*.lova` (now its `rules/`) and `tests/test_danmaku.py`. It
-uses this checkout through `LOVA_HOME` (default `../lova-lang`); LOVA's
-one change for it is `LOVA_PATH`, extra directories `(use ...)` searches
-after `lib/` (`core/surface.py`, `resolve_library`). Mentions of the
-danmaku above and in the journal are history.
-
-**M43** (2026-09-27) -- **the danmaku's pain points.** Surface
-sugar, no new byte: `(let [a 1 b (f a)] body)`, `(fn [a b] body)`,
-`(put r x 1 y 2)` and `((expr) args)` compile to exactly the nested
-forms; `quot` (truncating) in the prelude; `sin-fine` / `atan2-fine`
-in `lib/fixed.lova`; native traps name their hot functions; a failed
-`check --native` re-runs only its misses; the CLI survives a GBK
-console; `tools/lova_sugar.py` rewrites old source. Stage-1 rules
-rewritten, 53/53: depth 23 -> 14, lets 175 -> 51, tokens only -3.5%
--- a win for depth, not tokens. The in-session claim that GDScript
-cannot run headless experiments was corrected. Q151, Q152. Tests
-1133. `journal/README.md`, "Milestone 43".
-
-**M41** (2026-09-24) -- **LOVA in a browser.** `native/lova-wasm`
-links the runtime into a WebAssembly module (no imports, no
-wasm-bindgen; `web/lova.js` is the Godot class's shape in JS); held to
-the golden set through `stdio.mjs`, every in-scope record identical,
-files / clock refused by name in a page.  `lib/neon.lova` and
-`apps/web/neon/` (**Neon Alley**): a ghost, sparks, drones and a gate
-drawn by three.js with bloom, a wet-road mirror and a CRT pass; the
-rules tick at 60 Hz in the page, 0.6-0.9 ms a tick.  Its relation
-examples caught two faults before the first run (`div` flooring broke
-the left/right mirror; a strict inequality at exactly 0.5 m).  Q146
-(rules edited in the page need the compiler there), Q147 (recursion
-depth in a page).  Tests 1119 -> 1122.  `journal/README.md`,
-"Milestone 41".
-
-**M40** (2026-09-20) -- **what the examples would not see.** The
-owner asked whether the games had shown the language convenient; the
-honest answer named the well-typed wrong value (Q106) and hand-carried
-fixed point (Q136), and the first-principles choice was to let the
-writer state what a def must satisfy and check it every run, before
-making any mistake unrepresentable. An `(example expr expected)`'s
-expected side was already any expression over the program's defs, so
-a relation costs no language change: three were written into
-`lib/fps.lova` from the kit's rules -- both kick signs occur, pressing
-at a wall stores no speed, the weapon lands where the kit's second
-camera puts it -- and each of M35's three faults, put back by hand,
-was **caught by exactly its relation while all nine value examples
-passed** (3/3). `lova check FILE --strength` (`core/strength.py`, MCP
-`lova_check` with `strength`) is the locator backwards: every
-single-node edit of every def on a passing program, and the ones no
-example notices, def by def, plus the defs no example reaches -- the
-tank game's enemies turned out untested by its 18/18 examples. The
-card says to write relations and choose inputs away from 0 and 1.
-`Fix` as a value kind waits on Q135. Q138, Q139. Tests 1104 -> 1109.
-`journal/README.md`, "Milestone 40".
-
-**M39** (2026-09-20) -- **LOVA inside Godot.** The owner's question
--- why are the ports' models so simple, could real ones be used -- had
-one honest answer: the renderer is LOVA's, 1 500 triangles a frame,
-and a real picture needs a GPU the language cannot reach. So the
-engine is the host: `native/lova-rt` split into a library
-(`server.rs`, conformance 1023/1023 after) and a stdio binary;
-`native/lova-godot`, a GDExtension (godot-rust 0.5.5) with one class,
-`LovaRuntime` -- `open` / `get` / `call` / `release` / `close`, the
-protocol in-process on its own gigabyte-stack thread, values as
-int / String / Array / `{"ref": id}`, a float refused by name;
-`apps/godot/fps`, the FPS kit's own Godot project with `player.gd` and
-`enemy.gd` replaced by scripts that call `lib/fps.lova` once a physics
-tick and write the answer into the kit's nodes (`fps_godot.lova` adds
-a `scene` function; `build.py` compiles, assembles, imports, runs,
-`--shot`). The picture is Godot's; a tick of the rules is 0.56-0.70 ms
-inside it. Q135 (LOVA against GDScript on the same engine, the first
-identical-host comparison), Q136 (fixed point against the engine's
-floats: a number type?), Q137 (data in, data out, until a program has
-to ask for an animation). Q134 superseded for the games. Tests
-1100 -> 1104. `journal/README.md`, "Milestone 39".
-
-**M38** (2026-09-20) -- **the stutter was the window.** On the VM a
-tick is 2 ms and a frame 3-8 ms of LOVA; the Tk canvas took 21 ms with
-250 ms spikes to redraw. `apps/sdlhost.py` and `--host sdl|tk` in the
-three game hosts (pygame, fixed cadence, off-view cull, the city
-blitted from an offscreen surface): the FPS at 60 fps (16.6 ms end to
-end), the platformer 51-53, the city at rest 60 and panned 9.5 -- the
-remainder is LOVA's frame. Q134: a Rust player (one exe, the VM in
-process, a pure-Rust window). `journal/README.md`, "Milestone 38".
-
-**M37** (2026-09-20) -- **Q128, the bytecode VM is the default.**
-`native/lova-rt` 0.4.0 compiles a program to slots, stack frames,
-batched ticks and a derived `position_path` (`spec/vm.md`), delegating
-`eval` / `conserve` / `trace` / Meta / Evolution to the tree-walker,
-which stays as `--tree`; `tools/differential.py` runs both on
-everything. 1.3-1.7x over the tree-walker (war terrain 11.2 M steps/s,
-a city frame 11.7, FPS 10.7); the 15 M target was not met and the
-owner stopped it there. The review found a silent wrong value (a
-captured `let` region still visible by name to a later `conserve` /
-`eval`) that no gate could see -- fixed with a live-slot mask -- plus
-fabricated `unbound-ref` fields and an out-of-memory heap overflow in
-the pool allocator, all fixed and re-reviewed three-way. Tests 1100.
-`journal/README.md`, "Milestone 37".
-
-**M36** (2026-09-19) -- **Q129, the renderer's own steps.** A frame
-of `lib/scene3d.lova` costs a quarter less (vertex 149 -> 98 steps,
-face 124 -> 107; the FPS `--shot` frame 153 000 -> 115 000) by writing
-the hot calls inline, folding scale and depth into per-object
-constants, a per-object near-plane cull, a cheaper depth key and the
-sine table as a map; pixels unchanged but the platformer's character,
-which rounds once (at most one pixel). The hosts painted every pass
-and the FPS host dropped the mouse on passes with no tick -- both
-fixed. Independent review found the cull's two-unit slack, a silenced
-fault (restored), unreproducible header numbers (replaced), and that
-the golden set cannot see a `lib/` change (F7). Q132: `max` / `sub`
-as macros cost 17 steps a vertex. Tests 1098 -> 1100.
-`journal/README.md`, "Milestone 36".
-
-**M35** (2026-09-19) -- **Kenney's FPS kit.** The third Godot port
-(KenneyNL/Starter-Kit-FPS, MIT): `lib/fps.lova`, `lib/fps_assets.lova`,
-`apps/fps/`, `tests/test_fps.py` (642 ticks tick for tick against a
-transliteration of `player.gd` / `enemy.gd`), a first-person path in
-`lib/scene3d.lova`. Built by two Opus agents and reviewed by an
-independent Opus agent on a fixed checklist (the owner's division of
-that day): the review found three rules errors the tick-by-tick test
-could not see because the oracle shared the port's code -- a random
-sign that was constant, no velocity slide on a wall, the weapon drawn
-at the wrong camera -- and eight smaller ones; all fixed and
-re-checked. On the native runtime a tick is 2.5 ms and a frame 21 ms:
-20-30 frames a second, the interpreter's ceiling, which is Q128.
-Tests 1094 -> 1098. `journal/README.md`, "Milestone 35".
-
-**M34** (2026-09-19) -- **the native runtime reaches the apps.**
-Q126: a session protocol (`session` / `get` / `call` / `release` /
-`close`; data as JSON, the world as a handle; `core.native.NativeSession`;
-the three tick-driven 3D drivers take `--native auto|on|off` with the
-same `call(name, *args)`, their `--shot` output byte-identical on both
-runtimes). Q125: `core/cache.py`, the built tree cached by the expanded
-source and a core fingerprint under `LOVA_CACHE` (city builder
-`analyze` 2.45 s -> 0.90 s). Q124: the crate profiled by its own
-sampler and sped up 1.7-1.9x with no step changed (FxHash, the first
-binding inline in the frame, text keys hashed unbuilt, a frame pool).
-Q127: spans in a program that uses a library are reported in the
-author's own line and column, or `lib/x.lova:line:col`. On the apps
-the native evaluator is now **8-11x CPython, 4-5 million steps a
-second**. Q128 (a flat instruction stream, the next order). Tests
-1054 -> 1094. `journal/README.md`, "Milestone 34".
-
-**M33** (2026-09-19) -- **a native runtime.** The owner's ruling
-after M32: speed is the largest defect left. `native/lova-rt` is a
-Rust runtime for the compiled byte sequence, one JSON object a line
-over stdio (`spec/native-runtime-protocol.md`), checked against
-`corpus/golden/` (1023 records: value, anomaly, stdout and the exact
-step count) by `tools/conformance.py`; `spec/runtime-semantics.md` is
-what `core/runtime.py` does, with the porting decisions D1-D9. Python
-keeps the parser, macros, compiler, locator, examples, MCP and CLI;
-`lova run --native auto|on|off` (auto is the default: the binary when
-there is one and the program stays inside what it implements, which
-its `ping` reply declares), `lova check --native`, MCP `native`. In
-scope everything but `read` / `explain` (the Stage-1 surface) and the
-network: 989/1023, the 29 failures all one of those four operators,
-zero in-scope value or step mismatches; the evolution PRNG is
-reproduced exactly (D4 amended: contractual). On the apps
-(`tools/bench_native.py`) the native evaluator is 5-10x CPython, 3-4
-million steps a second, the order of PyPy: the war terrain 5.3 s ->
-0.6 s, a city-builder frame 2.5 s -> 0.2 s, the full tic-tac-toe tree
-5.2 s -> 0.8 s. Q124 (profile the crate), Q125 (cache compiled bytes:
-the Python parse of a 3D library is 1-2 s a run), Q126 (a session
-protocol so the tick-driven 3D apps can use it at all). Traps carry `position_nodes` so the
-client reports the same span Python does. Division of labour: Fable
-the spec, the golden set, review and judgment; Opus subagents the
-port. Tests 1009 -> 1054. `journal/README.md`, "Milestone 33".
-
-**M32** (2026-09-18) -- **a complete language.** The owner's ruling
-after Exp 29: more experiments of the same shape add decimals to
-numbers no decision depends on; close the standing defects instead.
-Seven closed, each found by a program that was written: **tail
-calls** (a lambda body is compiled in tail position, passed on by
-`if` / `seq` / `let`; an `apply` there returns a `TailCall` that
-`_call`, now a loop, makes in its own frame's place -- accumulator
-and mutual recursion in constant depth, a call that keeps work still
-meets the ceiling, steps and `hot` unchanged); **operators and macros
-as values** (`(sort-by lt xs)`, `(fold merge 0 xs)`: a bare operator
-name nothing in the source binds is its curried lambda, plain core);
-**`text-match` / `text-match-all`** at 0x4E / 0x4F (Exp 25's Q112: a
-fixed pattern subset, what is outside it refused by name; the text
-family is full at 16, 88 tokens); **`map-get` on `(nil)`** (Q114);
-**a lint pass** (Q106: unread parameters and locals, shadowing
-parameters, as warnings under `analyze` / `check` / MCP); the
-locator's **literal-for-name and node-put-back edits** (Q119); and
-two hints. Also: a text literal keeps an escape the language does not
-define (`"\d+"`), and `{4}` in a pattern is not a placeholder. Tests
-972 -> 1009. `journal/README.md`, "Milestone 32".
-
-**M30** (2026-09-18) gave a located edit a second oracle (Q115):
-candidate constants come from the examples' own data, every edit that
-fixes all the examples is scored by how many perturbed inputs it
-changes the answer on, the smallest is reported with the number, and
-places the examples cannot tell apart are named together. Exp 28's
-confident mislead (h02, `(lt c 58)`) now reports the constant `46`
-at one of five places, which is what the examples know.
-
-**M29** (2026-09-18) made the program answer questions instead of
-being read: `core/query.py` -- `defs`, `def_text`, `scope_at`,
-`callers` / `callees`, `find_in_def` -- as `lova show` / `scope` /
-`callers` in the CLI and `lova_show` / `lova_scope` / `lova_callers` in
-the MCP server, and `lova_patch` addressed by `def` and `find` (the
-text must occur once in that def, wherever else it occurs), which
-Exp 28's three sessions asked for in the same words. The fault line
-says how many examples reach the def it names. Q89 answered the other
-way round. Tests 957 -> 964. **Exp 28 run 2, with M29 in place:**
-three fresh sessions, 24/24 first-try, 24 attempts, program read
-1 436-2 765 characters a session against Python's 4 023 and run 1's
-13 924; four of eight repairs blind in every session, the rest read
-as one to three defs from the free def list. The repair half of the
-fourth number is won at this size; the confident mislead (h02) is
-caught every time by the sessions' own rule -- "trust the line when
-its edit is a clause of the prompt" -- which Q115 would give the
-machine.
-
-**M28** (2026-09-18) made a failed example locate its fault. An
-`(example ...)` that misses used to say `offender: apply at depth 0`,
-the example's own call; `core/locate.py` now probes every single-node
-edit of every def the example ran through, and of the example's own
-expression -- operands swapped, branches swapped, a minus or a `not`
-added or dropped, a literal nudged, a reference exchanged for another
-name in scope, an operator or a comparison for its family -- by
-rebuilding the def's closure in the letrec frame and evaluating the
-example again, and reports the edit that makes it pass, scored against
-the other examples, with the replacement text `lova_patch` takes. On
-Exp 21's eight planted faults: five located with a fix that passes
-every test (three the planted token itself), one partial, two never
-one edit. An example may state any value now (list, text, record), and
-the card carries thirty-odd operator examples computed by the runtime
-when it is generated (Q113); the card's "a loop is an accumulator
-recursion" is gone, since LOVA had no tail calls (it has since M32). **Exp 28 ran Q96
-the same day:** three sessions with the examples and the `fault:`
-line, first-try 23/24 against Exp 21's 18/24, attempts 27 against 30,
-and three times the reading (two thirds instrument, a third the
-sessions reading anyway); the line named the planted token 3 of 5
-times and a wrong full fix twice, few examples being a weak oracle.
-"An address, not a diagnosis." The line pays where reading fails,
-which is Q95. Tests 949 -> 957.
-
-## The audit (2026-09-18) -- the design against the goal
-
-The owner asked for the architecture and the code to be audited
-against the one goal and changed where they fell short. The full
-account is in `journal/README.md`, "The audit"; the standing result:
-
-- **The four numbers:** 3 won (a function call under a budget and a
-  boundary, against a subprocess); 1 at parity and behind at size, the
-  gap all interpreter cost; 2 behind (Exp 19: 594 characters a failure
-  against 71; Exp 21: the anomaly has not yet been what found a
-  fault); 4 unproven.
-- **By evidence:** spans and patch-by-span, `hot`, `example` forms,
-  the generated card, records, the text and list families, the
-  boundary and budget, type constraint at the function-typed slot,
-  and the s-expression as the authoring surface.
-- **By lineage only** (counted over the 34 real programs): the
-  Evolution family (2 programs), the lineage half of Meta (`hash`,
-  `uid`, `ancestor-of`: none), number theory (0-2 each, and the
-  benchmark selected for it), telemetry (none). No slot changed hands
-  -- a byte change with no number calling for it is what rule 3
-  forbids -- but the headline numbers below now say what they
-  measure, and Axioms 5 and 6, standing with no yardstick evidence,
-  are the owner's question.
-- **Changed that day**, all against number 2: a synonym table in the
-  unbound-ref hint (`add` -> "in LOVA that is `(merge a b)`"); the
-  `bound` list cut to the program's own names (660 -> 267
-  characters a miss); raw `valid_alternatives` no longer printed; the
-  depth hint says LOVA has no tail calls and names the loop forms;
-  the MCP server elides the per-frame `position_path` as the CLI does.
-- **The roadmap, restated:** the tree is the authoring form, the
-  s-expression its projection for a current model, the integer its
-  identity, storage and transport. Stage 2 and 3 are serialisation
-  until Q110 says otherwise: Q108 was run the same afternoon (Exp 24,
-  run 2) and answered no, eight of eight sessions over three arms.
-- **Not changed that day:** tail calls (no session had met the depth
-  trap; M32 added them the same week), the interpreter (a native
-  runtime is deferred until the goal is met), the prelude's eight
-  unused definitions (60 card tokens).
+It is a language, not a protocol, an OS, or a trading system. It does
+not import DNA OS v3 code (its conceptual parent,
+`../dna-os-v2.1/dna-os-v2.1/dna_os_v3/`); concepts transfer, code does
+not.
 
 ## The goal (owner's ruling, 2026-09-10)
 
-**LOVA has one goal: an AI uses it more conveniently than any other
-language, and so, later, do we.** Every axiom below is a means to it
-and yields to it. Convenience is measured on the same tasks in LOVA
-and another language by: (1) attempts from writing to running
-correctly, (2) context spent understanding each failure, (3)
-scaffolding a host needs to run the code safely, (4) the cost of
-reusing, repairing and tracing code already written. Exp 17 measured
-half of (1) -- parity with Python; Exp 18 ran the loop on ten tasks
-(11 attempts against 10, the one miss fixed from the hint in one try,
-scaffolding a function call against a subprocess); Exp 19 ran it on
-eight bigger ones (35 against 26: parity on seven tasks, the game-tree
-search 6/3/4 against 1/1/1, every extra attempt a rewrite for cost --
-the interpreter's speed as an attempts number, Q90; compile faults
-fixed in one attempt every time); Exp 20 re-ran the eight with cost
-attribution in the step trap (31 against 26, the search 3/2/4 -- the
-rewrites read rather than guessed, and one misread because the list
-counted calls; it ranks by steps now, and `nth` is native). Exp 21
-measured (4)'s repair half: eight one-token faults planted in programs
-already written, 30 attempts against 28, 672 characters against 391,
-27 108 read against 12 069 -- every fault found by reading before any
-feedback, so at that size repair cost is reading and density is
-charged on every repair (Q95: the size where reading fails).
+**An AI uses LOVA more conveniently than any other language.** Every
+axiom is a means to it and yields to it. Measured on the same tasks
+against Python, fresh sessions, by four numbers:
 
-Standing invariants: Axioms 3, 4, 5, 6, 7, 9. **Demoted to design
-preferences: Axioms 1, 2, 8, 10** -- the integer encoding is the
-serialisation format and identity, not a veto; density, the 64-slot
-ceiling and Stage 3 do not refuse a change the four numbers call for.
-First consequences: a pair type (Q84), native text (Q85), a helper
-inside a boundary (Q86). See `spec/axioms.md`, "The goal", journal
-M23, "The ruling", and **`spec/ai-convenience.md`** -- the yardstick:
-what a person's absence removes, where the cost falls for an AI, the
-measurement protocol, and what it asks of the design (patch-by-path,
-fewer names, examples carried by the program, a generated card).
-Other languages are a parts bin, not a precedent.
+| number | standing | evidence |
+|---|---|---|
+| 1. attempts from writing to running correctly | parity on most tasks; behind on search-heavy ones | Exp 17-20, 31 (pilot) |
+| 2. context spent on each failure | parity on like failures (193 characters a fault; a wrong value 75 against 71) | Exp 30; proper re-measure is Q142 |
+| 3. scaffolding to run the code safely | **won** — a call under a budget and a boundary, against a subprocess | Exp 18 |
+| 4. reusing, repairing, tracing | repair **won** at 110-160 lines; reuse and trace unmeasured | Exp 29 |
 
-## Axioms (six standing; four are design preferences since 2026-09-10)
+`spec/ai-convenience.md` is the yardstick and its protocol.
 
-These were the load-bearing commitments. See `spec/axioms.md` for the
-full argument behind each and for the ruling that demoted 1, 2, 8 and
-10.
+## The design method (owner's ruling, 2026-09-11)
 
-1. *(preference)* **Programs are integers, not text.** Text is a projection layer.
-   The substrate manipulates `PartitionedFile<n>` directly.
-2. *(preference)* **Human readability is a non-goal of the substrate.** Stage 1 text
-   syntax is a bootstrap, not an invariant. Do not entrench
-   human-pleasing syntax into the semantics.
-3. **Type-constrained generation.** For any partial program, the set of
-   well-typed next tokens is computable. AI generation traverses this
-   space only. Ill-typed programs are not representable.
-   *Precision (Exp 12 F4, Exp 16):* for **generated** programs this
-   now holds at the name level too — since M16 the state machine is
-   given literal payloads and keeps scope, so an unbound or wrongly
-   typed reference is unrepresentable (704/1000 → 0 at M16; 226 → 0
-   at the M23 re-run). For hand-written
-   or mutated trees the compiler's scope and type passes are the check.
-   Mutual recursion is compilable but not generatable (Q64). Quote the
-   axiom with that qualifier.
-4. **Conservation is a type, not a runtime afterthought.** Every
-   function declares its effect / budget / surprise bounds in its
-   signature. Violations are type errors at declaration-site and
-   Δ-traps at runtime.
-5. **Lineage is intrinsic.** Every program artifact carries provenance
-   (which AI, when, why, from what parent). Provenance is queryable in
-   the language (`why?`, `lineage`).
-6. **Populations over individuals.** A function is a pool of variants,
-   not a single definition. Dispatch selects per workload; losers are
-   retired, winners are cloned + mutated.
-7. **Surprise is the debugger.** No stack traces in the substrate.
-   Runtime deviation is emitted as structured surprise traces;
-   AI-driven repair mutates at the offending token position.
-8. *(preference)* **Small core, dense tokens.** Core operator set ≤ 64 (1 byte each).
-   Every byte carries semantic weight. Sugar is a Stage-1 bootstrap
-   concession, not a language feature.
-9. **No PnL / reward objective.** The language is neutral to
-   optimization targets. Users declare their objectives (via
-   conservation contracts and surprise budgets); the substrate enforces
-   compliance.
-10. *(preference)* **Stage-coherent design.** Every design decision must be coherent
-    under all three stages. If a feature makes Stage 1 nicer but
-    breaks Stage 3's pure-integer representation, reject it.
+Left to itself, the model doing this design builds another human
+language, because human code is all it has learned from. So:
 
-## Token architecture (draft)
+1. **Design from the AI's operations** — read the task, emit, check,
+   run, observe the deviation, repair, leave evidence. Nothing enters
+   because another language has it; an ancestor is not a reason.
+2. **Text takes no part in design.** Decide on the integer sequence.
+3. **The model's behaviour decides, not the designer's taste.** A
+   design that has not been put against an alternative in a measured
+   run is a proposal, not a decision.
 
-Exactly 64 core operators, grouped into 8 families of 8. Each token is
-1 byte. Arguments follow as typed-slot tokens (types are determined
-positionally by the preceding operator's signature — no explicit type
-annotations).
+What the experiments have settled under these rules:
+
+- A current model **composes a tree and transcribes it** (Exp 24,
+  eight of eight sessions). The integer substrate is storage,
+  transport and identity; Stage 2 and Stage 3 are serialisation
+  formats until Q110 (a model trained on the stream) says otherwise.
+  The tree is the authoring form and the s-expression its projection.
+- A fault found by **the program's own examples and a located edit**
+  beats reading (Exp 28-29): nine of twelve repairs applied with no
+  program text read.
+- Density is spelling and syntax, not the token table (Exp 13, 14).
+  Prefer a macro to a byte.
+- The one mistake the type constraint cannot catch is a well-typed
+  wrong value. The answer in use is relation examples and
+  `check --strength` (M40), not a richer type.
+
+## Axioms
+
+Standing: **3** type-constrained generation (for generated programs,
+at the name level since M16; the compiler is the check for everything
+else), **4** conservation is a type, **5** lineage is intrinsic, **6**
+populations over individuals, **7** surprise is the debugger, **9** no
+PnL or reward objective.
+
+Design preferences since 2026-09-10: **1** programs are integers, **2**
+no human readability in the substrate, **8** small core, **10**
+stage-coherent. They do not refuse a change the four numbers call for.
+
+The audit of 2026-09-18 found the Evolution family, the lineage half
+of Meta, number theory and telemetry held **by lineage only** — almost
+no real program uses them. No byte was taken back; whether Axioms 5
+and 6 stand without yardstick evidence is the owner's open question.
+`spec/axioms.md` has the arguments.
+
+## The token table
+
+98 tokens, one byte each. `spec/tokens.md` is authoritative and
+**generated** from `core/tokens.py` by `spec/generate_tokens_md.py` —
+rerun it, never hand-edit. `spec/token-budget.md` is the ledger; read
+it before proposing an operator.
 
 ```
-0x00-0x07   Structural            partition / merge / cons / head / tail
-0x08-0x0F   Numerical primitives  p, τ, σ, mul, mod, div, gcd, mobius
-0x10-0x17   Conservation          budget-decl / conserve / nil / Δ-check
-0x18-0x1F   Surprise / watch      surprise / nil? / threshold / deviation
-0x20-0x27   Evolution             defpop / variant / evolve / select / mutate
-0x28-0x2F   Composition           seq / parallel / if-surprise / loop-until
-                                  lambda / apply / let / ref
-0x30-0x37   Effects / IO          external-boundary / net-send / net-recv
-                                  fs-read / fs-write / stdout / stdin / clock
-0x38-0x3F   Meta / lineage        lineage-query / why / trace / explain
-0x40-0x4F   Text (M25, M32)       text literal, text-len / -cat / -slice / -find /
-                                  -split / -join / -chars / -of-chars / -cmp /
-                                  -int, int-text, text?, text-trim,
-                                  text-match / text-match-all (M32)
-0x50-0x57   List (M27)            map / filter / fold / reverse / range / any /
-                                  sort-by / zip -- one step an element
+0x00-0x3F  the core 64: structural, numerical, conservation,
+           surprise, evolution, composition, effects/IO, meta
+0x40-0x4F  text (M25, M32)        0x58-0x5E  fixed point (6b)
+0x50-0x57  list (M27)             0x5F-0x61  swarm (6c, 6d)
 ```
 
-**Slot budget.** 31 of 64 implemented, 33 reserved — but of those 33,
-24 belong to the Evolution / Effects-IO / Meta families, each of which
-carries an axiom, leaving **8 genuinely free slots**.
-`spec/token-budget.md` is the standing ledger: what was spent, what
-remains, and what is still awaiting a decision. Read it before
-proposing any new operator.
+The **swarm family is on probation** (Q153, Q154): it holds one
+game's rules and a walk of any length costs one step. No further
+domain family enters on a single program's profile.
 
-`spec/tokens.md` is the authoritative table and is **generated** from
-`core/tokens.py` by `spec/generate_tokens_md.py`. Rerun that script
-after touching the table; do not hand-edit the Markdown.
+The text, list, fixed and swarm families are admitted by the
+validator and not emitted by the samplers. Adding a byte means: the
+Python runtime (the reference), `native/lova-rt` (both evaluators),
+the Stage-2 symbol, the card, `spec/runtime-semantics.md`, the golden
+set — and rebuilding lova-rt, the Godot extension and the wasm module,
+which refuse a byte they were built before.
 
-Reallocated slots, all of them placeholders that carried a name and an
-arity for nine milestones and never an implementation:
-
-| Byte | Was | Now | When |
-|---|---|---|---|
-| 0x0B / 0x0C | `φ₃` / `ψ₇` (mock theta) | `mul` / `mod` | M9 |
-| 0x04 / 0x05 / 0x06 | `heat-inc` / `heat-get` / `inherit` | `cons` / `head` / `tail` | M10 |
-| 0x0D | `η` (Dedekind eta) | `div` | M10 |
-| 0x15 | `sum-invariant` | `nil` | M10 |
-| 0x19 | `watch` | `nil?` | M10 |
-| 0x1E | `normal-range` | `read` | M18 |
-| 0x12 | `delta-check` | `signal` | M22 |
-| 0x13 / 0x14 / 0x16 | `respawn` / `budget-remaining` / `preserve` | `map-put` / `map-get` / `map-pairs` | M22 |
-
-The DNA OS lineage for the *architecture* is unaffected; these slots
-changed hands, and the core is still exactly 64 operators.
-
-**The pending stack, not the alphabet** (Q108, built 2026-09-15). Exp
-24 offered four sessions the set of tokens that would be accepted at
-every position; all four ignored it, and all four asked for the same
-replacement in the same words -- which forms are open, which operator
-owns each, what each still owes, and whether the variadic in front of
-you may be closed. `core/generator.py` now answers that: `open_forms`,
-`pending` and `render_pending`, with each slot carrying the depth its
-form was opened at so that two `merge`s nested in each other are two
-forms and not one owing three. `lova_valid_next` returns it beside the
-choices, and `experiments/experiment_24_linear.py` has a third arm,
-`--frontier stack`, so the re-run Q108 asks for is one flag. **Run 2
-(2026-09-18): four fresh sessions, 16/16, zero refusals, zero
-restarts, all four composed the tree first and say the stack changed
-no token.** Eight of eight sessions over three arms; the substrate is
-a serialisation format for a current model. What every session asked
-for is the tree echoed with a hole, the binders in scope and a scratch
-evaluation (Q112, Q113) -- the text loop's own surface.
-
-**Three messages that pointed at the wrong place** (2026-09-15, from
-writing 3 000 lines of `lib/` in one session -- journal Exp 25). A
-missing paren on a nested curried lambda was reported as `lambda:
-expects 2 args, got 4` at the *next* definition, three hundred
-characters away; it cost four round trips before a twenty-line balance
-checker was written by hand to work around it. A parse error now
-carries the first top-level form whose parens never close, names it by
-its first line and puts the span there. An `(example ...)` that states
-a list is refused at parse time, where it used to fail later as `cons
-produces List, slot expects Int` with nothing about examples in it.
-And `nil?` on a record now says that a record is a map, and that a
-field is what carries `absent` beside one. `tests/test_diagnostics.py`
-holds one test per mistake.
-
-**A def cannot take an operator's name** (2026-09-15). `(def dist [a
-b] 99)` parsed, and `(dist 1 2)` then went to `surprise`, which `dist`
-is the short spelling of: a definition nothing could call and a wrong
-value with no diagnostic -- the failure Exp 23 F3 named as the one the
-type constraint does not cover. Found twice in one afternoon by the
-ports (`dist` in `lib/tactics.lova`, `select` in `lib/war.lova`, both
-silently dead). The parser now refuses the definition and says which
-operator owns the name. A *parameter* may still take one, because the
-prelude reads `text` as a value and never calls it.
-
-**Surface spelling is not free real estate but it is free density.**
-Exp 13 measured operator *names* at 51% of the Stage-1 LLM-token cost
-and found that one-token spellings (`if`, `dev`, `loop`, `def`, ...)
-close 30% of the algorithmic density gap against Python for zero
-slots — three times what two new operators were worth. `lt`, `sub`,
-`gt`, `(list ...)` and `"strings"` are therefore **macros**, not
-operators: they expand into the core (Constraint 6) and cost nothing.
-Prefer a macro over a slot unless the node count matters.
-
-**Stage 1 text surface** is a Lisp-like s-expression syntax that maps
-1:1 to token sequences. Example:
-
-```lova
-(defn square [n] (⊗ n n))
-(square 7)
-```
-
-is Stage-1 sugar. It desugars to core tokens only —
-
-```lova
-(let 0 (lambda 1 (mul (ref 1) (ref 1))) (apply (ref 0) 7))
-```
-
-— and compiles to a short integer sequence. The text form is a
-pretty-printer over the integer form, not the canonical
-representation; identifiers are interned to integer name ids at parse
-time and printed back as integers, because the integer is the
-program.
-
-## File layout
+## Layout
 
 ```
-lova/
-├── CLAUDE.md              ← this file
-├── README.md              ← minimal project description
-├── core/                  ← reference implementation
-│   ├── tokens.py          ← 64-token spec + encoder/decoder
-│   ├── types.py           ← type system (position-directed)
-│   ├── runtime.py         ← evaluator (token-sequence interpreter)
-│   ├── conservation.py    ← Δ-check + budget enforcement
-│   ├── lineage.py         ← provenance tracking
-│   └── surface.py         ← Stage-1 s-expression ↔ token sequence
-├── spec/                  ← design documents
-│   ├── axioms.md          ← full argument behind each axiom
-│   ├── tokens.md          ← complete token reference
-│   └── grammar.md         ← type-directed grammar rules
-├── experiments/           ← empirical validation
-│   └── experiment_NN_*.py
-├── journal/               ← research log
-│   ├── README.md
-│   └── experiment_NN.md
-└── corpus/                ← (future) training data for LLM fine-tune
-    └── (empty initially)
+core/      tokens, types, surface (Stage 1), surface2 (Stage 2),
+           compiler, runtime (the reference evaluator), generator,
+           examples, locate, strength, query, brief, profile, cache,
+           native (client of lova-rt), cli, mcp_server,
+           conservation, lineage, populations, telemetry
+native/    lova-rt (Rust: bytecode VM, the default; tree-walker
+           behind --tree), lova-godot (GDExtension), lova-wasm
+lib/       prelude.lova and the libraries, written in LOVA
+apps/      programs and their hosts (Godot FPS, web/neon, SDL hosts)
+spec/      axioms, tokens, token-budget, ai-convenience,
+           runtime-semantics, native-runtime-protocol, vm
+corpus/    LOVABench v3, golden/ (1033 conformance records), the
+           fine-tune corpus, language_card.md (generated)
+tools/     conformance, differential, golden, bench_native, lova_sugar
+experiments/, journal/   numbered scripts and their entries
+docs/      the portal (EN / 中文)
 ```
 
-## How to run / test
+Python keeps the parser, macros, compiler, locator, examples, MCP and
+CLI; Rust executes the compiled bytes. The two must agree on value,
+anomaly, stdout **and the exact step count** on every golden record.
 
-The `lova` command line is the entry point (`core/cli.py`).
+The game 东方天球谭 lives in `D:\SSH\touhou-tenkyuutan` (its own
+repository since 2026-10-01) and uses this checkout through
+`LOVA_HOME` / `LOVA_PATH`. Mentions of the danmaku in the journal are
+history.
+
+## How to run
 
 ```bash
-cd /path/to/lova
 export PYTHONPATH="$PWD"
-
-# Run a program
-python -m core.cli run apps/is_prime.lova 1999
-
-# REPL, with lib/prelude.lova loaded
-python -m core.cli repl
-
-# Project into the Stage-2 surface, bytes, or one integer
-python -m core.cli emit apps/coprime.lova 14 15 --form stage2
-
-# Static analysis without running it
-python -m core.cli analyze apps/collatz.lova 27
-
-# Serve the language to an MCP host (execute / analyze / valid_next / emit)
-python -m core.cli mcp
-
-# Run an experiment
-python experiments/experiment_01_hello_lova.py
-
-# The same, ~6x faster on long runs: the core has no dependencies, so
-# any PyPy 3.10+ runs it unchanged (M23)
-pypy -m core.cli run apps/wordfreq.lova notes.txt 10 --allow fs-read
+python -m core.cli run apps/is_prime.lova 1999      # --native auto|on|off
+python -m core.cli check FILE [--native] [--strength]
+python -m core.cli analyze | emit --form stage2 | show | scope | callers
+python -m core.cli profile PROG --init EXPR --step EXPR --ticks A..B
+python -m core.cli repl | mcp
+python -m pytest -q                                 # the suite
+python tools/conformance.py                         # golden set, both runtimes
+python tools/differential.py                        # VM against tree-walker
+python -m corpus.make_card                          # regenerate the card
 ```
 
-## Autonomous operation
+## Working here
 
-Claude should operate autonomously on this project.
+- Create and edit files freely; run experiments without asking;
+  install a package only when an experiment needs it.
+- Commit and push when a batch is finished (the owner's standing
+  preference); never rewrite pushed history.
+- **Ask first:** deleting journal files or experiment results; any
+  change to the six standing axioms; importing DNA OS v3 code.
+- Verification of engine-core changes goes to a separate reviewer
+  agent with a fixed checklist; the author does not review itself.
+- No security, network-attack or sandbox-escape subjects in
+  experiments or apps.
 
-- **Create / edit files freely** inside `lova/`.
-- **Run experiments directly** without asking — pick reasonable
-  defaults for seeds / sizes / iterations.
-- **Install pip packages** when experiments require them (prefer
-  minimal deps; justify each in the experiment's docstring).
-- **Commit only when explicitly asked** — this is a research project,
-  not a continuously-deployed service.
+## Constraints
 
-### Still requires confirmation
-
-- Deleting existing journal files or experiment results
-- Pushing to a remote
-- Any design change that modifies the six standing axioms above
-- Importing DNA OS v3 code directly (should be reimplemented, not forked)
-
-## Constraints (DO NOT break)
-
-1. **No text-centric design leakage.** If a feature would be hard to
-   port to Stage 3 (integer-sequence-only), it does not belong in the
-   substrate. Stage 1 sugar is explicitly allowed but must compile
-   cleanly to the integer form.
-2. **No human-pleasing naming conventions in the runtime.** Identifiers
-   are optional Stage-1 tags; the substrate references by hash/integer.
-3. **No PnL / reward / profit-maximising logic.** The language is
-   objective-neutral. Conservation contracts express invariants, not
-   objectives.
-4. **No mutable global state.** Every effect is typed and local to a
-   function's declared effect set.
-5. **No silent failures.** Every deviation from declared contract is a
-   surprise event with structured metadata.
-6. **No parser-level sugar that changes semantics.** Surface syntax may
-   differ from underlying token form by layout but must not introduce
-   semantics not expressible in the core 64 tokens.
-7. **No forking of DNA OS v3 code.** Reimplement primitives cleanly;
-   reference the DNA OS documentation for concepts.
+1. Nothing that cannot be said in the integer form; surface sugar
+   must compile to the core and add no semantics.
+2. No human-pleasing naming in the runtime; the substrate references
+   by integer.
+3. No PnL / reward / profit logic.
+4. No mutable global state; every effect is typed and under a
+   declared boundary.
+5. No silent failures: every deviation is a structured anomaly.
+6. A step count is contractual: an optimisation that changes it
+   re-harvests the golden records and says so.
+7. No forking of DNA OS v3 code.
 
 ## Journal conventions
 
-Mirrors DNA OS v3's journal structure. For every experiment, create
-`journal/experiment_NN.md`:
+Every experiment gets `journal/experiment_NN.md` (Hypothesis, Method,
+Results, Findings, Discussion, Next questions, Status) and a row in
+the journal's log; milestones and rulings go in `journal/README.md`,
+newest first in its dated section.
 
-```markdown
-# Experiment NN — <Title>
+- Honesty over optimism; a NULL result is load-bearing.
+- Numbers in Results, meaning in Discussion.
+- Every experiment raises a next question (`Qnn`, numbered on).
+- One trajectory is a pilot; ten seeds or sessions before a finding
+  carries weight.
+- The README shows strengths; weaknesses live in the journal and the
+  Q-list.
 
-**Date:** YYYY-MM-DD
-**Script:** `experiments/experiment_NN_<topic>.py`
-**Status:** Done / In progress / Parked. **WIN/PARTIAL/NULL.**
+## Where the work stands (2026-11-28)
 
-## Hypothesis
-## Method
-## Results
-## Findings (F1. ..., F2. ...)
-## Discussion
-## Next questions raised (→ QNN: ...)
-## Status (one-sentence takeaway)
-```
+Done and holding: the language (M9-M32: recursion, data, text, lists,
+records, tail calls, boundaries, examples, the locator), the native
+runtime and VM (M33-M37, over ten million steps a second), embedding in Godot
+and in a page (M39, M41), relation examples and strength (M40), the
+step profiler and the flat session (2026-10-31).
 
-Journal conventions (inherited from DNA OS):
+Open, in the order the review of 2026-11-28 put them:
 
-- **Honesty over optimism.** NULL results are load-bearing — they
-  document architectural boundaries.
-- **Observation ≠ interpretation.** Numbers in Results; meaning in
-  Discussion.
-- **Every experiment raises a next question.** If not, it wasn't pushed
-  hard enough.
-- **Multi-seed / multi-run by default.** Single-trajectory results are
-  marked `(pilot)` and must be rerun with ≥ 10 seeds before any finding
-  is treated as load-bearing.
+1. **Q153 / Q154** — the swarm family against a general form, and
+   what a native walk is charged.
+2. **The compiler front end in Rust** — the parse of a 3D library is
+   1-2 s; MCP `lova_check` still builds per example; a page cannot
+   edit its rules (Q146).
+3. **Q135** (LOVA against GDScript on one host — `Fix`, Q140, waits
+   on it), **Q142** (number 2 measured properly), and number 4's reuse
+   and trace halves, which have no experiment.
+4. The by-lineage-only families: the owner's decision.
+5. Small and certain: Q138, Q139, Q143, Q145, Q107, Q147, Q155.
 
-## Memory system
-
-This project shares the memory substrate at
-`C:\Users\Administrator\.claude\projects\...\memory\`. Relevant
-existing memories:
-
-- `feedback_os_not_regressor.md` — DNA OS's "OS not regressor" reframe.
-  **LOVA inherits this**: do not benchmark LOVA on prediction-MAE
-  tasks. Measure it on code-correctness / LLM-generation-reliability /
-  substrate-integrity metrics.
-- `project_v3_canonical_stack.md` — DNA OS's canonical OS-era config.
-  LOVA mirrors several of the same defaults (enforce_diversity,
-  conservation, Δ-monitor).
-
-Add to memory when:
-- A design axiom is validated or retracted empirically
-- A canonical configuration emerges for a LOVA module
-- A non-obvious user preference is revealed
-
-Do NOT add to memory when:
-- The fact is captured in CLAUDE.md or `spec/`
-- The information is ephemeral (current experiment state, in-progress
-  work)
-
-## Current state (2026-09-10 — post-M23)
-
-**10 / 10 axioms operational.** See `journal/README.md` for per-
-experiment details.
-
-| Axiom | Impl | Exp |
-|---|---|---|
-| 1. Programs are integers | ✅ | 01 (integer 55916975560956379404) |
-| 2. No human-readability as goal | ✅ | design decision |
-| 3. Type-constrained generation | ✅ | 02 (100% vs 0% well-formed) |
-| 4. Conservation as type | ✅ | 01 (Budget/Delta trap) |
-| 5. Lineage intrinsic | ✅ in the language (M14) | 04; `uid`/`why`/`lineage-query` are operators |
-| 6. Populations over individuals | ✅ in the language (M15) | 05 from Python, 15 from inside; the Evolution family is 8/8 |
-| 7. Surprise as debugger | ✅ | 01 + 06 (structured anomaly) |
-| 8. Small core, dense tokens | preference since 2026-09-10 | 64 core tokens + a text family of 14 (M25) + a list family of 8 (M27), 1 byte each |
-| 9. No PnL objective | ✅ | design decision |
-| 10. Stage-coherent | ✅ | text ↔ integer lossless |
-
-**Milestones completed:**
-- **M1** (Stage-1 substrate): core/tokens, core/surface, core/runtime,
-  core/conservation operational. Axioms 1/4/7/8 validated.
-- **M2** (type-directed generation): core/types, core/generator.
-  Axiom 3 validated.
-- **M3** (LOVABench): corpus/ with 20 tasks + JSONL + evaluator.
-  Three baselines quantified (0% / 100% / 100%).
-- **M4** (lineage + populations): core/lineage, core/populations.
-  Axioms 5 and 6 validated.
-- **M5** (AI observability): core/observability (L1 valid_next_with_stats,
-  L2 enriched anomalies, L3 static_analyze).
-- **Exp 07** (Claude-vs-Claude): pass@1 20/20 LOVA vs 19/20 Python;
-  density 39.2×; error-class subset property empirically demonstrated.
-  *(v1 slice. Superseded by the 60-task re-run at M13: 60/60 vs 59/60,
-  25.8×. The error-class result is unchanged.)*
-- **M6 Day 1** (compiler): core/compiler with three static passes —
-  scope-check, type-check, constant-fold. `CompileError.anomaly` shares
-  L2 schema with runtime traps (uniform AI error handler).
-- **Exp 08** (compiler passes): LOVABench v1 folds to 58.5% fewer nodes
-  / 43.9% fewer bytes; pure-program tasks collapse to single LIT_INT.
-  `unbound-ref` moves from runtime to compile-time.
-- **First real programs** shipped in `apps/` — `is_perfect.lova` and
-  `coprime.lova` (first non-benchmark LOVA code; drivers demonstrate
-  full parse → analyse → compile → encode → evaluate pipeline).
-- **M6 Day 2** (body-scanning DeltaTrap): `_scan_body_offender` +
-  `_clone_with_replacement` in `core/runtime.py`. Δ-trap anomaly
-  now carries `body_offender` pinpointing the deepest sub-expression
-  whose single-node replacement closes the deviation. Two probes
-  (operator-swap, literal-replacement). Q20 closed.
-- **Exp 09** (body-offender): 5/5 canonical shapes, 50/50 fuzz
-  precision (pre-Pass-A was 60%), 5/5 closed-loop repair. Δ-trap
-  offender signal upgraded from "uniform CONSERVE" to precise
-  sub-expression + correction value.
-- **M6 Day 3** (pass-rate telemetry): `core/telemetry.py` + `Slot.parent_op`
-  + four new `TokenChoice` fields (`prior_pass_rate{,_ctx} /
-  prior_sample_count{,_ctx}`). `valid_next_with_stats(state,
-  telemetry=DB)` fills them from a persisted JSON DB. Runtime
-  `MAX_NT_INPUT=2000` DoS guard added. Q22 closed.
-- **Exp 10** (telemetry): 20 LOVABench refs + 300 random samples →
-  `corpus/token_telemetry.json` (19 KB). Context divergence surfaces
-  (LIT-in-CONSERVE **3%** vs global 65%). **Weighted sampler +20 pp
-  over uniform** (96% vs 76% pass-without-trap, N=50).
-- **M9** (abstraction and iteration): `LAMBDA` / `APPLY` / `LOOP_UNTIL`
-  implemented, `LET` upgraded to a letrec, `mul` / `mod` on the
-  reclaimed 0x0B / 0x0C, `deviation` / `threshold` giving ordering,
-  `Fn` and `Value` types, `DepthTrap` / `StepTrap` ceilings, and
-  Stage-1 sugar (`defn`, call syntax, bare-name references). Zero new
-  tokens. Numbered 9 because M7 (MCP) and M8 (fine-tuning) were
-  already named below; M9 landed first because both depend on it.
-- **Exp 12** (abstraction): **44/44 algorithmic cases pass, 0/10 were
-  representable before M9**; μ-recursive basis exhibited; 5/5 runaway
-  shapes trapped with the full L2 schema. **NEGATIVE result on
-  density** — see below.
-- **Exp 13** (token budget): re-derived the table before spending the
-  rest of it. Density is **30% spelling / 9% operators / 61%
-  s-expression syntax**, so a table change was the wrong instrument —
-  and the benchmark cannot testify about the table, because its tasks
-  were selected for what LOVA could already express. Proposal in
-  `spec/token-budget.md`; **Axiom 8 revision proposed and NOT applied**
-  (needs owner approval).
-- **M10** (data): 6 of 14 free slots spent — `cons` / `head` / `tail` /
-  `nil` / `nil?` and `div`. One cons cell buys pairs, lists **and**
-  strings-as-codepoint-lists, so `"abc"` is sugar at zero slots. New
-  `List` type; `apply` arguments widened to `Value`. `lt` / `sub` /
-  `gt` / `(list ...)` shipped as macros rather than slots, on Exp 13's
-  own evidence. `quote` / `eval` held pending a decision.
-- **Fixed in M10**: `constrained_random` could fail to terminate — no
-  Fn-producing operator is "terminating", making generation a critical
-  branching process in an `Fn` slot. Replaced by a
-  minimum-completion-cost bias, which strictly decreases remaining
-  work. Related: four runtime arithmetic sites trusted their slot type
-  and could receive a closure, because `APPLY` declares `Int` while a
-  partial application evaluates to a callable (Q35). All now coerce.
-
-**M27** (2026-09-11) made the walkers operators. Exp 20 left the
-natural game-tree search at 10-37M steps against a 7M budget with the
-prelude's `map` / `filter` / `fold` / `any` / `range` as the cost, at
-20-40 steps an element over `loop-until`; the owner chose to close the
-deficit (Q94). A list family at 0x50-0x57 -- `map`, `filter`, `fold`,
-`reverse`, `range`, `any`, `sort-by`, `zip` -- one step an element plus
-the function called, the function's own steps charged to the def that
-wrote it. Semantics are the prelude's (`fold` calls `(f acc x)`;
-`sort-by` is stable under `lt` and `le` alike); programs are unchanged
-textually; `sum`, `product`, `contains`, `all` are one-line idioms over
-them and `rev-onto` / `merge-by` are gone. Per element: `map` 5 where
-it was 39, `fold` 5 where 22, `reverse` 2 where 17, `sort` 8 where
-213. The validator admits the family; the samplers do not emit it,
-like the text family. 86 tokens; `spec/tokens.md` regenerated; the
-card carries the family. Tests 787 → 805.
-
-**Exp 21** (2026-09-11) gave the fourth number its first value, and it
-is NULL for the language: a one-token fault planted in a program of
-20-40 lines is found by reading in either language before any
-feedback (47 of 48), so the repair leg at that size measures program
-length -- LOVA 2.35× longer, 1.7× more written, 2.2× more read -- and
-the structured anomaly never gets to speak. Every anomaly that was
-read (the sessions' own bad patches) located its fault in one attempt,
-on both sides. The claim lives at a size reading cannot cover (Q95)
-and in programs that carry their examples (Q96).
-
-**Exp 20** (2026-09-11) made the step trap say where the steps went.
-`hot` ranks functions by the steps spent in their own body (an
-anonymous lambda charged to the def that wrote it), with call counts
-beside -- the call ranking of Exp 19 had sent a session to inline a
-three-step helper. On the run-2 search it reads `nth` 3.9M of 7M, so
-`text-slice` / `text-cat` keep a list's shape and `nth` / `take` /
-`drop` / `last` / `append` are one native operator each, zero slots,
-13-19 steps where the walk cost 80-400. `Closure` and `Runtime` are
-slotted: the interpreter is ~15% faster with the attribution than it
-was without. The card has a cost section and six facts the sessions
-guessed; the harness has `check`. The natural game-tree search costs
-10-37M steps against a 7M budget and is the number Q90 / Q94 name.
-
-**M26** made a boundary a region, the card generated (`python -m
-corpus.make_card`; `tests/test_card.py` keeps it current), and a
-program the carrier of its own examples: `(example expr expected)`
-beside the defs, run as conservation contracts by `lova check` and
-the MCP tool `lova_check`, a miss reported with expected, got, span
-and offender. Boundaries: `(boundary "kind" (def ...) ...
-body)` binds helpers inside the boundary, so an effectful helper is a
-`def` again and the static capability check stands. Q86 closed.
-
-**M25** made text a value. A text family at 0x40-0x4D -- the first
-tokens past the 64 -- with a text literal and thirteen operators
-(`text-len` `text-cat` `text-slice` `text-find` `text-split`
-`text-join` `text-chars` `text-of-chars` `text-cmp` `text-int`
-`int-text` `text?` `text-trim`); every list operator reads a text as
-its codepoints, so programs written against the list form run
-unchanged; the prelude's text functions are one operator each; IO
-yields texts. Word count, 10 000 lines: **28 s → 5.5 s on CPython**.
-The validator admits the family, the samplers do not yet emit it.
-78 tokens; `spec/tokens.md` regenerated. Q85 closed.
-
-**M24** made a fault say where and a fix a patch. Every node parsed
-from text carries its source span; compile errors and every run-time
-trap kind report the innermost span from the program's own text (a
-fault inside the prelude reports the call that reached it); the CLI
-prints `at: line:col  excerpt`; the MCP server adds `span`, `excerpt`,
-`line`, `col` to anomalies and gains **`lova_patch`** (source, span,
-replacement → patched source, compiled to check). Records (Q84):
-`(rec x 1 y 2)`, `(get r x)`, `(put r x v)` as macros over the map,
-zero slots, missing field = signal 17; `tictactoe.lova` threads
-records instead of `(nth st 2)`. Tests 727 → 747.
-
-**M23** removed the tree walk. `_eval` compiles a node to a Python
-closure the first time a run meets it (`Runtime.code_cache`, per
-run); twenty-two hot operators have inlined templates and the rest run
-their unchanged handlers inside a generic wrapper. The node stack is
-gone -- a trap's `position_path` is read off the Python stack by
-`_node_path` -- and `Scope` frames chain by parent pointer instead of
-copying the environment per call. Step counts and trap positions are
-unchanged (`tests/test_compiled.py` pins values recorded on the M22
-walker). The map reroots instead of copying (O(1) a put through a
-fold, where M22 was O(keys)), and `words` saves a call per character.
-**1000 lines 7.87 s → 3.39 s; 10 000 lines 73 s → 28 s**,
-~700 000 steps a second on CPython. The core is stdlib-only and runs
-under **PyPy** unchanged, where the same count takes **~5.5 s** (~4
-million steps a second); `evaluate` runs on a sized-stack thread
-there, because PyPy spends C stack per frame and Windows gives the
-main thread a megabyte. Two programs written to measure usability --
-`apps/tictactoe.lova` (memoised negamax, never lost in 20 random
-games) and `apps/guess.lova` -- found two edges, both closed the same
-day: `stdin` now keeps the line's terminator so a blank line is not
-the end of input (Q78), and a strict self-reference in a `let` group
--- a zero-parameter `def` calling itself -- is a compile error by
-name, refused by the generator too (Q79). Three more -- `apps/logstats.lova` (a log
-grouped and summarised), `apps/ping.lova` / `apps/pong.lova` (two
-processes over UDP), `apps/sandbox.lova` (untrusted programs run
-under a budget and reported by fault name, the agent scenario) --
-worked, found a lost-datagram race (fixed: the listener is bound by
-the first network operation of either kind) and that `hash` is a
-150-digit integer for a program holding a string, which `digest` in
-the prelude folds to eighteen (Q80). Four more
-put the axioms themselves to work: `apps/evolve.lova` (a pool
-converges and the winner explains its descent), `apps/repair.lova`
-(surprise-guided mutation repairs a program under a `conserve`
-contract, reproducibly), `apps/batch.lova` (per-job budgets, the
-over-budget jobs caught and counted), and every app re-run from its
-Stage-2 projection, 12/12 identical. Placeholder order is by first
-appearance in code; `name=value` on the command line names them (Q81). Q75
-answered; Q76 (the next floor), Q77 (Exp 16's figures have drifted
-from its script; closed by re-running).
-
-**M22** made LOVA a language a real program can stand on, measured by
-one: `apps/wordfreq.lova`. Ceilings raised (depth 10 000; CLI/MCP
-20 000 000 steps, library 1 000 000); the prelude iterates instead of
-recursing and grew the text and list functions a program needs;
-`signal` (0x12) raises what `when-anomaly` catches; a persistent map
-on the last three free slots (0x13 / 0x14 / 0x16) after an association
-list failed to count a thousand lines in twenty million steps; the
-interpreter three times faster (table dispatch, one function per node,
-fast paths). **63 / 64 operators; the table is full.** 10 000 lines
-count in 73 s. Q73 closed; Q74 (the reserve family), Q75 (speed floor).
-
-**M7** (named long ago, delivered last) made LOVA a tool for agents:
-`core/mcp_server.py` serves `lova_execute` / `lova_static_analyze` /
-`lova_valid_next` / `lova_emit` over the MCP stdio transport with no
-dependency outside the standard library — `lova mcp` starts it,
-`apps/mcp_demo.py` drives it — and `pip install .` builds a wheel that
-ships `core`, `lib/*.lova` and the corpus with a `lova` command
-(0.2.0 then; **1.0.0 released 2026-09-10**). `lova_valid_next` is Axiom 3 as a service: a host can
-ask, at every step, which tokens may follow.
-
-**M21** activated the network on the IO family's last two slots:
-`net-send` / `net-recv` over UDP datagrams, under the `net` bit of the
-boundary. The program declares the kind; the host names the places
-(`--allow net=host:port`, `net=:port`), so no address enters the byte
-sequence (Q69 closed). A receive that gets nothing yields `nil`, never
-hangs. **59 / 64 operators; the IO family is 8/8; only the four free
-slots remain.** Q72 (handles as a value kind?).
-
-**M20** gave the checker function shapes: `Fn<arity,ret>` inferred
-from a visible lambda, flowing through `let` and `apply`, so a partial
-application in an integer slot, a call with too many arguments, or a
-call result in the wrong slot is a compile error (Q35, Q51 closed).
-Parameters stay untyped — the honest answer to Q43 — and the generator
-still sees plain `Fn` (Q71). No new byte.
-
-**M19** put the world under a declared boundary: `external-boundary`
-(0x30) declares, as a literal capability mask, which effects its body
-may use — `(boundary "fs-read clock" body)` in the surface — and
-`fs-read` / `fs-write` / `clock` (0x33 / 0x34 / 0x37) are the effects.
-The compiler's capability pass refuses a use outside a boundary that
-declares it; the runtime refuses a boundary the host did not grant
-(`--allow`, nothing by default); the boundary is lexical, captured by
-closures; the generator offers the world only where it is declared.
-Axiom 4, concrete for effects that touch the world. Q68–Q70.
-**57 / 64 operators at M19; M21 took the network slots.**
-
-**M18** added `read` (0x1E), the inverse of `explain`, so a program
-can construct a program from text and `eval` it; `(use "name")`, a
-module system that is textual inclusion — once, transitive, free after
-`drop-unused` — and not an operator (Q50 closed); and
-`lib/evolution.lova`, whose `evolve-with` is a custom evolution rule
-written from the primitives (Q61 answered without a slot). `defpop`
-splices list arguments so a pool can be rebuilt by library code. Q67.
-**53 / 64 operators, four free slots.**
-
-**M17** let a cons cell hold any value — trees, lists of programs,
-lists of functions — with `head` joining the result-follows-operands
-set (Q42 closed the cheap way; `List<T>` is Q63). The termination bias
-was restricted to *certain* closers on the way, because `(head (nil))`
-had become the cheapest way to close an `Fn` slot.
-
-**M16** made generation scope-aware. `GenState.step` takes the
-literal's payload, keeps frames, and offers `ref` only where a bound,
-type-compatible name exists. Exp 16: unbound references in generated
-programs 704/1000 → 0, runnable 16% → 37% (re-run at M23: 226 → 0,
-13% → 16%, the drop being M20's arity checker refusing a quarter of
-generated programs -- Q71's measurement; Q77), `Fn` slots filled by
-references 74 → 5 (Q54 closed). Axiom 3 now holds at the name level for
-generated programs; the compiler remains the check for everything else.
-Exp 10 with real names: +32 pp. Q64–Q66.
-
-**M15** completed Axiom 6. A `Population` is a value; `defpop` /
-`fitness` / `variant` / `select` / `retire` / `evolve` are operators on
-the Evolution family's own slots, and `evolve` applies
-`core/populations.py`'s rule from inside. Exp 15 rewrites Exp 05 as a
-LOVA program and reproduces its shape (3/10 converge, best seed 35 → 1,
-mean 85% of the gap closed) with Python only seeding and printing.
-**52 / 64 operators; every axiom is now realised in the language.**
-
-**M14** put programs into the language as values. `quote` / `eval` on
-two free slots; the **Meta family 8/8** on the slots the table named
-for it — `explain` is Stage 3's human interface, reached from inside
-for the first time; `hash` produces Exp 01's integer from a LOVA
-program; `uid` / `generation` / `ancestor-of` / `lineage-query` / `why`
-make Axiom 5 true *in the language*, not only in `core/lineage.py`.
-`clone` and `mutate` start Axiom 6; the rest of Evolution waits on a
-population value (Q58). **46 / 64 operators, five free slots.** Three
-owner-delegated rulings recorded in the journal: heat is dead, the
-Axiom 3 qualifier stays, `nth` is loud.
-
-**M13** made the error model uniform and reachable. Twenty-two runtime
-faults — division by zero, the head of an empty list, an unbound
-reference — raised bare `ValueError`s with no `kind`, so Exp 08's "one
-handler for every fault" held for two of four classes; `DomainTrap`
-(a `ValueError` subclass, so nothing broke) closes that. `when-anomaly`
-(0x1A) lets a program catch its own anomaly and branch on its code,
-which Axiom 7 always implied. `StepTrap` alone is uncatchable: a
-termination guarantee a program can mask is not one. **34 / 64
-operators**, seven free slots left.
-
-**M12** closed two debts with no new tokens: a chain of `LET`s shares
-one environment frame, so a group of `def`s is **mutually recursive**
-(Q34) — and `drop-unused` had to become a fixpoint over the group,
-because with mutual recursion a binding can be reachable only from an
-earlier sibling's *value*. And `valid_next` caught up with the type
-checker (Q52): `if` / `let` / `apply` fit any slot because their result
-type follows their operands, and `ref` fits any slot because its type
-is its binding's — which the generation state machine cannot see. A
-`map`-shaped program is now generatable, where before **no generated
-program could have that shape at all**. A second hole in the same pass showed at the 2048 port
-(2026-09-15): liveness was computed first and bindings whose value has
-effects were kept afterwards, so a constant that calls a function
-outlived the function and the run met an unbound reference. Bindings
-kept for their effects now seed the fixpoint.
-
-**M11** made the language usable: `stdout` / `stdin` on the IO
-family's own reserved slots, logic macros at zero slots, a standard
-library written in LOVA (`lib/prelude.lova`, free because of the new
-`drop-unused` compiler pass — 474 nodes to 1 when unused), and a command
-line (`python -m core.cli run|repl|emit|analyze`) so a `.lova` file can
-be invoked without a hand-written Python driver. It also fixed a real
-type-system defect: `if-surprise` forced its branches to `Int`, which
-made every list-returning conditional — `map`, `filter`, `reverse` —
-unrepresentable. `if` / `let` / `seq` / `apply` now take their result
-type from their operands.
-
-**Exp 14** built the Stage-2 surface and closed Q37, the largest open
-item: parentheses were 25% of the Stage-1 token cost and were never
-necessary, because the byte encoding has no delimiters. Density on
-algorithmic code went 0.66× → **1.13×** (past the 0.76× ceiling Exp 13
-proved the token table could not beat) and on LOVABench 2.00× →
-**5.38×** vs sympy-Python. Exp 11's Stage-2 *projection* understated
-density by 70%; node count is a poor proxy in both directions.
-
-**63 / 64 core operators runtime-implemented** (the 64th is `END`),
-plus the text family 0x40-0x4F since M25 (full at M32) and the list
-family 0x50-0x57 since M27: 88 tokens in all. The 64-slot ceiling is a design
-preference since the ruling of 2026-09-10; a new family is added when
-the four numbers call for it, and M27 is the second time they did. See
-`spec/tokens.md` for the complete table (generated) and
-`spec/token-budget.md` for the ledger.
-
-**Code statistics:** ~10 000 Python LOC (core + tests + corpus + experiments + apps),
-1104 unit tests passing, 25 experiments (Exp 17's model runs wait on a key; Exp 18 is a one-session pilot, Exp 19 three sessions per language, Exp 20 three more on LOVA, Exp 21 three per language) (pb11 has a v1 pilot + v2 re-run),
-25 first-class apps (the last Kenney's FPS starter kit -- KenneyNL/Starter-Kit-FPS, MIT, ~1 000 stars: `lib/fps.lova` checked tick by tick against a transliteration of `player.gd` and `enemy.gd`, the picture from the eye; before it Kenney's city builder starter kit -- KenneyNL/Starter-Kit-City-Builder, MIT, ~1 500 stars: `lib/citybuilder.lova` checked tick by tick against a transliteration of `builder.gd` / `view.gd` including the mouse unprojected to a cell, its fifteen models simplified by vertex clustering after quadric collapse folded them, and its sample city read out of Godot's binary resource format; before it Kenney's 3D platformer starter kit -- KenneyNL/Starter-Kit-3D-Platformer, MIT, ~1 200 stars: its rules in `lib/platformer.lova` checked tick by tick against a transliteration of its GDScript, its models and level read out of its .glb files and scene by `apps/platformer/import_kit.py` and decimated with the paint regions kept, drawn by `lib/scene3d.lova`, a camera that moves over many placed models, ~4 000 steps a tick and ~150 000 a frame; before it the policy layer of an SSH fleet manager, taken from RemoteX and checked against a transliteration of its JavaScript; before it a low-poly mesh renderer -- `lib/mesh3d.lova`, 220 steps a triangle, within 1.34 pixels of the same renderer in floating point; before it two ports: the rules of ramaureirac/godot-tactical-rpg out of GDScript, its flood checked cell by cell against a transliteration, and 2048 from gabrielecirulli/2048, checked over 10 000 positions with no disagreement; before them three 3D on `lib/fixed.lova`: a first-person maze cast by `lib/ray.lova`, eighty rays a frame; a wireframe cube; and `lib/war.lova`, an isometric battlefield -- noise terrain, sun lighting, woods, and twelve soldiers who walk and fight), **LOVABench v3 (80 tasks: v2's 60 plus 20 algorithmic, `TASKS_V3`)**,
-1 telemetry DB (19 KB).
-
-**All 14 experiments run** as of 2026-09-09. Exp 03 and Exp 07 had
-been dead for four months (solution tables covering 20 tasks against a
-60-task corpus, Q30); they were extended and de-duplicated — Exp 07 now
-imports Exp 03's table rather than keeping a copy of it, which is what
-let them drift apart in the first place.
-
-Headline moved with the fix: **pass@1 LOVA 60/60 vs Python 59/60**
-(180/180 vs 177/180 test cases), raw byte density **25.8×** where the
-20-task slice said 39.2×. The one Python failure is still pb20, the
-same keyword-argument weakness. Quote the correctness number with Exp
-13's F3 attached: the prompts state the formula, so the baseline
-measures transcription, not synthesis.
-
-**Launch-ready numbers** (audit, 2026-09-18: the LOVABench v1/v2
-correctness and density figures measure the number-theory family's
-built-ins, `p` / `tau` / `sigma` / `mobius` / `gcd`, on sixty tasks
-selected for them; the algorithmic figures and the loop experiments
-measure the language):
-- **Expressiveness** (Exp 12): 44/44 cases across ten recursion- or
-  iteration-requiring tasks; 0/10 were representable before M9.
-- **Correctness** (Exp 07, LOVABench v2): LOVA 60/60 vs Python 59/60 pass@1, same tasks/LLM — but see the transcription caveat above.
-- **Byte density** (Exp 07, v2): 25.8× raw (39.2× on the narrower v1 slice).
-- **LLM-token density** (Exp 11, tiktoken cl100k_base):
-  - **Aggregate across LOVABench v2 (60 tasks, 5 categories):**
-    - Stage 1 text surface: **2.0× fewer tokens than sympy-Python (50% savings)**,
-      **8.5× vs pure-Python (88%)**.
-    - Stage 2 (fine-tuned projection): **3.2× vs sympy (68%)**,
-      13.5× vs pure (93%).
-  - **Per-category (Stage 1 vs sympy):** deep-compose 2.8×, v1-core 2.5×,
-    conserve 2.3×, surprise 1.4×, let-heavy 1.4×.
-  - v1 slice preserved (2.5×/13.3×) as historical reference; v2 aggregate
-    is the honest broader number.
-- **Density, honestly** (Exp 14): quote the surface, not a single
-  number. Stage 2 is **5.38× vs sympy-Python on LOVABench** and
-  **1.13× vs Python on algorithmic tasks**; Stage 1 is 2.00× and 0.66×
-  respectively. The old 8.5× was Stage-1-vs-pure-Python on
-  number-theory tasks — a real number answering a question nobody asked.
-- **Density does not generalise at Stage 1** (Exp 12): on ten algorithmic tasks
-  where neither language has a built-in shortcut, Stage-1 LOVA costs
-  **1.5× MORE LLM tokens than Python** (0.66×), and the Stage-2
-  projection does not rescue it (0.65×). Bytes stay mildly positive
-  (1.19×). The 8.5× above measures the number-theory built-ins, not
-  the language. Quote both or quote neither; `journal/experiment_12.md`
-  has the mechanism.
-
-## Next milestones (proposed)
-
-**M6 — AI-preference hardening** (complete, all three items delivered)
-1. ✅ Body-scanning DeltaTrap — probe-based scanner with two passes
-   (operator-swap + literal-replacement) identifies the deepest
-   sub-expression at fault; fuzz 50/50, closed-loop repair 5/5
-   (Exp 09; Q20 closed).
-2. ✅ Scope-aware static analysis — shipped as compile-time scope-check
-   pass in `core/compiler.py` (Exp 08); unbound-ref now raised at
-   compile time with full L2 anomaly schema (Q21 closed).
-3. ✅ Historical pass-rate telemetry — `core/telemetry.py` + TokenChoice
-   extension; weighted sampler +20 pp over uniform (Exp 10; Q22 closed).
-
-Bonus already delivered: **constant-folding pass** (58.5% node
-compression on LOVABench v1) and **type-check pass** in Day 1;
-**fix-kind tagging** (operator-swap / literal-replacement /
-heuristic) in Day 2; **DoS guard** `MAX_NT_INPUT=2000` in Day 3
-(unaffects LOVABench; prevents random `(p (p N))` bombs).
-
-New questions raised by M6: Q23 (pair-probe for multi-offender
-bodies), Q24 (alt-op set via `valid_next` in context), Q25 (lineage
-tagging for delta-repair), Q26 (task-level pass signal), Q27
-(principled termination weighting), Q28 (incremental telemetry
-merge), Q29 (richer conditioning — grandparent / sibling-type).
-
-**M10 — data** (complete; see `spec/token-budget.md`)
-One cons cell, `div`, and the zero-slot surface levers. Open decisions
-it leaves: placement of `nil` / `nil?` (they sit in the wrong families
-because Structural was full), `quote` / `eval`, and the Axiom 8
-revision. New questions: Q42 (`List<T>` for nested structure), Q43
-(unknown lambda parameter types), Q44 (should `valid_next` expose
-completion cost so any sampler can see which choices terminate), Q45
-(should `partition` now return a real pair).
-
-**M9 — abstraction and iteration** (complete; see Exp 12)
-Landed ahead of M7/M8 because both depend on it. Follow-ups it
-raised: ~~Q30~~ (fixed at M13), Q31 (does the number-theory family owe
-slots to `div` / `<`?), Q32 (terser Stage-1 surface), Q33 (LOVABench
-v3 with an algorithmic category), Q34 (mutual recursion), Q35
-(arity-indexed `Fn<n>`), Q36 (re-run Exp 03/10 — `constrained_random`
-now emits lambdas, so their distributions are stale).
-
-**M7 — MCP server / external integration** (complete, 2026-09-09)
-1. ✅ `core/mcp_server.py` exposes `lova_execute`, `lova_valid_next`,
-   `lova_static_analyze` (and `lova_emit`) as MCP tools over stdio —
-   inside the package rather than a separate `lova-mcp`, and with no
-   MCP SDK dependency, because the transport is one JSON object per
-   line and the core is stdlib-only by design. Tool names use `_`
-   rather than `/` because hosts validate names against
-   `[a-zA-Z0-9_-]`.
-2. ✅ `pip install .` builds a wheel with `core`, `lib/*.lova` and the
-   corpus, and a `lova` console script (1.0.0 on GitHub Releases). Publishing to PyPI is
-   the owner's call.
-3. ✅ `apps/mcp_demo.py` drives the server through its pipes; the
-   README carries the host configuration.
-
-**M8 — Fine-tuning corpus + real-LLM benchmark** (groundwork done
-2026-09-10; the runs wait on an API key)
-0. ✅ **Prerequisite from Exp 12 (Q33):** LOVABench v3 adds twenty
-   algorithmic tasks (pb61-pb80, `corpus.tasks.TASKS_V3`) whose
-   prompts say what to compute and not how; the evaluator compiles
-   with the prelude in scope. 80/80 references pass in both languages.
-1. ✅ Corpus: `python -m corpus.finetune --n 3000` makes verified
-   (prompt, program) pairs from twelve families, every pair run
-   against oracle-made tests before it is kept, benchmark tasks held
-   out by construction. `corpus/finetune/` holds 3 000 (train 2 700,
-   val 300) in plain and chat formats; `corpus/language_card.md` is
-   the one-page prompt a base model gets.
-2. ⏳ Fine-tune: `experiments/m8_finetune.py --estimate | --submit |
-   --status` drives a hosted OpenAI-style fine-tune (~$2.31 for three
-   epochs of gpt-4o-mini without the card). An open 7B model on a GPU
-   is the alternative; the chat JSONL is the standard format.
-3. ◐ Measure: `experiments/experiment_17_llm_benchmark.py --model X`
-   gives pass@1 in LOVA and Python per category, base or fine-tuned
-   (`--no-card` for the latter; `--answers` scores answers made
-   elsewhere). **First data point (Exp 17): a fresh Claude session,
-   no tools, one page of LOVA, 80 tasks single-shot: LOVA 79/80,
-   Python 79/80, the same miss** (pb19's misleading prompt, fixed).
-   For the model most people use the language costs no reliability
-   and the benchmark saturates (Q82); the small-model fine-tune is
-   Q83. **The loop (Exp 18): `experiments/experiment_18_agent_loop.py`,
-   a fresh session with the card and a `submit` command, ten tasks:
-   LOVA 10/10 in 11 attempts, Python 10/10 in 10; the one miss a card
-   gap, closed; feedback and reuse one-sided until Q87 / Q88.**
-
-Everything beyond M8 is future work conditioned on MVP traction.
-
-## Author & history
-
-- LOVA conceptualised 2026-04-23 in conversation between the project
-  owner and Claude.
-- Parent lineage: DNA OS v3 (`../dna-os-v2.1/dna-os-v2.1/dna_os_v3/`).
-- The concept arose from the observation that **DNA OS's 4 pillars are
-  architecturally aligned with what AI-native code generation needs**
-  (conservation → contract, surprise → debug, evolution → variants,
-  lineage → provenance). Rather than treat this as a coincidence, the
-  project takes the alignment seriously and builds the language
-  explicitly.
-- First design doc: this CLAUDE.md.
-- Follow-on design docs: `spec/axioms.md` (full argument for each
-  axiom), `spec/paradigm-inheritance.md` (seven PL trajectories),
-  `spec/tokens.md` (complete 64-operator reference).
-- M1-M5 landed 2026-04-23 / 2026-04-24. 10 / 10 axioms validated or
-  partially validated with experiments 01-07 in `journal/`.
+Suite: 1158 pass, 1 fails -- `tests/test_neon.py`'s page test, until
+`native/lova-wasm` is rebuilt with the two new families (Q155).

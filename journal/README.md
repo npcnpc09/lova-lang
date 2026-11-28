@@ -666,6 +666,99 @@ Q103 (the repair axis), Q104 (does s2 stay as reliable at
 tictactoe size, where global lambda numbering and silent spacing
 bite).
 
+### 2026-10-31 -- the game's tick, profiled and cut: a profiler, two operator families, a flat session
+
+Written up on 2026-11-28 from the commits (`eff8651` .. `6a96281`);
+the work was the game's (东方天球谭, its own repository since
+2026-10-01) and this journal had no entry for it.  One program drove
+all of it: a stage's tick on Yorihime's Gion card (stage 14, phase 6).
+
+**A step profiler** (`eff8651`).  `"profile": true` on a session
+`call` returns a calling-context tree, one row per (parent, closure
+body): calls and inclusive steps.  `rt::call`, the one door both
+evaluators go through, reads `rt.steps` on the way in and out, so the
+profile adds up to the call's steps exactly and does not change them;
+off, it costs one `Option` test a call.  `core/profile.py` names the
+rows and writes folded stacks; `lova profile PROG --init EXPR --step
+EXPR --ticks A..B [--folded F]` drives it.  `tests/test_profile.py`.
+
+**6b -- a fixed-point family, 0x58-0x5E** (`e16543d`).  `sin`, `cos`,
+`sin-fine`, `cos-fine`, `quot`, `nth`, `isqrt`: one step for the node
+where `lib/fixed.lova` and the prelude spent 30 (a sine), 120 (a fine
+sine), 20 (`quot`), 11 (`nth`) and 60 (a root).  Values are the
+definitions' to the bit (the same 65-entry quarter table, the same
+rounding, twelve Newton rounds), checked over -5000..9000 and bignums
+(`tests/test_fixed_family.py`).  The compiler folds the six pure ones;
+the validator admits the family, the samplers do not emit it.  52
+golden records re-harvested (steps down, values the same; four
+anomalies now name `nth` where they named `head`), 1033 records in
+all.  On the game: 36.08 M -> 33.05 M steps over 900 ticks, the
+dearest tick 180 776 -> 88 536; wall time a tick unchanged at ~11.5 ms
+(the time is in maps and collision, not steps).
+
+**A session's memory stays flat** (`29195d2`).  One native session
+runs a whole stage and grew 46 KB a tick: 43 MB -> 952 MB over 20 000
+ticks.  Three holders: a `let`-bound lambda held the frame it was
+bound in (an Rc cycle; `break_frame_cycle` / `break_scope_cycle`);
+`Rt::named` kept every named closure for the runtime's life (now
+compacted into one folded row a name once nothing else holds it, `hot`
+answering as before); and the surprise trace was never cleared (a
+`call` now resets it, `spec/native-runtime-protocol.md`).  After: 45 MB
+from first tick to last, at the same speed.  A driver that keeps an
+old world handle still grows -- a map version held keeps every later
+version, which is how the rerooting map works.
+
+**6c, 6d -- a swarm family, 0x5F-0x61** (`859a71a`, `69f7db3`).
+`swarm-age` (the due bullets let in, the spent let go), `swarm-hit`
+(every bullet against the player's body: hit, fakes, grazes, waved)
+and `swarm-draw` (each bullet's place and drawn kind packed for the
+host), each **one step for the node however many records it walks**.
+The LOVA they replace cost ~144 steps a bullet in the tick and ~60 in
+`scene`.  The game's own LOVA is the oracle
+(`tests/test_swarm_family.py`: random swarms, both evaluators and the
+Python runtime agree to the bit), and the world and scene digested
+every tick are the same before and after (19 runs, 18 028 + 18 619
+ticks).  Steps a tick, mean, before -> after:
+
+| | tick (6c) | scene (6d) |
+|---|---|---|
+| Gion 14/6 | 42 983 -> 16 943 | 17 489 -> 3 420 |
+| Toyohime 13/3 | 33 883 -> 18 255 | 13 808 -> 2 040 |
+| Junko 16/2 | 37 670 -> 16 303 | 15 212 -> 2 937 |
+| Part 1 5/4 | 36 777 -> 17 260 | 18 433 -> 4 207 |
+
+98 tokens.  A host built before a family refuses its bytes (`unknown
+token 0x58` / `0x5F` / `0x61`): lova-rt, the Godot extension and the
+wasm module want rebuilding.
+
+**Smaller.**  The encoder and the compiler's node count are loops over
+an explicit stack (`6eb9150`, `5050a73`): a program of a thousand defs
+is a thousand nested `let`s and ran past Python's recursion limit.  A
+program the native runtime refuses *after* the hand-over keeps its
+stdin (`4effea6`): a stale lova-rt that did not know `nth` read the
+input, failed to decode, and the Python fall-back ran with the input
+gone -- tictactoe said "bye".  A test's temp path goes to a program
+with forward slashes (`6a96281`).
+
+**What this entry has to say against itself** (the review of
+2026-11-28).  The fixed-point family is general.  The swarm family is
+not: `swarm-hit` knows that kind 125 is a rod and that 70-99 are a
+wavelength's real and fake kinds -- one game's rules, at three bytes
+of the language, to be implemented by every host for ever.  And "one
+step however many records" means the step budget no longer bounds
+that code: a swarm of a million is one step.  Under rule 3 of the
+design method the family is a measured win for one program against no
+alternative; it has not been put against a form another program could
+use.  Q153, Q154.
+
+**The suite on 2026-11-28**: 1158 pass, 1 fails --
+`tests/test_neon.py::test_the_page_sees_what_python_computes`, the
+wasm module of 2026-09-24 refusing `0x5D` (a rebuild needs a crate
+this machine's cargo cache would not take).  `test_brief`'s
+world-touching test, failing through October, passes since `6a96281`:
+it was the Windows temp path.  A built artifact older than the table
+fails as `unknown token`, not as "rebuild": Q155.
+
 ### 2026-09-29 -- a native check that builds once
 
 `tests/test_danmaku.py::test_examples_pass` took 1 624 s of a 1 773 s
@@ -3028,7 +3121,11 @@ what would measure the latter.
 All 14 experiments now run.
 
 ### Known broken
-Nothing. All 14 experiments run as of 2026-09-09.
+As of 2026-11-28: `tests/test_neon.py`'s page test, until
+`native/lova-wasm` is rebuilt with the fixed-point and swarm families
+(entry of 2026-10-31, Q155).
+
+All 14 experiments ran as of 2026-09-09.
 
 Kept as a section because it earned one: Exp 03 and Exp 07 sat dead
 here from M9 to M13 while the README quoted their headline. The failure
@@ -3409,6 +3506,23 @@ the corpus grows again.
   offer them as warnings with the rewrite, as the lint pass does for
   an unread parameter -- or the rewriter could be left a tool, if Q151
   finds the sugar changes nothing a session does.
+- **Q153** *(2026-10-31, raised 2026-11-28)*: the swarm family
+  against a general form.  Two candidates: a host-registered native
+  function under a declared boundary (the kernel lives in the game's
+  repository and takes no byte), or a bulk operator over records that
+  the three swarm operators can be written in.  Same game, same
+  digests, steps and wall time a tick; the family keeps its bytes only
+  if neither comes near it.
+- **Q154** *(2026-10-31, raised 2026-11-28)*: what a step is when an
+  operator walks a list for one.  The list family charges a step an
+  element; the swarm family charges one a node.  The budget is the
+  third number's guarantee -- decide whether a native walker charges
+  by element, and re-pin the game's ceilings if it does.
+- **Q155** *(2026-10-31, raised 2026-11-28)*: a new byte and the
+  artifacts built before it.  The `ping` screen lists what a runtime
+  knows it lacks, so an operator newer than the binary passes it; a
+  table version (or the token count) in `ping`, and a test that says
+  "rebuild" instead of failing on `unknown token`.
 - **Q121** *(Exp 29)*: examples as the locator's power -- the same
   faults with three, eight and twenty examples; the confident-mislead
   rate (Q116) as a function of the count.

@@ -14,11 +14,11 @@ that can catch and raise, programs as values with lineage, populations
 that evolve, file / clock / network IO under declared capability
 boundaries, and a persistent map. There is a compiler with five static
 passes, a type-constrained generator, a standard library written in
-LOVA, modules, a CLI, an MCP server for agents, and 1 116 tests. The
+LOVA, modules, a CLI, an MCP server for agents, and 1 159 tests. The
 reference implementation is a stdlib-only Python interpreter; the
 programs run on a native Rust runtime -- a bytecode VM at 10-12
 million steps a second, checked against the interpreter step for step
-on a golden set of 1 023 records -- which is the default, and the same
+on a golden set of 1 033 records -- which is the default, and the same
 runtime loads into Godot 4 as an extension class, so a game's rules can
 be LOVA under the engine's own picture. It has no floats, no namespaces
 and no concurrency. The "What LOVA still cannot do" section below is
@@ -241,7 +241,7 @@ python -m core.cli analyze apps/collatz.lova 27
 # run the examples a program declares about itself
 python -m core.cli check apps/tictactoe.lova 0
 
-# run the test suite (1 116 tests, stdlib unittest only)
+# run the test suite (1 159 tests, stdlib unittest only)
 python -m unittest discover -s tests
 
 # the same under PyPy, where the whole suite is also expected to pass
@@ -534,7 +534,7 @@ How LOVA does each, in the order of the table:
 9. `conserve` states the contract, `surprise` measures the miss,
    `mutate` proposes; three targets repaired in 39, 37 and 20 attempts,
    reproducibly.
-10. The core is stdlib-only; the 1 116-test suite runs on both interpreters.
+10. The core is stdlib-only; the 1 159-test suite runs on both interpreters.
 
 And the measurement behind the claim that it costs a model nothing: a
 fresh Claude session given one page of LOVA wrote 79 of 80 benchmark
@@ -708,7 +708,7 @@ experiments/   numbered, reproducible validation scripts
 journal/       research log — one entry per experiment, NULLs included
 apps/          first-class LOVA programs
 lib/           prelude.lova — the standard library, written in LOVA
-tests/         1 116 unit tests, stdlib only
+tests/         1 159 unit tests, stdlib only
 native/        the Rust runtime (lova-rt) and its Godot extension (lova-godot)
 ```
 

@@ -536,3 +536,31 @@ express. The subset is closed by name -- back-references, look-around
 and named groups are refused -- so the operator's meaning does not
 depend on the host's engine. The text family is 16/16; 88 tokens in
 all. The core table is unchanged.
+
+## 6b (2026-10-31): a fixed-point family
+
+`sin` `cos` `sin-fine` `cos-fine` `quot` `nth` `isqrt` at 0x58-0x5E,
+one step for the node. The number that called for it is a profile of
+a game's tick (`lova profile`, Yorihime's Gion card): a sine cost
+thirty-odd steps of LOVA behind a `cond`, a fine sine a hundred and
+twenty, a root sixty, and `nth` eleven with its call. The values are
+the old definitions' to the bit. 36.08 M -> 33.05 M steps over 900
+ticks, the dearest tick halved. Every program on `lib/fixed.lova`
+gains; the family is general. 95 tokens. The core table is unchanged.
+
+## 6c, 6d (2026-10-31): a swarm family -- on probation
+
+`swarm-age` `swarm-hit` `swarm-draw` at 0x5F-0x61, one step for the
+node however many records it walks. The number: ~144 steps a bullet in
+the tick and ~60 in `scene`, 26.5k of a 43k tick; after, the tick's
+mean 42 983 -> 16 943 and the scene's 17 489 -> 3 420 on the same
+card, world and scene identical every tick. 98 tokens.
+
+Entered without the alternative rule 3 asks for, and the ledger says
+so. The operators hold one game's rules (kind 125 is a rod, 70-99 a
+wavelength's kinds); every host must carry them; and a walk of any
+length is one step, so the step budget does not bound it. Q153 puts
+the family against a host-registered function and against a general
+bulk operator over records; Q154 decides what the walk is charged.
+Until then: **no further domain family enters on a single program's
+profile**, and these three bytes are the ones to give back first.
